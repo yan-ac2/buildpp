@@ -1,0 +1,62 @@
+module;
+
+export module lib:iPtr;
+export 
+template<class T>
+class uPtr
+{
+    private:
+    T* ptr_  = nullptr;
+
+    public:
+    explicit uPtr() : ptr_(nullptr) {}
+    explicit uPtr(T* ptr) : ptr_(ptr) {}
+    ~uPtr() {delete ptr_;}
+    uPtr operator &() {return ptr_;}
+
+    //copy and assignment deleted
+    uPtr(const uPtr&) = delete;
+    uPtr& operator =(const uPtr&) = delete;
+
+    uPtr(uPtr&& other) noexcept : ptr_(other.ptr_) {other.ptr_= nullptr;}
+    uPtr& operator =(uPtr&& other) noexcept {
+        if (this != other)
+        {
+            delete ptr_;
+            ptr_ = other.ptr_;
+            other.ptr_ = nullptr;
+        }
+        return *this;
+    }
+
+    T& operator*() const {return *(this->ptr_);}
+    T* operator->() const {return this->ptr_;}
+
+    explicit operator bool() const {return ptr_ != nullptr;}
+
+    T* release() {
+        T* temp = ptr_;
+        ptr_ = nullptr;
+        return temp;
+    }
+};
+
+// export
+// class fn
+// {
+//     public:
+//     using Result = std::bind;
+//     template <typename Functor>
+//     fn (std::bind f) : functionPtr  (f)
+//     {}
+    
+//     fn() = default;
+    
+//     template <typename... Arguments>
+//     void operator() (Arguments&&... args) const
+//     {
+//         return functionPtr (static_cast<decltype(args)&&>(args)...);
+//     }
+
+//     void (*functionPtr)();
+// };

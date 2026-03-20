@@ -1,0 +1,63 @@
+export module lib:types;
+import :stdlib;
+
+export
+{
+    using f32       = float;
+    using f64       = double;
+    using int8      = std::int8_t;
+    using uint8     = std::uint8_t;
+    using int32     = std::int32_t;
+    using uint32    = std::uint32_t;
+    using int64     = std::int64_t;
+    using uint64    = std::uint64_t;
+    using cstr      = const char*;
+    struct vec2;
+    struct vec3;
+};
+
+struct vec2
+{
+    f32 x ,y;
+    vec2(f32 a,f32 b) : x(a),y(b) {}
+    std::string str() const {
+        std::string local;
+        local += "["; 
+        local += std::to_string(this->x);
+        local += " , "; 
+        local += std::to_string(this->y);
+        local += "]\n";
+        return local; 
+    };
+    void update(f32&& a,f32&& b)
+    {
+        this->x += a;
+        this->y += b;
+    }
+};
+
+struct vec3
+{
+    f32 x,y,z;
+
+    vec3(f32 a,f32 b,f32 c) : x(a),y(b),z(c) {};
+
+    void update(f32&& a,f32&& b,f32&& c)
+    {
+        this->x += a;
+        this->y += b;
+        this->z += c;
+    }
+
+    std::string str() const {
+        std::string local;
+        local.append("[ ");
+        local.append(std::to_string(this->x));
+        local.append(" , "); 
+        local.append(std::to_string(this->y));
+        local.append(" , "); 
+        local.append(std::to_string(this->z));
+        local.append(" ]\n");
+        return local; 
+    };
+};

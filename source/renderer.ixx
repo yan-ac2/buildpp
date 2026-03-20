@@ -1,0 +1,147 @@
+module;
+
+#include "glad/glad.h"
+
+export module lib:renderer;
+import :RGFW;
+import :types;
+
+export
+{
+    enum gl
+    {
+        FrontandBack = GL_FRONT_AND_BACK,
+        glFloat = GL_FLOAT,
+        glBool = GL_BOOL,
+        Line = GL_LINE,
+        Fill = GL_FILL,
+        Triangle = GL_TRIANGLES,
+        ArrayBuffer = GL_ARRAY_BUFFER,
+        ElementArrayBuffer = GL_ELEMENT_ARRAY_BUFFER,
+    };
+    class Gl
+    {
+        glHints* hint = getGLhints();
+        uint32 VBO;
+        uint32 VAO;
+        uint32 EBO;
+        uint32 VertexShader;
+        uint32 FragmentShader;
+        uint32 FragmentShader2;
+        uint32 ShaderProgram;
+        public:
+        void init(uint8,uint8,Window*);
+        void update(Window*);
+    };
+
+    void polygonMode(gl face,gl mode) {glPolygonMode(face,mode);}
+}
+
+f32 vertices[]
+{
+    -0.5f, -0.5f, 0.0f,
+    0.5f, -0.5f, 0.0f,
+    0.0f, 0.5f, -0.0f,
+};
+f32 tvertices[]
+{
+    0.5f, 0.5f, 0.0f,
+    0.5f, -0.5f, 0.0f,
+    -0.5f, -0.5f, 0.0f,
+    -0.5f, 0.5f, 0.0f,
+};
+
+uint32 indices[]
+{
+    0, 1, 3,
+    1, 2, 3
+};
+
+cstr vshader {
+    R"(
+    #version 460 core
+    layout (location = 0) in vec3 aPos
+    void main()
+    {
+        gl_Position = vec4(aPos.x,aPos.y,aPos.z,1.0)
+    }
+    )"
+};
+
+cstr fshader {
+    R"(
+    #version 460 core
+    out vec4 FragColor
+    void main()
+    {
+        FragColor = vec4(1.0f,0.5f,0.2f,1.0f);
+    }
+    )"
+};
+cstr fshader2 {
+    R"(
+    #version 460 core
+    out vec4 FragColor
+    void main()
+    {
+        FragColor = vec4(0.1f,0.5f,0.2f,1.0f);
+    }
+    )"
+};
+void Gl::init(uint8 major,uint8 minor,Window* win)
+{
+    hint->major = major;
+    hint->minor = minor;
+    setGLhints(this->hint);
+    setGLctx(win,this->hint);
+    gladLoadGL();
+
+    glGenVertexArrays(1,&VAO);
+    glBindVertexArray(VAO);
+    
+    glGenBuffers(1,&VBO);
+    glBindBuffer(GL_ARRAY_BUFFER,VBO);
+    glBufferData(GL_ARRAY_BUFFER,sizeof(tvertices),tvertices,GL_STATIC_DRAW);
+    
+    glGenBuffers(1,&EBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,sizeof(indices),indices,GL_STATIC_DRAW);
+    
+    glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,3 * sizeof(f32),(void*)0);
+    glEnableVertexAttribArray(0);
+    
+    
+    VertexShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(VertexShader,1,&vshader,nullptr);
+    glCompileShader(VertexShader); 
+    
+    FragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(FragmentShader,1,&fshader,nullptr);
+    glCompileShader(FragmentShader); 
+    FragmentShader2 = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(FragmentShader,1,&fshader2,nullptr);
+    glCompileShader(FragmentShader2); 
+    
+    ShaderProgram = glCreateProgram();
+    glAttachShader(ShaderProgram,VertexShader);
+    glAttachShader(ShaderProgram,FragmentShader);
+    glLinkProgram(ShaderProgram);
+    
+    glDeleteShader(VertexShader);
+    glDeleteShader(FragmentShader);
+    glDeleteShader(FragmentShader2);
+    
+}
+
+void Gl::update(Window* win)
+{
+    glUseProgram(ShaderProgram);
+    
+    glClearColor(0.2f,0.3f,0.3f,1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    
+    glDrawElements(gl::Triangle,6,GL_UNSIGNED_INT,0);
+    glDrawArrays(gl::Triangle,0,3);
+
+    GLSwapBuffer(win);
+}

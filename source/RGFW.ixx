@@ -1,0 +1,289 @@
+
+module;
+#define RGFW_OPENGL
+#define RGFW_IMPLEMENTATION
+#include <RGFW.h>
+
+export module lib:RGFW;
+import :stdlib;
+import :types;
+export 
+{
+	using glHints = RGFW_glHints;
+	using Window = RGFW_window;
+	using Event = RGFW_event;
+	
+	enum Key : uint8;
+	enum eventType : uint8;
+	enum Flags : uint32;
+
+	void initWindow(Window*,cstr,int32,int32,uint32);
+	void set_Quitkey(Window* ,uint8);
+	void CloseWindow(Window*);
+	void FreeWindow(Window*);
+	int32 ShouldClose(Window*);
+
+	uint8 CheckEvent(Window*,Event*);
+	int32 getKey(const Event*);
+
+	void setGLhints(glHints*); 
+	glHints* getGLhints();
+	void setGLctx(Window*);
+	void PollEvent(int32); 
+	void GLSwapBuffer(Window*); 
+	
+}
+
+
+void initWindow(Window* win,cstr name,int32 w,int32 h, uint32 f)
+{
+	RGFW_createWindowPtr(name, 0, 0, w, h, static_cast<uint32>(f),win);
+}
+int32 ShouldClose(Window* win) {
+	return win->internal.shouldClose;
+}
+void CloseWindow (Window* win) {
+	win->internal.shouldClose = true;
+}
+void set_Quitkey(Window* win ,uint8 key) {
+	win->internal.exitKey = key;
+}
+
+void GLSwapBuffer(Window* win) 
+{
+	RGFW_window_swapBuffers_OpenGL(win);
+}
+void setGLhints(glHints* hint)
+{
+	RGFW_setGlobalHints_OpenGL(hint);
+} 
+void setGLctx(Window* win,glHints* hint)
+{
+	RGFW_window_createContext_OpenGL(win,hint);
+}
+glHints* getGLhints()
+{
+	return RGFW_getGlobalHints_OpenGL();
+}
+
+
+uint8 CheckEvent(Window* win, Event* ev) {
+	return RGFW_window_checkEvent(win, ev);
+}
+inline int32 getKey(const Event* ev) {
+	return ev->key.value;
+}
+void PollEvent(int32 ms)
+{
+	RGFW_waitForEvent(ms);
+}
+
+
+enum Key : uint8
+{
+	keyNULL = 0,
+	key_escape = '\033',
+	key_backtick = '`',
+	key_0 = '0',
+	key_1 = '1',
+	key_2 = '2',
+	key_3 = '3',
+	key_4 = '4',
+	key_5 = '5',
+	key_6 = '6',
+	key_7 = '7',
+	key_8 = '8',
+	key_9 = '9',
+	key_minus = '-',
+	key_equal = '=',
+	key_equals = key_equal,
+	key_backSpace = '\b',
+	key_tab = '\t',
+	key_space = ' ',
+	key_a = 'a',
+	key_b = 'b',
+	key_c = 'c',
+	key_d = 'd',
+	key_e = 'e',
+	key_f = 'f',
+	key_g = 'g',
+	key_h = 'h',
+	key_i = 'i',
+	key_j = 'j',
+	key_k = 'k',
+	key_l = 'l',
+	key_m = 'm',
+	key_n = 'n',
+	key_o = 'o',
+	key_p = 'p',
+	key_q = 'q',
+	key_r = 'r',
+	key_s = 's',
+	key_t = 't',
+	key_u = 'u',
+	key_v = 'v',
+	key_w = 'w',
+	key_x = 'x',
+	key_y = 'y',
+	key_z = 'z',
+	key_period = '.',
+	key_comma = ',',
+	key_slash = '/',
+	key_bracket = '[',
+    key_closeBracket = ']',
+    key_semicolon = ';',
+	key_apostrophe = '\'',
+	key_backSlash = '\\',
+	key_return = '\n',
+	key_enter = key_return,
+	key_delete = '\177', /* 127 */
+	key_F1,
+	key_F2,
+	key_F3,
+	key_F4,
+	key_F5,
+	key_F6,
+	key_F7,
+	key_F8,
+	key_F9,
+	key_F10,
+	key_F11,
+	key_F12,
+    key_F13,
+    key_F14,
+    key_F15,
+    key_F16,
+    key_F17,
+    key_F18,
+    key_F19,
+    key_F20,
+    key_F21,
+    key_F22,
+    key_F23,
+    key_F24,
+    key_F25,
+	key_capsLock,
+	key_shiftL,
+	key_controlL,
+	key_altL,
+	key_superL,
+	key_shiftR,
+	key_controlR,
+	key_altR,
+	key_superR,
+	key_up,
+	key_down,
+	key_left,
+	key_right,
+	key_insert,
+	key_menu,
+	key_end,
+	key_home,
+	key_pageUp,
+	key_pageDown,
+	key_numLock,
+	key_kpSlash,
+	key_kpMultiply,
+	key_kpPlus,
+	key_kpMinus,
+	key_kpEqual,
+	key_kpEquals = key_kpEqual,
+	key_kp1,
+	key_kp2,
+	key_kp3,
+	key_kp4,
+	key_kp5,
+	key_kp6,
+	key_kp7,
+	key_kp8,
+	key_kp9,
+	key_kp0,
+	key_kpPeriod,
+	key_kpReturn,
+	key_scrollLock,
+    key_printScreen,
+    key_pause,
+	key_world1,
+    key_world2,
+    key_keyLast = 255 /* padding for alignment ~(175 by default) */
+};
+enum Flags : uint32
+{
+    NoBorder = RGFW_windowNoBorder, /*!< the window doesn't have a border */
+    NoResize = RGFW_windowNoResize, /*!< the window cannot be resized by the user */
+    AllowDND = RGFW_windowAllowDND, /*!< the window supports drag and drop */
+    HideMouse = RGFW_windowHideMouse, /*! the window should hide the mouse (can be toggled later on using `RGFW_window_showMouse`) */
+    Fullscreen = RGFW_windowFullscreen, /*!< the window is fullscreen by default */
+    Trensparent = RGFW_windowTransparent, /*!< the window is transparent (only properly works on X11 and MacOS, although it's meant for for windows) */
+    WinCenter = RGFW_windowCenter, /*! center the window on the screen */
+    RawMouse = RGFW_windowRawMouse, /*!< use raw mouse mouse on window creation */
+    ScaleToMonitor = RGFW_windowScaleToMonitor, /*! scale the window to the screen */
+    Hide = RGFW_windowHide, /*! the window is hidden */
+    Maximize = RGFW_windowMaximize, /*!< maximize the window on creation */
+    CenterCursor = RGFW_windowCenterCursor, /*!< center the cursor to the window on creation */
+    Floating = RGFW_windowFloating, /*!< create a floating window */
+    FocusOnShow = RGFW_windowFocusOnShow, /*!< focus the window when it's shown */
+    Minimize = RGFW_windowMinimize, /*!< focus the window when it's shown */
+    Focus = RGFW_windowFocus, /*!< if the window is in focus */
+    CaptureMouse = RGFW_windowCaptureMouse, /*!< capture the mouse mouse mouse on window creation */
+    WinOGL = RGFW_windowOpenGL, /*!< create an OpenGL context (you can also do this manually with RGFW_window_createContext_OpenGL) */
+    WinEGL = RGFW_windowEGL, /*!< create an EGL context (you can also do this manually with RGFW_window_createContext_EGL) */
+    WindowedFullscreen = RGFW_windowedFullscreen,
+    CaptureRawMouse = RGFW_windowCaptureRawMouse
+};
+
+enum eventType : uint8 
+{
+		eventNone = 0, /*!< no event has been sent */
+		keyPressed, /*!< a key has been pressed */
+		keyReleased, /*!< a key has been released */
+		/*! key event note
+			the code of the key pressed is stored in
+			event.key.value
+			!!Keycodes defined at the bottom of the HEADER part of this file!!
+
+			while a string version is stored in
+			event.key.valueString
+
+	/	event.key.mod holds the current mod
+			this means if CapsLock, NumLock are active or not
+		*/
+		mouseButtonPressed, /*!< a mouse button has been pressed (left,middle,right) */
+		mouseButtonReleased, /*!< a mouse button has been released (left,middle,right) */
+		mouseScroll, /*!< a mouse scroll event */
+		mousePosChanged, /*!< the position of the mouse has been changed */
+		/*! mouse event note
+			the x and y of the mouse can be found in the vector, x, y
+
+			event.button.value holds which mouse button was pressed
+		*/
+		windowMoved, /*!< the window was moved (by the user) */
+		windowResized, /*!< the window was resized (by the user), [on WASM this means the browser was resized] */
+		focusIn, /*!< window is in focus now */
+		focusOut, /*!< window is out of focus now */
+		mouseEnter, /* mouse entered the window */
+		mouseLeave, /* mouse left the window */
+		windowRefresh, /* The window content needs to be refreshed */
+
+		/* attribs change event note
+			The event data is sent straight to the window structure
+			with win->x, win->y, win->w and win->h
+		*/
+		quit, /*!< the user clicked the quit button */
+		dataDrop, /*!< a file has been dropped into the window */
+		dataDrag, /*!< the start of a drag and drop event, when the file is being dragged */
+		/* drop data note
+			The x and y coords of the drop are stored in the vector x, y
+
+			event.drop.count holds how many files were dropped
+
+			This is also the size of the array which stores all the dropped file string,
+			event.drop.files
+		*/
+		windowMaximized, /*!< the window was maximized */
+		windowMinimized, /*!< the window was minimized */
+		windowRestored, /*!< the window was restored */
+		scaleUpdated, /*!< content scale factor changed */
+		monitorConnected, /*!< a monitor has been connected */
+		monitorDisconnected /*!< a monitor has been disconnected */
+};
