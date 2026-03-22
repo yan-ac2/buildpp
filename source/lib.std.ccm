@@ -7,7 +7,7 @@ module;
 #include <type_traits>
 #include <functional>
 #include <format>
-export module lib:stdlib;
+export module lib.std;
 export namespace std
 {
     using std::vector;

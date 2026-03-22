@@ -4,9 +4,9 @@ module;
 #define RGFW_IMPLEMENTATION
 #include <RGFW.h>
 
-export module lib:RGFW;
-import :stdlib;
-import :types;
+export module lib.RGFW;
+import lib.std;
+import lib.types;
 export 
 {
 	using glHints = RGFW_glHints;
