@@ -124,19 +124,30 @@ class Project
     public:
     std::string_view Compiler {"clang++ "};
     std::string Options {"-std=c++23 "};
-    fs::path path       { fs::current_path()};
-    fs::path sourcePath {path / "source"};
-    fs::path outPath    {path / "build"};
-    fs::path objPath    {outPath / "obj"};
-    fs::path modulePath {outPath / "module"};
+    fs::path path       {"."};
+    fs::path sourcePath {};
+    fs::path outPath    {};
+    fs::path objPath    {};
+    fs::path modulePath {};
     std::string compileInclude {};
     std::vector<std::string> includePath {};
     
     std::vector<std::string> project {};
     std::vector<std::string> object {};
-    std::vector<std::string> modules {};
+    std::map<std::string,std::string> modules {};
     std::map<std::string,std::vector<std::string>> includeMap {};
 
+    void setSourcePath(std::string_view in) {
+        sourcePath = this->path / in;
+    }
+    void setOutpath(std::string_view out) {
+        outPath = this->path / out;
+        objPath = outPath / "obj";
+        modulePath = outPath / "module";
+    }
+    Project() {
+        std::cout << "Project initialized at " << path.string() << std::endl;
+    };
     void preCompile(std::string_view inpath,std::string_view outpath) {
         fs::path path = inpath;
         fs::path out = outpath;
@@ -146,12 +157,12 @@ class Project
         std::string objOutput; 
         std::string srcInput; 
         bool inModule = std::find_if(modules.begin(), modules.end(), [&path](const auto& p) 
-        {return p == path.string();}) != modules.end();
+        {return p.first == path.string();}) != modules.end();
         if (inModule && path.filename().extension() == ".ccm") {
             objOutput.append(fmt(" -o ", module));
-            srcInput.append(fmt(" --precompile ", path.string()," "));
+            srcInput.append(fmt(" -fprebuilt-module-path=",this->modulePath.string()," --precompile ", path.string()," "));
         } else {
-            objOutput.append(fmt(" -fprebuilt-module-path=",(fs::path("build") / "module" / "").string(), " --precompile -o ", module));
+            objOutput.append(fmt(" -fprebuilt-module-path=",this->modulePath.string(), " --precompile -o ", module));
             srcInput.append(fmt("  ",  path.string(), " "));
         }
         auto found = std::find_if(includeMap.begin(), includeMap.end(), [&path](const auto& p) 
@@ -161,41 +172,15 @@ class Project
         std::string cmd {fmt(Compiler, Options, srcInput ,found ? compileInclude : "", objOutput )};
         this->object.push_back(obj);
         std::printf("%s \n",cmd.c_str());
-        std::system(cmd.c_str());
+        //std::system(cmd.c_str());
         
-        objOutput = fmt(" -o ", module);
-        srcInput = fmt(" --precompile ", module," ");
-        cmd = fmt(Compiler, Options, srcInput ,found ? compileInclude : "", objOutput );
-        std::printf("%s \n",cmd.c_str());
-        std::system(cmd.c_str());
+        // objOutput = fmt(" -o ", module);
+        // srcInput = fmt(" --precompile ", module," ");
+        // cmd = fmt(Compiler, Options, srcInput ,found ? compileInclude : "", objOutput );
+        // std::printf("%s \n",cmd.c_str());
+        // std::system(cmd.c_str());
     };
 
-    void compile(std::string_view inpath,std::string_view outpath) {
-        fs::path path = inpath;
-        fs::path out = outpath;
-    
-        std::string module {(out / "module" / path.stem()).string() + ".pcm"};
-        std::string obj {(out / "obj" / path.stem()).string() + ".o"};
-        std::string objOutput; 
-        std::string srcInput; 
-        bool inModule = std::find_if(modules.begin(), modules.end(), [&path](const auto& p) 
-        {return p == path.string();}) != modules.end();
-        if (inModule) {
-            objOutput.append(fmt(" --precompile -o ", module));
-            srcInput.append(fmt(" -c ", path.string()," "));
-        } else {
-            objOutput.append(fmt(" -fprebuilt-module-path=",(out / "module" / ".").string(), " -o ", obj));
-            srcInput.append(fmt(" -c ",  path.string()));
-        }
-        auto found = std::find_if(includeMap.begin(), includeMap.end(), [&path](const auto& p) 
-        {return p.second[0] == path.string();}) != includeMap.end();
-        //std::cout << "\x1b[32m path \x1b[0m" << path.string() << "\x1b[32m found \x1b[0m" << found << std::endl;
-        
-        std::string cmd {fmt(Compiler, Options, srcInput ,found ? compileInclude : "", objOutput )};
-        this->object.push_back(obj);
-        std::printf("%s \n",cmd.c_str());
-        std::system(cmd.c_str());
-    };
     
     void compileModule(std::string_view inpath,std::string_view outpath) {
         fs::path path = inpath;
@@ -203,14 +188,14 @@ class Project
         
         std::string module {(dir / "module" / path.stem()).string() + ".pcm"};
         std::string obj {(dir / "obj" / path.stem()).string() + ".o"};
-        std::string objOutput {fmt(" -fprebuilt-module-path=" ,(fs::path("build")/"module").string(), " -o ", obj)};
+        std::string objOutput {fmt(" -fprebuilt-module-path=" ,this->modulePath.string(), " -o ", obj)};
         std::string moduleInput {fmt(" -c ",  module ,"  ")};
         auto found = std::find_if(includeMap.begin(), includeMap.end(), [&path](const auto& p) 
         {return p.second[0] == path.string();}) != includeMap.end();
     
         std::string cmd {fmt(Compiler, Options,moduleInput, found ? compileInclude : "", objOutput)};
         std::printf("%s \n",cmd.c_str());
-        std::system(cmd.c_str());
+        //std::system(cmd.c_str());
     };
     
     void link(std::vector<std::string>& path,std::string_view target, Platform platform) {
@@ -222,22 +207,19 @@ class Project
         
         std::string cmd {fmt(Compiler, Options,Executable, Object)};
         std::printf("%s \n",cmd.c_str());
-        std::system(cmd.c_str());       
+        //std::system(cmd.c_str());       
     }
 
     void addInclude(fs::path compileIncludePath) {
         if (compileIncludePath.empty()) {
             throw std::invalid_argument("compileIncludePath cannot be empty");
+        } 
+
+        if (!fs::exists(compileIncludePath)) {
+            throw std::runtime_error(fmt("compileInclude path ",compileIncludePath.string(), "does not exist"));
         }
-        fs::path compileIncludePathStr = compileIncludePath;
-        if (!compileIncludePathStr.is_absolute()) {
-            compileIncludePathStr = path / compileIncludePathStr;
-        }
-        if (!fs::exists(compileIncludePathStr)) {
-            throw std::runtime_error(fmt("compileInclude path ",compileIncludePathStr.string(), "does not exist"));
-        }
-        includePath.push_back(compileIncludePathStr.string());
-        compileInclude.append(fmt("-I ",compileIncludePathStr.string(), " "));
+        includePath.push_back(compileIncludePath.string());
+        compileInclude.append(fmt("-I ",compileIncludePath.string(), " "));
     }
 
     void getCppFile() {
@@ -271,7 +253,7 @@ class Project
     void dumpModule() {
         std::cout << "dump module" << std::endl;
         for (const auto& i : modules) {
-            std::cout << "module " << i << std::endl;
+            std::cout << "module " << i.first << " module name " << i.second << std::endl;
         }
     }
     void dumpInclude() {
@@ -343,6 +325,7 @@ class dependencyScanner
 
     void scanModule() {
         for (const auto& p : compile->project) {
+            std::cout << "scan module " << p << std::endl;
             if (p.empty()) {
                 std::cerr << "Error: Empty project path" << std::endl;
                 continue;
@@ -356,22 +339,18 @@ class dependencyScanner
 
             std::string line;
             while (std::getline(files, line)) {
-                size_t pos = line.find(importToken);
+                size_t ipos = line.find(importToken);
+                size_t epos = line.find(exportToken);
                 std::string moduleName;
-                if (pos != std::string::npos && line.find(';') != std::string::npos) {
-                    moduleName = line.substr(pos + importToken.length());
+                if (ipos != std::string::npos && line.find('.') != std::string::npos) {
+                    moduleName = line.substr(ipos + importToken.length());
                     moduleMap[moduleName].push_back(p);
+                    //compile->modules.emplace_back(p,moduleName);
                 }
-                
-                pos = line.find(exportToken);
-                if (pos != std::string::npos && line.find(';') != std::string::npos)
-                {
-                    compile->modules.push_back(p);
-                }
-                if (pos != std::string::npos && line.find(';') == std::string::npos) {
-                    moduleName = line.substr(pos + exportToken.length());
+                if (epos != std::string::npos) {
+                    moduleName = line.substr(epos + exportToken.length());
                     moduleMap[moduleName].push_back(p);
-                    compile->modules.push_back(p);
+                    compile->modules[p] = moduleName;
                 }
             }
             files.close();
@@ -386,90 +365,47 @@ class dependencyScanner
         auto& modules = compile->modules;
         
         // 1. Setup tracking structures (Optimized: O(1) lookups)
-        std::unordered_map<std::string, int> inDegree;
+        std::unordered_map<std::string, size_t> inDegree;
         std::unordered_map<std::string, std::vector<std::string>> dependents;
 
-        // Initialize all modules in the provided list with 0 dependencies
-        for (const auto& mod : modules) {
-            inDegree[mod] = 0;
+        // Initialize all modules in the provided list
+        for (const auto& [key, value] : modules) {
+                inDegree[value] += 0; // Number of imports (dependencies)
         }
-
-        // 2. Build the dependency graph
-        for (const auto& mod : modules) {
-            auto it = moduleMap.find(mod);
-            if (it != moduleMap.end()) {
-                for (const auto& dep : it->second) {
-                    if (inDegree.find(dep) != inDegree.end()) {
-                        dependents[dep].push_back(mod); 
-                        inDegree[mod]++;                
-                    }
-                }
-            }
-        }
-
-        // Save a copy of the original dependency counts before we start decrementing them
-        std::unordered_map<std::string, int> originalInDegree = inDegree;
-
-        // Create a custom comparator for our priority queue.
-        // We want the module with the HIGHEST original dependency count to go first.
-        auto cmp = [&originalInDegree](const std::string& a, const std::string& b) {
-            // std::priority_queue puts the "largest" element at the top.
-            // Returning a < b means 'b' gets priority if it has a higher count.
-            return originalInDegree[a] < originalInDegree[b];
-        };
-
-        // 3. Find all modules ready to load right now (0 dependencies)
-        // Swap std::queue for std::priority_queue
-        std::priority_queue<std::string, std::vector<std::string>, decltype(cmp)> readyQueue(cmp);
         
-        for (const auto& pair : inDegree) {
-            if (pair.second == 0) {
-                readyQueue.push(pair.first);
+        for (const auto& [key, value] : moduleMap) {
+            for (const auto& dep : value) {
+                dependents[dep].push_back(key);
             }
         }
 
-        // 4. Process the queue to determine the final order
-        std::vector<std::string> reordered;
-        reordered.reserve(modules.size());
-
-        while (!readyQueue.empty()) {
-            // Priority queues use .top() instead of .front()
-            std::string current = readyQueue.top(); 
-            readyQueue.pop();
-            
-            reordered.push_back(current);
-
-            auto depIt = dependents.find(current);
-            if (depIt != dependents.end()) {
-                for (const auto& dependent : depIt->second) {
-                    inDegree[dependent]--;
-                    if (inDegree[dependent] == 0) {
-                        readyQueue.push(dependent); // This automatically sorts by original dependencies!
-                    }
-                }
+        // 2. Calculate in-degree for each module
+        for (const auto& [first, second] : dependents) {
+            for (const auto& dep : second) {
+                inDegree[dep]++;
             }
+            //inDegree[second]++;
+
         }
 
-        // 5. Catch circular dependencies
-        if (reordered.size() != modules.size()) {
-            throw std::runtime_error("Failed to reorder: Circular dependency detected!");
-        }
 
-        // 6. Apply the correctly ordered list back
-        for (const auto& mod : reordered) {
-            std::cout << "Reordered modules: " << mod << '\n'; // \n is faster than std::endl
+        
+        for (const auto& mod : inDegree) {
+            std::cout << "indegree first: " << mod.first << ", In-Degree second: " << mod.second << std::endl;
         }
-        modules = std::move(reordered);
+        for (const auto& dep : dependents) {
+            std::cout << "Dependents first " << dep.first << ", Dependents second: ";
+            for (const auto& d : dep.second) {
+                std::cout << d << " ";
+            }
+            std::cout << std::endl;
+        }
     }
 
     void dumpModuleMap() {
         std::cout << "Dump Module Map" << std::endl;
         for (const auto& [key, value] : moduleMap) {
-            if (key.find(".") == std::string::npos) {
-                std::cout << "module " << key << " ";
-            } else [[likely]] {
-                std::cout << "subModule " << key << " ";
-            }
+            std::cout << "moduleMap (first) " << key << " (second) ";
 
             for (const auto& v : value) {
                 std::cout << v << " ";
@@ -492,12 +428,37 @@ class dependencyScanner
 
 };
 
+void makeFolder(const fs::path& path) {
+    if (!path.has_parent_path()) {
+        std::cerr << "Error: Path has no parent path: " << path.string() << "\n";
+        return;
+    }
+
+    if (!fs::exists(path)) {
+        try {
+            if (fs::create_directory(path)) {
+            std::cout << "Directory created: " << path << std::endl;
+            } else {
+                std::cerr << "Failed to create directory: " << path << std::endl;
+            }
+        } catch (const fs::filesystem_error& e) {
+            std::cerr << "Filesystem error: " << e.what() << std::endl;
+        }
+    } else {
+        std::cout << "Directory already exists: " << path << std::endl;
+    }
+}
 auto main(int argc, const char** argv) -> int 
 {
-    Platform platform(Platform::Windows);
+    Platform platform(Platform::Linux);
     Project c;
-    c.addInclude(fs::path("source") / "lib" / "RGFW");
-    c.addInclude(fs::path("source") / "lib" / "glad" / "include");
+    c.setSourcePath("source");
+    c.setOutpath("_build");
+    makeFolder(c.outPath);
+    makeFolder(c.objPath);
+    makeFolder(c.modulePath);
+    c.addInclude(c.path / "source" / "lib" / "RGFW");
+    c.addInclude(c.path / "source" / "lib" / "glad" / "include");
     c.getCppFile();
     // c.dumpProject();
     
@@ -508,22 +469,6 @@ auto main(int argc, const char** argv) -> int
     scanner.dumpModuleMap();
     c.dumpModule();
 
-    if (fs::exists(c.outPath) == false) {
-        if (fs::create_directory(c.outPath) == false) {
-            std::cerr << "Error: could not create directory " << c.outPath.string() << "\n";
-            return EXIT_FAILURE;
-        }
-        if (fs::create_directory(c.objPath) == false) {
-            std::cerr << "Error: could not create directory " << c.outPath.string() << "\n";
-            return EXIT_FAILURE;
-        }
-        if (fs::create_directory(c.modulePath) == false) {
-            std::cerr << "Error: could not create directory " << c.modulePath.string() << "\n";
-            return EXIT_FAILURE;
-        }
-    }
-
-
     std::string test;
     defer endMessage ([&] {std::cout << "end \n"<< test;});
     // defer link ([&] {
@@ -531,27 +476,27 @@ auto main(int argc, const char** argv) -> int
     //     c.link(c.object, "main", platform);}
     // );
     
-    c.object.reserve(c.project.size() -1);
-    c.modules.reserve(c.project.size() -1);
+    // c.object.reserve(c.project.size() -1);
+    // c.modules.reserve(c.project.size() -1);
 
-    ThreadPool pool(std::thread::hardware_concurrency());
-    //std::cout << std::thread::hardware_concurrency() << "\n";
+    // ThreadPool pool(std::thread::hardware_concurrency());
+    // //std::cout << std::thread::hardware_concurrency() << "\n";
 
-    for (auto& i : c.modules) {
-            c.preCompile(i,c.outPath.string());
-    }
-    for (auto& i : c.modules) {
-        c.compileModule(i,c.outPath.string());
-    }
-    while (pool.isEmpty() == false) std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    std::cout << "compile cpp \n";
-
-    // for (auto& i : c.project) {
-    //     if (fs::path(i).extension() == ".cc") {
-    //         pool.enqueue([&i,&c] {c.compile(i,c.outPath.string());});
-    //     }
+    // for (auto& i : c.modules) {
+    //         c.preCompile(i,c.outPath.string());
     // }
-    while (pool.isEmpty() == false) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // for (auto& i : c.modules) {
+    //     c.compileModule(i,c.outPath.string());
+    // }
+    // while (pool.isEmpty() == false) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // std::cout << "compile cpp \n";
+
+    // // for (auto& i : c.project) {
+    // //     if (fs::path(i).extension() == ".cc") {
+    // //         pool.enqueue([&i,&c] {c.compile(i,c.outPath.string());});
+    // //     }
+    // // }
+    // while (pool.isEmpty() == false) std::this_thread::sleep_for(std::chrono::milliseconds(100));
     // std::cout << "compile cpp \n";
 
     // for (auto& i : c.project) {
