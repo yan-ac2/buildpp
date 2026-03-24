@@ -134,9 +134,9 @@ class Project
     
     std::vector<std::string> project {};
     std::vector<std::string> object {};
-    std::map<std::string,std::string> modules {};
+    std::vector<std::pair<std::string, std::string>> modules {};
     std::map<std::string,std::vector<std::string>> includeMap {};
-
+    void clearModules() {modules.clear();}
     void setSourcePath(std::string_view in) {
         sourcePath = this->path / in;
     }
@@ -172,7 +172,7 @@ class Project
         std::string cmd {fmt(Compiler, Options, srcInput ,found ? compileInclude : "", objOutput )};
         this->object.push_back(obj);
         std::printf("%s \n",cmd.c_str());
-        //std::system(cmd.c_str());
+        std::system(cmd.c_str());
         
         // objOutput = fmt(" -o ", module);
         // srcInput = fmt(" --precompile ", module," ");
@@ -350,7 +350,7 @@ class dependencyScanner
                 if (epos != std::string::npos) {
                     moduleName = line.substr(epos + exportToken.length());
                     moduleMap[moduleName].push_back(p);
-                    compile->modules[p] = moduleName;
+                    compile->modules.push_back ({p, moduleName});
                 }
             }
             files.close();
@@ -374,9 +374,12 @@ class dependencyScanner
         }
         
         for (const auto& [key, value] : moduleMap) {
+            std::cout << "module map key " << key << " "; 
             for (const auto& dep : value) {
+                std::cout << " depends on " << dep << " "; 
                 dependents[dep].push_back(key);
             }
+            std::cout << std::endl;
         }
 
         // 2. Calculate in-degree for each module
@@ -384,24 +387,62 @@ class dependencyScanner
             for (const auto& dep : second) {
                 inDegree[dep]++;
             }
-            //inDegree[second]++;
-
         }
-
-
         
-        for (const auto& mod : inDegree) {
-            std::cout << "indegree first: " << mod.first << ", In-Degree second: " << mod.second << std::endl;
-        }
-        for (const auto& dep : dependents) {
-            std::cout << "Dependents first " << dep.first << ", Dependents second: ";
-            for (const auto& d : dep.second) {
-                std::cout << d << " ";
+        // 2. Queue modules with 0 dependencies
+        std::queue<std::string> q;
+        {
+            auto maxValue = [](const auto& in) {int ret = 0; for (auto const& value : in) {if (value.second > ret) {ret = value.second;}} return ret;}(inDegree);
+            for (int temp = 0; temp <= maxValue; temp++) {
+                for (const auto& [name, degree] : inDegree) {
+                    
+                    if (degree == maxValue - temp) {
+                        q.push(name);
+                        std::cout << "temp " << temp << " max " << maxValue - temp << " name " << name << " degree " << degree << std::endl;
+                        continue;
+                    }
+                }
             }
-            std::cout << std::endl;
         }
-    }
+        for (std::queue<std::string> temp = q; !temp.empty(); temp.pop()) {
+            std::cout << "queue contains: " << temp.front() << std::endl;
+        }
 
+        std::vector<std::pair<std::string, std::string>> sortedOrder;
+        while (!q.empty()) {
+            std::string u = q.front();
+            std::string moduleFile = [&u](auto& m) {
+                for (const auto& [key, val] : m) {
+                    if (val == u) {
+                        return key;
+                        }
+                } return std::string{};
+            }(modules);
+            std::cout << "Processing module: " << u << " module " << moduleFile << std::endl;
+            q.pop();
+            sortedOrder.push_back({moduleFile, u});
+        }
+        compile->modules.clear();
+        std::cout << "--- Optimized Compilation Order ---" << std::endl;
+        for (const auto& sort : sortedOrder) {
+            std::cout << sort.first << " " << sort.second << " " << std::endl;
+            compile->modules.push_back ({sort.first, sort.second}); // Reorder modules based on sorted order
+        }
+
+        // for (const auto& [key, value] : dependents) {
+        //     std::cout << "Dependents first " << key << ", Dependents second: ";
+        //     for (const auto& d : value) {
+        //         std::cout << d << " ";
+        //     }
+        //     std::cout << std::endl;
+        // }
+        
+        
+        // for (const auto& mod : inDegree) {
+        //     std::cout << "indegree first: " << mod.first << ", In-Degree second: " << mod.second << std::endl;
+        // }
+    }
+    
     void dumpModuleMap() {
         std::cout << "Dump Module Map" << std::endl;
         for (const auto& [key, value] : moduleMap) {
@@ -461,10 +502,12 @@ auto main(int argc, const char** argv) -> int
     c.addInclude(c.path / "source" / "lib" / "glad" / "include");
     c.getCppFile();
     // c.dumpProject();
-    
+    c.object.reserve(c.project.size() -1);
+    c.modules.reserve(c.project.size() -1);
     dependencyScanner scanner(&c);
     scanner.scanInclude();
     scanner.scanModule();
+    //c.dumpModule();
     scanner.reorderModules();
     scanner.dumpModuleMap();
     c.dumpModule();
@@ -475,16 +518,13 @@ auto main(int argc, const char** argv) -> int
     //     std::cout << "link" << std::endl;
     //     c.link(c.object, "main", platform);}
     // );
-    
-    // c.object.reserve(c.project.size() -1);
-    // c.modules.reserve(c.project.size() -1);
 
     // ThreadPool pool(std::thread::hardware_concurrency());
     // //std::cout << std::thread::hardware_concurrency() << "\n";
 
-    // for (auto& i : c.modules) {
-    //         c.preCompile(i,c.outPath.string());
-    // }
+    for (auto& i : c.modules) {
+            c.preCompile(i.first,c.outPath.string());
+    }
     // for (auto& i : c.modules) {
     //     c.compileModule(i,c.outPath.string());
     // }
