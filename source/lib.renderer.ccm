@@ -30,8 +30,8 @@ export
         uint32 FragmentShader2;
         uint32 ShaderProgram;
         public:
-        void init(uint8,uint8,Window*);
-        void update(Window*);
+        void init(uint8,uint8,mWindow*);
+        void update(mWindow*);
     };
 
     void polygonMode(gl face,gl mode) {glPolygonMode(face,mode);}
@@ -88,7 +88,7 @@ cstr fshader2 {
     }
     )"
 };
-void Gl::init(uint8 major,uint8 minor,Window* win)
+void Gl::init(uint8 major,uint8 minor,mWindow* win)
 {
     hint->major = major;
     hint->minor = minor;
@@ -133,7 +133,7 @@ void Gl::init(uint8 major,uint8 minor,Window* win)
     
 }
 
-void Gl::update(Window* win)
+void Gl::update(mWindow* win)
 {
     glUseProgram(ShaderProgram);
     

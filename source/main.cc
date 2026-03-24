@@ -2,12 +2,12 @@ import lib;
 
 class App
 {
-    Window  _win;
-    Event   _ev;
+    mWindow  _win;
+    mEvent   _ev;
     Gl      _ren;
     public:
-    Window* win = &_win;
-    Event* ev = &_ev;
+    mWindow* win = &_win;
+    mEvent* ev = &_ev;
     Gl* ren = &_ren;
     int i;
     void init();

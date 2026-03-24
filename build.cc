@@ -111,7 +111,7 @@ struct Platform {
                     return ".exe";
                     break;
                 default:
-                    return "";
+                    return ".out";
             };
             
         }();
@@ -121,64 +121,101 @@ struct Platform {
 
 class Project
 {
+    std::string Main            {};
+    std::string Options         {"-std=c++23 "};
+    std::string Compiler        {"clang++ "};
+    std::string compileInclude  {};
+    Platform* platform;
     public:
-    std::string_view Compiler {"clang++ "};
-    std::string Options {"-std=c++23 "};
     fs::path path       {"."};
     fs::path sourcePath {};
     fs::path outPath    {};
     fs::path objPath    {};
     fs::path modulePath {};
-    std::string compileInclude {};
-    std::vector<std::string> includePath {};
+    fs::path exePath    {};
     
-    std::vector<std::string> project {};
-    std::vector<std::string> object {};
-    std::vector<std::pair<std::string, std::string>> modules {};
-    std::map<std::string,std::vector<std::string>> includeMap {};
+    std::vector<std::string> includePath {};
+    std::vector<std::string> project     {};
+    std::vector<std::string> object      {};
+    std::vector<std::pair<std::string, std::string>> dependency {};
+    std::vector<std::pair<std::string, std::string>> modules    {};
+    std::map<std::string,std::vector<std::string>> includeMap   {};
     void clearModules() {modules.clear();}
-    void setSourcePath(std::string_view in) {
-        sourcePath = this->path / in;
-    }
+
+    void setSourcePath(std::string_view in) {sourcePath = this->path / in;}
+    void setExePath(std::string_view exe) {exePath = this->path / exe;}
+    void setMain(std::string_view main) {Main = main;}
     void setOutpath(std::string_view out) {
         outPath = this->path / out;
         objPath = outPath / "obj";
         modulePath = outPath / "module";
     }
-    Project() {
-        std::cout << "Project initialized at " << path.string() << std::endl;
-    };
+    Project(Platform* p) : platform(p) {std::cout << "Project initialized at " << path.string() << std::endl;};
+    void addDependency(std::string_view file, std::initializer_list<std::string_view> deps)
+    {
+        std::string _file;
+        std::string _deps = [&]() -> std::string {
+            size_t totalSize = 0;
+            for (const auto& d : deps) {
+                totalSize += d.size() + 1; // +1 for space
+            }
+            std::string result;
+            result.reserve(totalSize);
+            for (const auto& d : deps) {
+                result.append(fmt(" -l" , d , " "));
+            }
+            return result;
+        }();
+
+        for (const auto& files : modules) {
+            std::string filename = fs::path(files.first).filename().stem().string();
+            size_t _stem = filename.find('.');
+            
+            std::cout << "check file " << filename << " against " << file << std::endl;
+            if (filename.substr(_stem + 1, filename.size()) == file) {
+                std::cout << "dependency found for " << file << " in " << files.second << " imp filename " << filename.substr(_stem + 1, filename.size()) << std::endl;
+                _file = files.first;
+                break;
+            } else {continue; }
+        }
+        dependency.emplace_back(_file, _deps);
+    }
     void preCompile(std::string_view inpath,std::string_view outpath) {
         fs::path path = inpath;
         fs::path out = outpath;
     
+        bool _inModule = std::find_if(modules.begin(), modules.end(), [&path](const auto& p) 
+        {return p.first == path.string();}) != modules.end();
         std::string module {(out / "module" / path.stem()).string() + ".pcm"};
         std::string obj {(out / "obj" / path.stem()).string() + ".o"};
         std::string objOutput; 
         std::string srcInput; 
-        bool inModule = std::find_if(modules.begin(), modules.end(), [&path](const auto& p) 
-        {return p.first == path.string();}) != modules.end();
-        if (inModule && path.filename().extension() == ".ccm") {
+        std::string _hasDeps = [&path,this](const auto& p)
+        {
+            for (const auto& dep : dependency) {
+                if (p == dep.first) {
+                    //std::cout << "this path " << path.string() << " deps " << dep.first << " " << dep.second << std::endl;
+                    return dep.second;
+                }
+            }
+            return std::string{};
+        }(path.string());
+
+        if (_inModule && path.filename().extension() == ".ccm") {
             objOutput.append(fmt(" -o ", module));
-            srcInput.append(fmt(" -fprebuilt-module-path=",this->modulePath.string()," --precompile ", path.string()," "));
+            srcInput.append(fmt(_hasDeps," -fprebuilt-module-path=",(this->modulePath / ".").string()," --precompile ", path.string()," "));
         } else {
-            objOutput.append(fmt(" -fprebuilt-module-path=",this->modulePath.string(), " --precompile -o ", module));
-            srcInput.append(fmt("  ",  path.string(), " "));
+            objOutput.append(fmt(" -fprebuilt-module-path=",(this->modulePath / ".").string(), " --precompile -o ", module));
+            srcInput.append(fmt(_hasDeps,"  ",  path.string(), " "));
         }
         auto found = std::find_if(includeMap.begin(), includeMap.end(), [&path](const auto& p) 
         {return p.second[0] == path.string();}) != includeMap.end();
         //std::cout << "\x1b[32m path \x1b[0m" << path.string() << "\x1b[32m found \x1b[0m" << found << std::endl;
         
-        std::string cmd {fmt(Compiler, Options, srcInput ,found ? compileInclude : "", objOutput )};
+        std::string cmd {fmt(Compiler, found ? compileInclude : "",Options, srcInput , objOutput )};
         this->object.push_back(obj);
         std::printf("%s \n",cmd.c_str());
         std::system(cmd.c_str());
-        
-        // objOutput = fmt(" -o ", module);
-        // srcInput = fmt(" --precompile ", module," ");
-        // cmd = fmt(Compiler, Options, srcInput ,found ? compileInclude : "", objOutput );
-        // std::printf("%s \n",cmd.c_str());
-        // std::system(cmd.c_str());
     };
 
     
@@ -190,24 +227,44 @@ class Project
         std::string obj {(dir / "obj" / path.stem()).string() + ".o"};
         std::string objOutput {fmt(" -fprebuilt-module-path=" ,this->modulePath.string(), " -o ", obj)};
         std::string moduleInput {fmt(" -c ",  module ,"  ")};
-        auto found = std::find_if(includeMap.begin(), includeMap.end(), [&path](const auto& p) 
-        {return p.second[0] == path.string();}) != includeMap.end();
     
-        std::string cmd {fmt(Compiler, Options,moduleInput, found ? compileInclude : "", objOutput)};
+        std::string cmd {fmt(Compiler, Options,moduleInput, objOutput)};
         std::printf("%s \n",cmd.c_str());
-        //std::system(cmd.c_str());
+        std::system(cmd.c_str());
     };
-    
-    void link(std::vector<std::string>& path,std::string_view target, Platform platform) {
-        std::string Object;
-        for (auto& p : path) {
-            Object.append(fmt(" ", p));
-        }
-        std::string Executable {fmt(" -o ", fmt((outPath / target).string(), platform.get()), " ")};
+    void compileMain()
+    {
+        fs::path findMain = [this]{
+            for (const auto& p : project) {
+                if (p.find(Main) != std::string::npos) {
+                    return fs::path(p);
+                }
+            }
+            return fs::path{};
+        }();
+        std::string mainOutput {fmt(findMain.string()," -fprebuilt-module-path=", (modulePath / ".").string()," -c -o ", (objPath / findMain.filename().stem()).string() , ".o ")};
         
-        std::string cmd {fmt(Compiler, Options,Executable, Object)};
+        std::string cmd {fmt(Compiler, Options,mainOutput)};
         std::printf("%s \n",cmd.c_str());
-        //std::system(cmd.c_str());       
+        std::system(cmd.c_str());
+        
+        mainOutput = {fmt(findMain.string()," -fprebuilt-module-path=", (modulePath / ".").string()," -c -o ", (modulePath / findMain.filename().stem()).string() , ".pcm ")};
+        cmd = {fmt(Compiler, Options,mainOutput)};
+        std::printf("%s \n",cmd.c_str());
+        std::system(cmd.c_str());
+        
+    }
+    
+    void link(std::string_view target, Platform platform) {
+        std::string Object {fmt(" -lX11 -lGL -fprebuilt-module-path=", (modulePath / ".").string(), " " ,(objPath / target).string(), ".o ")};
+        for (auto& p : object) {
+            Object.append(fmt(" ",p));
+        }
+        std::string Executable {fmt(" -o ", fmt((exePath / target).string(), platform.get()), " ")};
+        
+        std::string cmd {fmt(Compiler,Object,Executable)};
+        std::printf("%s \n",cmd.c_str());
+        std::system(cmd.c_str());       
     }
 
     void addInclude(fs::path compileIncludePath) {
@@ -265,6 +322,15 @@ class Project
             }
             std::cout << std::endl;
         }
+    }
+    void dumpDependencies()
+    {
+        std::cout << "dump dependencies " << std::endl;
+        for (const auto& dep : dependency)
+        {
+            std::cout << "file " << dep.first << " depends on " << dep.second << " " << std::endl;
+        }
+
     }
     
 };
@@ -491,13 +557,18 @@ void makeFolder(const fs::path& path) {
 }
 auto main(int argc, const char** argv) -> int 
 {
+    const fs::path rootPath = fs::current_path().root_path();
     Platform platform(Platform::Linux);
-    Project c;
+    Project c(&platform);
+    c.setMain("main.cc");
+    c.setExePath("");
+
     c.setSourcePath("source");
     c.setOutpath("_build");
     makeFolder(c.outPath);
     makeFolder(c.objPath);
     makeFolder(c.modulePath);
+    //c.addInclude(rootPath / "usr" / "include" / "X11" );
     c.addInclude(c.path / "source" / "lib" / "RGFW");
     c.addInclude(c.path / "source" / "lib" / "glad" / "include");
     c.getCppFile();
@@ -509,49 +580,25 @@ auto main(int argc, const char** argv) -> int
     scanner.scanModule();
     //c.dumpModule();
     scanner.reorderModules();
-    scanner.dumpModuleMap();
     c.dumpModule();
+    c.dumpInclude();
+    c.dumpDependencies();
 
     std::string test;
-    defer endMessage ([&] {std::cout << "end \n"<< test;});
-    // defer link ([&] {
-    //     std::cout << "link" << std::endl;
-    //     c.link(c.object, "main", platform);}
-    // );
 
-    // ThreadPool pool(std::thread::hardware_concurrency());
-    // //std::cout << std::thread::hardware_concurrency() << "\n";
+
+    ThreadPool pool(std::thread::hardware_concurrency());
+    //std::cout << std::thread::hardware_concurrency() << "\n";
 
     for (auto& i : c.modules) {
-            c.preCompile(i.first,c.outPath.string());
+        c.preCompile(i.first,c.outPath.string());
     }
-    // for (auto& i : c.modules) {
-    //     c.compileModule(i,c.outPath.string());
-    // }
-    // while (pool.isEmpty() == false) std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    // std::cout << "compile cpp \n";
-
-    // // for (auto& i : c.project) {
-    // //     if (fs::path(i).extension() == ".cc") {
-    // //         pool.enqueue([&i,&c] {c.compile(i,c.outPath.string());});
-    // //     }
-    // // }
-    // while (pool.isEmpty() == false) std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    // std::cout << "compile cpp \n";
-
-    // for (auto& i : c.project) {
-    //     if (fs::path(i).extension() == ".cc") {
-    //         pool.enqueue([&i,&c] {c.compile(i,c.outPath.string());});
-    //     }
-    // }
-    // while (pool.isEmpty() == false) std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    // std::cout << "compile module \n";
-    // for (auto& i : c.module) {
-    //     pool.enqueue([&i,&c]{c.compileModule(i, c.objPath.string());});
-    //     //std::cout << i << "\n";
-    // }
-    
-    
+    pool.enqueue ([&c]{c.compileMain();});
+    for (auto& i : c.modules) {
+        pool.enqueue([&i,&c]{c.compileModule(i.first,c.outPath.string());});
+    }
+    while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
+    std::cout << "link" << std::endl;
+    c.link("main", platform);
     return 0;
 };

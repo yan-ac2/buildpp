@@ -10,46 +10,46 @@ import lib.types;
 export 
 {
 	using glHints = RGFW_glHints;
-	using Window = RGFW_window;
-	using Event = RGFW_event;
+	using mWindow = RGFW_window;
+	using mEvent = RGFW_event;
 	
 	enum Key : uint8;
 	enum eventType : uint8;
 	enum Flags : uint32;
 
-	void initWindow(Window*,cstr,int32,int32,uint32);
-	void set_Quitkey(Window* ,uint8);
-	void CloseWindow(Window*);
-	void FreeWindow(Window*);
-	int32 ShouldClose(Window*);
+	void initWindow(mWindow*,cstr,int32,int32,uint32);
+	void set_Quitkey(mWindow* ,uint8);
+	void CloseWindow(mWindow*);
+	void FreeWindow(mWindow*);
+	int32 ShouldClose(mWindow*);
 
-	uint8 CheckEvent(Window*,Event*);
-	int32 getKey(const Event*);
+	uint8 CheckEvent(mWindow*,mEvent*);
+	int32 getKey(const mEvent*);
 
 	void setGLhints(glHints*); 
 	glHints* getGLhints();
-	void setGLctx(Window*);
+	void setGLctx(mWindow*,glHints*);
 	void PollEvent(int32); 
-	void GLSwapBuffer(Window*); 
+	void GLSwapBuffer(mWindow*); 
 	
 }
 
 
-void initWindow(Window* win,cstr name,int32 w,int32 h, uint32 f)
+void initWindow(mWindow* win,cstr name,int32 w,int32 h, uint32 f)
 {
 	RGFW_createWindowPtr(name, 0, 0, w, h, static_cast<uint32>(f),win);
 }
-int32 ShouldClose(Window* win) {
+int32 ShouldClose(mWindow* win) {
 	return win->internal.shouldClose;
 }
-void CloseWindow (Window* win) {
+void CloseWindow (mWindow* win) {
 	win->internal.shouldClose = true;
 }
-void set_Quitkey(Window* win ,uint8 key) {
+void set_Quitkey(mWindow* win ,uint8 key) {
 	win->internal.exitKey = key;
 }
 
-void GLSwapBuffer(Window* win) 
+void GLSwapBuffer(mWindow* win) 
 {
 	RGFW_window_swapBuffers_OpenGL(win);
 }
@@ -57,7 +57,7 @@ void setGLhints(glHints* hint)
 {
 	RGFW_setGlobalHints_OpenGL(hint);
 } 
-void setGLctx(Window* win,glHints* hint)
+void setGLctx(mWindow* win,glHints* hint)
 {
 	RGFW_window_createContext_OpenGL(win,hint);
 }
@@ -67,10 +67,10 @@ glHints* getGLhints()
 }
 
 
-uint8 CheckEvent(Window* win, Event* ev) {
+uint8 CheckEvent(mWindow* win, mEvent* ev) {
 	return RGFW_window_checkEvent(win, ev);
 }
-inline int32 getKey(const Event* ev) {
+inline int32 getKey(const mEvent* ev) {
 	return ev->key.value;
 }
 void PollEvent(int32 ms)
@@ -119,7 +119,7 @@ enum Key : uint8
 	key_q = 'q',
 	key_r = 'r',
 	key_s = 's',
-	key_t = 't',
+	key_T = 't',
 	key_u = 'u',
 	key_v = 'v',
 	key_w = 'w',
