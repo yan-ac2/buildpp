@@ -22,24 +22,63 @@ namespace  fs = std::filesystem;
 
 template<typename... Args> concept onlyStr = (std::convertible_to<Args, std::string_view> && ...);
 
-auto fmt(onlyStr auto&&... args) -> std::string  {
-    std::string temp;
-    
-    // Calculate total size using a fold expression and string_view
-    size_t totalSize = 0;
-    ((totalSize += std::string_view(args).size()), ...);
-    
-    // Perform exactly ONE allocation
-    temp.reserve(totalSize);
+enum {Not_color,
+  Black,    Bold_Black,   High_Black,
+  Red,      Bold_Red,     High_Red,
+  Green,    Bold_Green,   High_Green,
+  Yellow,   Bold_Yellow,  High_Yellow,
+  Blue,     Bold_Blue,    High_Blue,
+  Purple,   Bold_Purple,  High_Purple,
+  Cyan,     Bold_Cyan,    High_Cyan,
+  White,    Bold_White,   High_White,
+};
 
-    // Append all arguments using a fold expression
-    (temp.append(std::forward<decltype(args)>(args)), ...);
-    return temp; // Return a pointer to the first element of this; 
+/**
+ * A table which associate each color
+ * with a representation code
+ */
+std::map<int, std::string> color = {
+  {Not_color,     "\033[0m"   },
+  {Black,         "\033[0;0m" },
+  {Red,           "\033[0;31m"},
+  {Green,         "\033[0;32m"},
+  {Yellow,        "\033[0;33m"},
+  {Blue,          "\033[0;34m"},
+  {Purple,        "\033[0;35m"},
+  {Cyan,          "\033[0;36m"},
+  {White,         "\033[0;37m"},
+  {Bold_Black,    "\033[1;30m"},
+  {Bold_Red,      "\033[1;31m"},
+  {Bold_Green,    "\033[1;32m"},
+  {Bold_Yellow,   "\033[1;33m"},
+  {Bold_Blue,     "\033[1;34m"},
+  {Bold_Purple,   "\033[1;35m"},
+  {Bold_Cyan,     "\033[1;36m"},
+  {White,         "\033[1;37m"},
+  {High_Black,    "\033[0;90m"},
+  {High_Red,      "\033[0;91m"},
+  {High_Green,    "\033[0;92m"},
+  {High_Yellow,   "\033[0;93m"},
+  {High_Blue,     "\033[0;94m"},
+  {High_Purple,   "\033[0;95m"},
+  {High_Cyan,     "\033[0;96m"},
+  {High_White,    "\033[0;97m"},
 };
 
 
 
+std::string fmt(onlyStr auto&&... args) {
+    const size_t totalSize = [](auto&&... args) -> size_t {
+        size_t size = 0;
+        ((size += std::string_view(args).size()), ...);
+        return size;
+    }(args...);
+    std::string temp {};
+    temp.reserve(totalSize);
 
+    (temp.append(std::forward<decltype(args)>(args)), ...);
+    return temp; 
+};
 
 class ThreadPool {
 public:
@@ -96,137 +135,159 @@ struct defer {
     ~defer() { f(); }
 };
 
-struct Platform {
-    std::string platform {};
-    enum _os
-    {
-        Windows = 1, 
-        Linux = 2
-    }os ;
-    Platform(_os p) {
-        platform = [&p]() -> std::string {
-            switch (p)
-            {
-                case Platform::Windows:
-                    return ".exe";
-                    break;
-                default:
-                    return ".out";
-            };
-            
-        }();
-    }
-    inline std::string_view get() {return platform;}
-};
-
-class Project
-{
-    std::string Main            {};
-    std::string Options         {"-std=c++23 "};
-    std::string Compiler        {"clang++ "};
-    std::string compileInclude  {};
-    Platform* platform;
-    public:
-    fs::path path       {"."};
+struct ProjectPath {
+    fs::path path       {};
     fs::path sourcePath {};
     fs::path outPath    {};
     fs::path objPath    {};
     fs::path modulePath {};
     fs::path exePath    {};
-    
-    std::vector<std::string> includePath {};
-    std::vector<std::string> project     {};
-    std::vector<std::string> object      {};
-    std::vector<std::pair<std::string, std::string>> dependency {};
-    std::vector<std::pair<std::string, std::string>> modules    {};
-    std::map<std::string,std::vector<std::string>> includeMap   {};
-    void clearModules() {modules.clear();}
 
+    void setProjectPath(std::string_view in) {path = in;}
     void setSourcePath(std::string_view in) {sourcePath = this->path / in;}
     void setExePath(std::string_view exe) {exePath = this->path / exe;}
-    void setMain(std::string_view main) {Main = main;}
     void setOutpath(std::string_view out) {
         outPath = this->path / out;
         objPath = outPath / "obj";
         modulePath = outPath / "module";
-    }
-    Project(Platform* p) : platform(p) {std::cout << "Project initialized at " << path.string() << std::endl;};
-    void addDependency(std::string_view file, std::initializer_list<std::string_view> deps)
-    {
-        std::string _file;
-        std::string _deps = [&]() -> std::string {
-            size_t totalSize = 0;
-            for (const auto& d : deps) {
-                totalSize += d.size() + 1; // +1 for space
-            }
-            std::string result;
-            result.reserve(totalSize);
-            for (const auto& d : deps) {
-                result.append(fmt(" -l" , d , " "));
-            }
-            return result;
-        }();
-
-        for (const auto& files : modules) {
-            std::string filename = fs::path(files.first).filename().stem().string();
-            size_t _stem = filename.find('.');
-            
-            std::cout << "check file " << filename << " against " << file << std::endl;
-            if (filename.substr(_stem + 1, filename.size()) == file) {
-                std::cout << "dependency found for " << file << " in " << files.second << " imp filename " << filename.substr(_stem + 1, filename.size()) << std::endl;
-                _file = files.first;
-                break;
-            } else {continue; }
-        }
-        dependency.emplace_back(_file, _deps);
-    }
-    void preCompile(std::string_view inpath,std::string_view outpath) {
-        fs::path path = inpath;
-        fs::path out = outpath;
-    
-        bool _inModule = std::find_if(modules.begin(), modules.end(), [&path](const auto& p) 
-        {return p.first == path.string();}) != modules.end();
-        std::string module {(out / "module" / path.stem()).string() + ".pcm"};
-        std::string obj {(out / "obj" / path.stem()).string() + ".o"};
-        std::string objOutput; 
-        std::string srcInput; 
-        std::string _hasDeps = [&path,this](const auto& p)
+        for (const auto& lm_dir : {outPath,objPath,modulePath})
         {
-            for (const auto& dep : dependency) {
-                if (p == dep.first) {
-                    //std::cout << "this path " << path.string() << " deps " << dep.first << " " << dep.second << std::endl;
-                    return dep.second;
-                }
+            if (!lm_dir.has_parent_path()) {
+                std::cerr << "Error: Path has no parent path: " << lm_dir.string() << "\n";
+                return;
             }
-            return std::string{};
-        }(path.string());
-
-        if (_inModule && path.filename().extension() == ".ccm") {
-            objOutput.append(fmt(" -o ", module));
-            srcInput.append(fmt(_hasDeps," -fprebuilt-module-path=",(this->modulePath / ".").string()," --precompile ", path.string()," "));
-        } else {
-            objOutput.append(fmt(" -fprebuilt-module-path=",(this->modulePath / ".").string(), " --precompile -o ", module));
-            srcInput.append(fmt(_hasDeps,"  ",  path.string(), " "));
+    
+            if (!fs::exists(lm_dir)) {
+                try {
+                    if (fs::create_directory(lm_dir)) {
+                    std::cout << "Directory created: " << lm_dir << std::endl;
+                    } else {
+                        std::cerr << "Failed to create directory: " << lm_dir << std::endl;
+                    }
+                } catch (const fs::filesystem_error& e) {
+                    std::cerr << "Filesystem error: " << e.what() << std::endl;
+                }
+            } else {
+                std::cout << "Directory already exists: " << lm_dir << std::endl;
+            }
         }
-        auto found = std::find_if(includeMap.begin(), includeMap.end(), [&path](const auto& p) 
-        {return p.second[0] == path.string();}) != includeMap.end();
-        //std::cout << "\x1b[32m path \x1b[0m" << path.string() << "\x1b[32m found \x1b[0m" << found << std::endl;
+    }
+};
+
+class Project
+{
+    ProjectPath* projectPath;
+    std::string platform {
+    [this]{switch (outFile)
+        {
+            case exe:
+                #ifdef _WIN32 
+                return ".exe";
+                #elif defined(__unix__) 
+                return ".out";
+                #endif
+            case dynamicLib: return ".so";
+            default: return "";
+        }
+    }()};
+    std::string Main            {};
+    std::string Options         {"-std=c++23 "};
+    std::string Compiler        {"clang++ "};
+    std::string compileInclude  {};
+    public:
+    enum fileType : int {
+        exe,
+        dynamicLib
+    } outFile;
+
+    
+    
+    std::vector<std::string> includePath {};
+    std::vector<std::string> project     {};
+    std::vector<std::string> object      {};
+    std::vector<std::string> include     {};
+    std::vector<std::pair<std::string, std::string>> dependency {};
+    std::vector<std::pair<std::string, std::string>> modules    {};
+    std::map<std::string,std::vector<std::string>>   includeMap {};
+    std::map<std::string,std::vector<std::string>>   moduleMap  {};
+
+    void clearModules() {modules.clear();}
+    void setMain(std::string_view main) {Main = main;}
+    
+    Project(ProjectPath* path, fileType exe) {
+        projectPath = path;
+        outFile = exe;
+        std::cout << "Project initialized at " << projectPath->path.string() << std::endl;
+    };
+    void addDependency(std::string_view inFile, std::initializer_list<std::string_view> inDeps){
+        std::cout << "add dependency for " << inFile << " with deps: ";
+        for (const auto& d : inDeps) {
+            std::cout << d << " ";
+        }        std::cout << std::endl;
+        std::string f_file;
+        std::string f_deps; 
+
+        size_t totalSize = 0;
+        for (const auto& d : inDeps) {
+            totalSize += d.size() + 1; // +1 for space
+        }
         
-        std::string cmd {fmt(Compiler, found ? compileInclude : "",Options, srcInput , objOutput )};
-        this->object.push_back(obj);
-        std::printf("%s \n",cmd.c_str());
-        std::system(cmd.c_str());
+        f_deps.reserve(totalSize);
+        for (const auto& d : inDeps) {
+            f_deps.append(fmt(" -l" , d , " "));
+        }
+
+        for (const auto& mod : project) {
+            std::string filename = fs::path(mod).filename().string();
+            std::cout << "check file " << filename << " against " << inFile << std::endl;
+            if (filename == inFile) {
+                std::cout << "dependency found for " << inFile << " in " << mod << " imp filename " << filename << std::endl;
+                f_file = mod;
+                break;
+            }
+        }
+        dependency.emplace_back(f_file, f_deps);
+    }
+    void preCompile(std::string_view inpath) {
+        fs::path f_path = inpath;
+
+        auto f_found = std::find_if(includeMap.begin(), includeMap.end(), [&f_path](const auto& p) 
+        {return p.second[0] == f_path.string();}) != includeMap.end();
+        bool f_inModule = std::find_if(modules.begin(), modules.end(), [&f_path](const auto& p) 
+        {return p.first == f_path.string();}) != modules.end();
+    
+        std::string f_objOutput; 
+        std::string f_srcInput; 
+        std::string f_cmd;
+
+        const std::string f_module      {fmt((projectPath->modulePath / f_path.stem()).string(), ".pcm")};
+        const std::string f_obj         {fmt((projectPath->objPath / f_path.stem()).string(), ".o")};
+        // const std::string f_hasDeps =  [&f_path,this](const auto& p){
+        // for (const auto& dep : dependency) {
+        //     if (p == dep.first) {//std::cout << "this path " << path.string() << " deps " << dep.first << " " << dep.second << std::endl;
+        //         return dep.second;
+        //     }
+        // } return std::string{};}
+        // (f_path.string());
+
+        f_objOutput.append(fmt(" -o ", f_module));
+        f_srcInput.append (fmt(" -fprebuilt-module-path=",(projectPath->modulePath / ".").string()," --precompile ", f_path.string()," "));
+        
+        f_cmd = {fmt(Compiler, f_found ? compileInclude : "",Options, f_srcInput , f_objOutput )};
+        
+        this->object.push_back(f_obj);
+        std::printf("%s \n",f_cmd.c_str());
+        std::system(f_cmd.c_str());
     };
 
     
-    void compileModule(std::string_view inpath,std::string_view outpath) {
+    void compileModule(std::string_view inpath) {
         fs::path path = inpath;
-        fs::path dir = outpath;
         
-        std::string module {(dir / "module" / path.stem()).string() + ".pcm"};
-        std::string obj {(dir / "obj" / path.stem()).string() + ".o"};
-        std::string objOutput {fmt(" -fprebuilt-module-path=" ,this->modulePath.string(), " -o ", obj)};
-        std::string moduleInput {fmt(" -c ",  module ,"  ")};
+        const std::string module      {fmt((projectPath->modulePath / path.stem()).string() , ".pcm")};
+        const std::string obj         {fmt((projectPath->objPath / path.stem()).string(), ".o")};
+        const std::string objOutput   {fmt(" -fprebuilt-module-path=" ,this->projectPath->modulePath.string(), " -o ", obj)};
+        const std::string moduleInput {fmt(" -c ",  module ,"  ")};
     
         std::string cmd {fmt(Compiler, Options,moduleInput, objOutput)};
         std::printf("%s \n",cmd.c_str());
@@ -234,7 +295,7 @@ class Project
     };
     void compileMain()
     {
-        fs::path findMain = [this]{
+        const fs::path findMain = [this]{
             for (const auto& p : project) {
                 if (p.find(Main) != std::string::npos) {
                     return fs::path(p);
@@ -242,54 +303,80 @@ class Project
             }
             return fs::path{};
         }();
-        std::string mainOutput {fmt(findMain.string()," -fprebuilt-module-path=", (modulePath / ".").string()," -c -o ", (objPath / findMain.filename().stem()).string() , ".o ")};
+        std::string mainOutput {fmt(findMain.string()," -fprebuilt-module-path=", (projectPath->modulePath / ".").string(),
+                                " -c -o ", (projectPath->objPath / findMain.filename().stem()).string() , ".o ")};
         
         std::string cmd {fmt(Compiler, Options,mainOutput)};
         std::printf("%s \n",cmd.c_str());
         std::system(cmd.c_str());
         
-        mainOutput = {fmt(findMain.string()," -fprebuilt-module-path=", (modulePath / ".").string()," -c -o ", (modulePath / findMain.filename().stem()).string() , ".pcm ")};
+        mainOutput = {fmt(findMain.string()," -fprebuilt-module-path=", (projectPath->modulePath / ".").string()," -c -o ", (projectPath->modulePath / findMain.filename().stem()).string() , ".pcm ")};
         cmd = {fmt(Compiler, Options,mainOutput)};
         std::printf("%s \n",cmd.c_str());
         std::system(cmd.c_str());
+    }
+    void compileC(std::string_view inPath)
+    {
+        fs::path f_path = inPath;
+
+        auto f_found = std::find_if(includeMap.begin(), includeMap.end(), [&f_path](const auto& p) 
+        {return p.second[0] == f_path.string();}) != includeMap.end();
+        const std::string obj {fmt((projectPath->objPath / f_path.stem()).string(), ".o")};
         
+        std::string cmd {fmt("clang ",f_found ? compileInclude : "" ,fmt(" -c ", inPath, " -o ", obj))};
+        std::printf("%s \n",cmd.c_str());
+        std::system(cmd.c_str());
     }
     
-    void link(std::string_view target, Platform platform) {
-        std::string Object {fmt(" -lX11 -lGL -fprebuilt-module-path=", (modulePath / ".").string(), " " ,(objPath / target).string(), ".o ")};
+    void link(std::string_view target) {
+        std::string Executable {fmt(" -o ", fmt((projectPath->exePath / target).string(), platform), " ")};
+        std::string Object     {fmt(" -fprebuilt-module-path=", (projectPath->modulePath / ".").string(), " " ,
+                                (projectPath->objPath / target).string(), ".o ")};
+        
         for (auto& p : object) {
+            for (const auto& deps : dependency)
+            {
+                if (fs::path(deps.first).stem().string() == fs::path(p).stem().string())
+                {
+                    std::cout << "check dependency " << deps.first << " against " << p << std::endl;
+                    Object.append(deps.second);   
+                }
+            }
             Object.append(fmt(" ",p));
         }
-        std::string Executable {fmt(" -o ", fmt((exePath / target).string(), platform.get()), " ")};
+        std::string cmd; 
         
-        std::string cmd {fmt(Compiler,Object,Executable)};
+        cmd = {fmt(Compiler,Object,Executable)};
         std::printf("%s \n",cmd.c_str());
         std::system(cmd.c_str());       
     }
 
-    void addInclude(fs::path compileIncludePath) {
-        if (compileIncludePath.empty()) {
+    void addInclude(fs::path IncludePath) {
+        if (IncludePath.empty()) {
             throw std::invalid_argument("compileIncludePath cannot be empty");
         } 
 
-        if (!fs::exists(compileIncludePath)) {
-            throw std::runtime_error(fmt("compileInclude path ",compileIncludePath.string(), "does not exist"));
+        if (!fs::exists(IncludePath)) {
+            throw std::runtime_error(fmt("Include path ",IncludePath.string(), "does not exist"));
         }
-        includePath.push_back(compileIncludePath.string());
-        compileInclude.append(fmt("-I ",compileIncludePath.string(), " "));
+        includePath.push_back(IncludePath.string());
+        compileInclude.append(fmt("-I ",IncludePath.string(), " "));
     }
 
     void getCppFile() {
-        if (!fs::exists(sourcePath) || !fs::is_directory(sourcePath)) {std::cerr << "Directory does not exist.\n"; return;}
+        if (!fs::exists(projectPath->sourcePath) || !fs::is_directory(projectPath->sourcePath)) {std::cerr << "Directory does not exist.\n"; return;}
 
-        fs::directory_iterator iterator(sourcePath);
+        fs::directory_iterator iterator(projectPath->sourcePath);
         for (const auto& entry : iterator) {
             if (entry.is_regular_file()) {
                 if (entry.path().extension() == ".ccm" || entry.path().extension() == ".cc") {
+                    std::cout << "add project file " << entry.path().filename().string() << " " << entry.path().string() << std::endl;
                     project.emplace_back(entry.path().string());
                 }
             }
         }
+        object.reserve  (project.size());
+        modules.reserve (project.size());
         for (const auto& includeScan : includePath) {
             fs::recursive_directory_iterator iterator2(includeScan);
             for (const auto& entry : iterator2) {
@@ -300,58 +387,36 @@ class Project
             }
         }
     }
+    void getCFile() {
+        if (!fs::exists(projectPath->sourcePath) || !fs::is_directory(projectPath->sourcePath)) {std::cerr << "Directory does not exist.\n"; return;}
 
-    void dumpProject() {
-        std::cout << "dump project" << std::endl;
-        for (const auto& p : project) {
-            std::cout << p << std::endl;
-        }
-    }
-    void dumpModule() {
-        std::cout << "dump module" << std::endl;
-        for (const auto& i : modules) {
-            std::cout << "module " << i.first << " module name " << i.second << std::endl;
-        }
-    }
-    void dumpInclude() {
-        std::cout << "dump include" << std::endl;
-        for (const auto& [key, value] : includeMap) {
-            std::cout << "include " << key << " ";
-            for (const auto& v : value) {
-                std::cout << v << " "; 
+        fs::directory_iterator iterator(projectPath->sourcePath);
+        for (const auto& entry : iterator) {
+            if (entry.is_regular_file()) {
+                if (entry.path().extension() == ".c") {
+                    std::cout << "add project file " << entry.path().filename().string() << " " << entry.path().string() << std::endl;
+                    project.emplace_back(entry.path().string());
+                }
             }
-            std::cout << std::endl;
         }
-    }
-    void dumpDependencies()
-    {
-        std::cout << "dump dependencies " << std::endl;
-        for (const auto& dep : dependency)
-        {
-            std::cout << "file " << dep.first << " depends on " << dep.second << " " << std::endl;
+        object.reserve  (project.size());
+        modules.reserve (project.size());
+        for (const auto& includeScan : includePath) {
+            fs::recursive_directory_iterator iterator2(includeScan);
+            for (const auto& entry : iterator2) {
+                if (entry.is_regular_file() && (entry.path().extension() == ".h")) {
+                    //std::cout << "add include " << entry.path().filename().string() << " " << entry.path().string() << std::endl;
+                    includeMap[entry.path().filename().string()].emplace_back(entry.path().string());
+                }
+            }
         }
-
-    }
-    
-};
-
-class dependencyScanner
-{
-    Project* compile;
-    std::string_view importToken {"import"};
-    std::string_view includeToken {"#include"};
-    std::string_view exportToken {"export module"};
-    std::vector<std::string> include {};
-    std::map<std::string,std::vector<std::string>> moduleMap {};
-
-    
-    public:
-    dependencyScanner(Project* p) {
-        compile = p;
     }
 
     void scanInclude() {
-        for (const auto& p : compile->project) {
+        const std::string_view importToken    {"import"};
+        const std::string_view includeToken   {"#include"};
+        const std::string_view exportToken    {"export module"};
+        for (const auto& p : project) {
             if (p.empty()) {
                 std::cerr << "Error: Empty project path" << std::endl;
                 continue;
@@ -374,10 +439,10 @@ class dependencyScanner
                 }
                 includeFound = {fs::path{line.substr(pos + includeToken.length())}.filename().string()};
                 std::erase_if(includeFound, [](char c) { return c == '"' || c == '<' || c == '>' || c == ' '; });
-                for (const auto& map : compile->includeMap) {
+                for (const auto& map : includeMap) {
                     if (map.first == includeFound) {
                         std::cout << "include found " << includeFound << " in " << p << std::endl;
-                        compile->includeMap[includeFound] = {p};
+                        includeMap[includeFound] = {p};
                         include.emplace_back(includeFound);
                     }
                 }
@@ -385,13 +450,16 @@ class dependencyScanner
             files.close();
         }
         
-        std::erase_if(compile->includeMap, [&](const auto& c) { 
+        std::erase_if(includeMap, [&](const auto& c) { 
             return std::find(include.begin(), include.end(), c.first) == include.end(); });
     }
 
     void scanModule() {
-        for (const auto& p : compile->project) {
-            std::cout << "scan module " << p << std::endl;
+        const std::string_view importToken  {"import"};
+        const std::string_view includeToken {"#include"};
+        const std::string_view exportToken  {"export module"};
+        for (const auto& p : project) {
+            std::cout << "scan module " << p;
             if (p.empty()) {
                 std::cerr << "Error: Empty project path" << std::endl;
                 continue;
@@ -409,22 +477,36 @@ class dependencyScanner
                 size_t epos = line.find(exportToken);
                 std::string moduleName;
                 if (ipos != std::string::npos && line.find('.') != std::string::npos) {
+                    std::cout << " import module found in " << p << std::endl;
                     moduleName = line.substr(ipos + importToken.length());
                     moduleMap[moduleName].push_back(p);
                     //compile->modules.emplace_back(p,moduleName);
                 }
                 if (epos != std::string::npos) {
+                    std::cout << " export module found in " << p << std::endl;
                     moduleName = line.substr(epos + exportToken.length());
                     moduleMap[moduleName].push_back(p);
-                    compile->modules.push_back ({p, moduleName});
+                    modules.push_back ({p, moduleName});
                 }
             }
             files.close();
         }
-        // for (const auto& mod : moduleMap) {
-        //     compile->modules.push_back(mod.second[0]);
-        // }
     }
+
+    
+    
+};
+
+class depScanner
+{
+    Project* compile;
+
+    public:
+    void operator=(Project* p) {
+        compile = p;
+    }
+
+    
 
     void reorderModules()
     {
@@ -439,7 +521,7 @@ class dependencyScanner
                 inDegree[value] += 0; // Number of imports (dependencies)
         }
         
-        for (const auto& [key, value] : moduleMap) {
+        for (const auto& [key, value] : compile->moduleMap) {
             std::cout << "module map key " << key << " "; 
             for (const auto& dep : value) {
                 std::cout << " depends on " << dep << " "; 
@@ -511,7 +593,7 @@ class dependencyScanner
     
     void dumpModuleMap() {
         std::cout << "Dump Module Map" << std::endl;
-        for (const auto& [key, value] : moduleMap) {
+        for (const auto& [key, value] : compile->moduleMap) {
             std::cout << "moduleMap (first) " << key << " (second) ";
 
             for (const auto& v : value) {
@@ -532,73 +614,92 @@ class dependencyScanner
         }
     }
 
+    void dumpProject() {
+        std::cout << " dump project" << std::endl;
+        for (const auto& p : compile->project) {
+            std::cout << p << std::endl;
+        }
+    }
+    void dumpModule() {
+        std::cout << " dump module" << std::endl;
+        for (const auto& i : compile->modules) {
+            std::cout << "module " << i.first << " module name " << i.second << std::endl;
+        }
+    }
+    void dumpInclude() {
+        std::cout << " dump include" << std::endl;
+        for (const auto& [key, value] : compile->includeMap) {
+            std::cout << "include " << key << " ";
+            for (const auto& v : value) {
+                std::cout << v << " "; 
+            }
+            std::cout << std::endl;
+        }
+    }
+    void dumpDependencies()
+    {
+        std::cout << " dump dependencies " << std::endl;
+        for (const auto& dep : compile->dependency)
+        {
+            std::cout << "file " << dep.first << " depends on " << dep.second << " " << std::endl;
+        }
+
+    }
 
 };
 
-void makeFolder(const fs::path& path) {
-    if (!path.has_parent_path()) {
-        std::cerr << "Error: Path has no parent path: " << path.string() << "\n";
-        return;
-    }
-
-    if (!fs::exists(path)) {
-        try {
-            if (fs::create_directory(path)) {
-            std::cout << "Directory created: " << path << std::endl;
-            } else {
-                std::cerr << "Failed to create directory: " << path << std::endl;
-            }
-        } catch (const fs::filesystem_error& e) {
-            std::cerr << "Filesystem error: " << e.what() << std::endl;
-        }
-    } else {
-        std::cout << "Directory already exists: " << path << std::endl;
-    }
-}
 auto main(int argc, const char** argv) -> int 
 {
-    const fs::path rootPath = fs::current_path().root_path();
-    Platform platform(Platform::Linux);
-    Project c(&platform);
-    c.setMain("main.cc");
-    c.setExePath("");
-
-    c.setSourcePath("source");
-    c.setOutpath("_build");
-    makeFolder(c.outPath);
-    makeFolder(c.objPath);
-    makeFolder(c.modulePath);
-    //c.addInclude(rootPath / "usr" / "include" / "X11" );
-    c.addInclude(c.path / "source" / "lib" / "RGFW");
-    c.addInclude(c.path / "source" / "lib" / "glad" / "include");
-    c.getCppFile();
-    // c.dumpProject();
-    c.object.reserve(c.project.size() -1);
-    c.modules.reserve(c.project.size() -1);
-    dependencyScanner scanner(&c);
-    scanner.scanInclude();
-    scanner.scanModule();
-    //c.dumpModule();
-    scanner.reorderModules();
-    c.dumpModule();
-    c.dumpInclude();
-    c.dumpDependencies();
-
-    std::string test;
-
-
     ThreadPool pool(std::thread::hardware_concurrency());
-    //std::cout << std::thread::hardware_concurrency() << "\n";
+    const fs::path rootPath = ".";
+    depScanner scanner;
+    ProjectPath GLADPath;
+    GLADPath.setProjectPath((rootPath /"source"/"lib"/"glad").c_str());
+    GLADPath.setExePath("");
+    GLADPath.setSourcePath("src");
+    GLADPath.setOutpath("_build");
 
-    for (auto& i : c.modules) {
-        c.preCompile(i.first,c.outPath.string());
+    ProjectPath mainPath;
+    mainPath.setProjectPath(".");
+    mainPath.setExePath("");
+    mainPath.setSourcePath("source");
+    mainPath.setOutpath("_build");
+
+    Project libGLAD(&GLADPath, Project::exe);
+    libGLAD.setMain((fs::path("stc") / "glad.c").c_str());
+    libGLAD.addInclude(GLADPath.path / "include");
+    libGLAD.getCFile();
+    libGLAD.scanInclude();
+    libGLAD.addDependency("lib/glad.c", {"GL"});
+
+    Project mainProj(&mainPath, Project::exe);
+    mainProj.setMain("main.cc");
+
+    //mainProj.addInclude(rootPath / "usr" / "include" / "X11" );
+    mainProj.addInclude(mainPath.sourcePath  / "lib" / "RGFW");
+    mainProj.addInclude(mainPath.sourcePath  / "lib" / "glad" / "include");
+    mainProj.getCppFile();
+    mainProj.scanInclude();
+    mainProj.scanModule();
+    mainProj.addDependency("lib.RGFW.ccm",{"GL", "X11", "Xrandr"});
+    // mainProj.dumpProject();
+    scanner = &mainProj;
+    scanner.reorderModules();
+    scanner.dumpModule();
+    scanner.dumpDependencies();
+    for (const auto& i : libGLAD.project) {
+        libGLAD.compileC(i);
     }
-    pool.enqueue ([&c]{c.compileMain();});
-    for (auto& i : c.modules) {
-        pool.enqueue([&i,&c]{c.compileModule(i.first,c.outPath.string());});
-    }
-    while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
-    std::cout << "link" << std::endl;
-    c.link("main", platform);
+    //std::cout << std::thread::hardware_concurrency() << "\n";
+    // for (auto& i : mainProj.modules) {
+    //     mainProj.preCompile(i.first);
+    // }
+    // pool.enqueue ([&mainProj]{mainProj.compileMain();});
+    // for (auto& i : mainProj.modules) {
+    //     pool.enqueue([&i,&mainProj]{mainProj.compileModule(i.first);});
+    // }
+    // while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
+    // std::cout << "link" << std::endl;
+    // mainProj.link("main");
     return 0;
 };
