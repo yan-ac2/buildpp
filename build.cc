@@ -7,12 +7,12 @@ int selfCompile()
     outPath outPath;
     outPath.setRootPath(rootPath.string());
     outPath.setExePath("");
-    outPath.setOutpath((rootPath / "_build" / "self").c_str());
+    outPath.setOutpath("_buildself");
 
     Project rebuild(&outPath,Project::exe);
     rebuild.setProjectPath(".");
     rebuild.setSourcePath("");
-    rebuild.setMain((rebuild.sourcePath / "build.cc").c_str());
+    rebuild.setMain((rebuild.sourcePath / "build.cc").string());
     rebuild.getCppFile();
     rebuild.addDependency("build.cc",{"c++","c++abi"});
     rebuild.compileMain();
@@ -32,7 +32,7 @@ int compileProject()
 
     
     cProject libGLAD(&outPath, cProject::staticLib);
-    libGLAD.setProjectPath((rootPath / "source" / "lib" / "glad").c_str());
+    libGLAD.setProjectPath((rootPath / "example" / "source" / "lib" / "glad").c_str());
     libGLAD.setSourcePath("src");
     libGLAD.setMain((libGLAD.sourcePath / "glad.c").c_str());
     libGLAD.addInclude(libGLAD.path / "include");
@@ -43,7 +43,7 @@ int compileProject()
     
     
     Project mainProj(&outPath, Project::exe);
-    mainProj.setProjectPath(rootPath.c_str());
+    mainProj.setProjectPath((rootPath / "example").c_str());
     mainProj.setSourcePath("source");
     mainProj.setMain("main.cc");
     
@@ -63,7 +63,6 @@ int compileProject()
     for (const auto& i : libGLAD.project) {
         libGLAD.compileC(i);
     }
-    libGLAD.dumpObjects();
     mainProj.getLib(&libGLAD);
     for (auto& i : mainProj.modules) {
         mainProj.preCompile(i.first);

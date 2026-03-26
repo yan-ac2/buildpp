@@ -1,5 +1,8 @@
-**/bin
-**/build
-**/_build
-**/.exe
-**/.out
+bin/
+build/
+_build/
+_buildself/
+*.exe
+*.out
+*.old
+.vscode/

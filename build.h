@@ -167,6 +167,7 @@ struct outPath {
                     }
                 } catch (const fs::filesystem_error& e) {
                     std::cerr << "Filesystem error: " << e.what() << std::endl;
+                    return;
                 }
             } else {
                 std::cout << "Directory already exists: " << lm_dir << std::endl;
