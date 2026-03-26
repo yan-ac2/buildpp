@@ -53,7 +53,7 @@ int compileProject()
     mainProj.getCppFile();
     mainProj.scanInclude();
     mainProj.scanModule();
-    mainProj.addDependency("lib.RGFW.ccm",{"GL", "X11", "Xrandr"});
+    mainProj.addDependency("RGFW.ccm",{"GL", "X11", "Xrandr"});
     mainProj.addDependency("lib.std.ccm",{"c++","c++abi"});
     // mainProj.dumpProject();
     scanner = &mainProj;
