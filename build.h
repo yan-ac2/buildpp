@@ -37,33 +37,36 @@ enum {Not_color,
  * A table which associate each color
  * with a representation code
  */
-std::map<int, std::string> color = {
-  {Not_color,     "\033[0m"   },
-  {Black,         "\033[0;0m" },
-  {Red,           "\033[0;31m"},
-  {Green,         "\033[0;32m"},
-  {Yellow,        "\033[0;33m"},
-  {Blue,          "\033[0;34m"},
-  {Purple,        "\033[0;35m"},
-  {Cyan,          "\033[0;36m"},
-  {White,         "\033[0;37m"},
-  {Bold_Black,    "\033[1;30m"},
-  {Bold_Red,      "\033[1;31m"},
-  {Bold_Green,    "\033[1;32m"},
-  {Bold_Yellow,   "\033[1;33m"},
-  {Bold_Blue,     "\033[1;34m"},
-  {Bold_Purple,   "\033[1;35m"},
-  {Bold_Cyan,     "\033[1;36m"},
-  {White,         "\033[1;37m"},
-  {High_Black,    "\033[0;90m"},
-  {High_Red,      "\033[0;91m"},
-  {High_Green,    "\033[0;92m"},
-  {High_Yellow,   "\033[0;93m"},
-  {High_Blue,     "\033[0;94m"},
-  {High_Purple,   "\033[0;95m"},
-  {High_Cyan,     "\033[0;96m"},
-  {High_White,    "\033[0;97m"},
-};
+namespace maybe_notused_yet
+{
+    std::map<int, std::string> color = {
+      {Not_color,     "\033[0m"   },
+      {Black,         "\033[0;0m" },
+      {Red,           "\033[0;31m"},
+      {Green,         "\033[0;32m"},
+      {Yellow,        "\033[0;33m"},
+      {Blue,          "\033[0;34m"},
+      {Purple,        "\033[0;35m"},
+      {Cyan,          "\033[0;36m"},
+      {White,         "\033[0;37m"},
+      {Bold_Black,    "\033[1;30m"},
+      {Bold_Red,      "\033[1;31m"},
+      {Bold_Green,    "\033[1;32m"},
+      {Bold_Yellow,   "\033[1;33m"},
+      {Bold_Blue,     "\033[1;34m"},
+      {Bold_Purple,   "\033[1;35m"},
+      {Bold_Cyan,     "\033[1;36m"},
+      {White,         "\033[1;37m"},
+      {High_Black,    "\033[0;90m"},
+      {High_Red,      "\033[0;91m"},
+      {High_Green,    "\033[0;92m"},
+      {High_Yellow,   "\033[0;93m"},
+      {High_Blue,     "\033[0;94m"},
+      {High_Purple,   "\033[0;95m"},
+      {High_Cyan,     "\033[0;96m"},
+      {High_White,    "\033[0;97m"},
+    };
+}
 
 
 
