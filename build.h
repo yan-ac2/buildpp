@@ -22,24 +22,19 @@ namespace  fs = std::filesystem;
 
 template<typename... Args> concept onlyStr = (std::convertible_to<Args, std::string_view> && ...);
 
-enum {Not_color,
-  Black,    Bold_Black,   High_Black,
-  Red,      Bold_Red,     High_Red,
-  Green,    Bold_Green,   High_Green,
-  Yellow,   Bold_Yellow,  High_Yellow,
-  Blue,     Bold_Blue,    High_Blue,
-  Purple,   Bold_Purple,  High_Purple,
-  Cyan,     Bold_Cyan,    High_Cyan,
-  White,    Bold_White,   High_White,
-};
-
-/**
- * A table which associate each color
- * with a representation code
- */
-namespace maybe_notused_yet
+namespace notused_yet
 {
-    std::map<int, std::string> color = {
+    enum {Not_color,
+      Black,    Bold_Black,   High_Black,
+      Red,      Bold_Red,     High_Red,
+      Green,    Bold_Green,   High_Green,
+      Yellow,   Bold_Yellow,  High_Yellow,
+      Blue,     Bold_Blue,    High_Blue,
+      Purple,   Bold_Purple,  High_Purple,
+      Cyan,     Bold_Cyan,    High_Cyan,
+      White,    Bold_White,   High_White,
+    };
+    static std::map<int, std::string> color = {
       {Not_color,     "\033[0m"   },
       {Black,         "\033[0;0m" },
       {Red,           "\033[0;31m"},
@@ -83,60 +78,6 @@ std::string fmt(onlyStr auto&&... args) {
     return temp; 
 };
 
-class ThreadPool {
-public:
-    explicit ThreadPool(size_t num_threads) {
-        for (size_t i = 0; i < num_threads; ++i) {
-            threads_.emplace_back([this] {
-                while (true) {
-                    std::function<void()> task;
-                    {
-                        std::unique_lock lock(queue_mutex_);
-                        cv_.wait(lock, [this] { return !tasks_.empty() || stop_; });
-                        if (stop_ && tasks_.empty()) return;
-                        task = std::move(tasks_.front());
-                        tasks_.pop();
-                    }
-                    task();
-                }
-            });
-        }
-    }
-
-    ~ThreadPool() {
-        {
-            std::unique_lock lock(queue_mutex_);
-            stop_ = true;
-        }
-        cv_.notify_all();
-        for (auto& thread : threads_) {
-            thread.join();
-        }
-    }
-
-    template<typename F>
-    void enqueue(F&& f) {
-        {
-            std::unique_lock lock(queue_mutex_);
-            tasks_.emplace(std::forward<F>(f));
-        }
-        cv_.notify_one();
-    }
-    int isEmpty() {return tasks_.empty();}
-    private:
-    std::vector<std::jthread> threads_;
-    std::queue<std::function<void()>> tasks_;
-    mutable std::mutex queue_mutex_;
-    std::condition_variable cv_;
-    bool stop_ = false;
-};
-
-template<typename F>
-struct defer {
-    F f;
-    defer(F&& f) : f(f) {}
-    ~defer() { f(); }
-};
 
 struct outPath {
     fs::path rootPath   {};
@@ -487,20 +428,20 @@ class Project
         }
         dependency.emplace_back(f_file, f_deps);
     }
-    void preCompile(std::string_view inpath) {
+    void compilePcm(std::string_view inpath) {
         fs::path f_path = inpath;
 
         bool f_found = std::find_if(includeMap.begin(), includeMap.end(), [&f_path](const auto& p) 
         {return p.second[0] == f_path.string();}) != includeMap.end();
         bool f_inModule = std::find_if(modules.begin(), modules.end(), [&f_path](const auto& p) 
         {return p.first == f_path.string();}) != modules.end();
+        const std::string f_module      {fmt((projectOutPath->modulePath / f_path.stem()).string(), ".pcm")};
+        const std::string f_obj         {fmt((projectOutPath->objPath / f_path.stem()).string(), ".o")};
     
         std::string f_objOutput; 
         std::string f_srcInput; 
         std::string f_cmd;
 
-        std::string f_module      {fmt((projectOutPath->modulePath / f_path.stem()).string(), ".pcm")};
-        std::string f_obj         {fmt((projectOutPath->objPath / f_path.stem()).string(), ".o")};
         // const std::string f_hasDeps =  [&f_path,this](const auto& p){
         // for (const auto& dep : dependency) {
         //     if (p == dep.first) {//std::cout << "this path " << path.string() << " deps " << dep.first << " " << dep.second << std::endl;
@@ -520,42 +461,49 @@ class Project
     };
 
     
-    void compileModule(std::string_view inpath) {
-        fs::path path = inpath;
-        std::string moduleOption = Options;
-        auto stdliboption = moduleOption.find("-stdlib=");
-        moduleOption.erase(stdliboption, moduleOption.find("-c"));
+    // void compileModule(std::string_view inpath) {
+    //     fs::path path = inpath;
+    //     std::string moduleOption = Options;
+    //     auto stdliboption = moduleOption.find("-stdlib=");
+    //     moduleOption.erase(stdliboption, moduleOption.find("-c"));
         
-        const std::string module      {fmt((projectOutPath->modulePath / path.stem()).string() , ".pcm")};
-        const std::string obj         {fmt((projectOutPath->objPath / path.stem()).string(), ".o")};
-        const std::string objOutput   {fmt(" -fprebuilt-module-path=" ,projectOutPath->modulePath.string(), " -o ", obj)};
-        const std::string moduleInput {fmt(" -c ",  module ,"  ")};
+    //     const std::string module      {fmt((projectOutPath->modulePath / path.stem()).string() , ".pcm")};
+    //     const std::string obj         {fmt((projectOutPath->objPath / path.stem()).string(), ".o")};
+    //     const std::string objOutput   {fmt(" -fprebuilt-module-path=" ,projectOutPath->modulePath.string(), " -o ", obj)};
+    //     const std::string moduleInput {fmt(" -c ",  module ,"  ")};
     
-        std::string cmd {fmt(Compiler, moduleOption,moduleInput, objOutput)};
-        std::printf("%s \n",cmd.c_str());
-        std::system(cmd.c_str());
-    };
-    void compileMain()
+    //     std::string cmd {fmt(Compiler, moduleOption,moduleInput, objOutput)};
+    //     std::printf("%s \n",cmd.c_str());
+    //     std::system(cmd.c_str());
+    // };
+    void compileCpp(std::string_view inPath)
     {
-        const fs::path findMain = [this]{
-            for (const auto& p : project) {
-                if (p.find(Main) != std::string::npos) {
-                    return fs::path(p);
+        fs::path f_path = inPath;
+        const std::string objOutput {fmt((projectOutPath->objPath / f_path.filename().stem()).c_str() , ".o")};
+
+        bool f_includefound = std::find_if(includeMap.begin(), includeMap.end(), [&f_path](const auto& p) 
+        {return p.second[0] == f_path.string();}) != includeMap.end();
+        bool f_inObject = [&objOutput,this]() {
+            for (const auto& obj : object) {
+                std::cout << " obj " << obj << " objout " << objOutput << std::endl;
+                if (obj == objOutput) {
+                    std::cout << " exist " << obj << std::endl;
+                    return true;
+                    break;
                 }
             }
-            return fs::path{};
+            return false;
         }();
+            
+
+        std::string cppOutput {fmt( " ",f_path.string(),modules.empty() ? "" : fmt(" -fprebuilt-module-path=", projectOutPath->modulePath.c_str())," -c -o ")};
         
-        if (findMain.empty()) {
-            std::cout << "could not find main" << std::endl;
-            return;
-        }
-        std::string objOutput {fmt((projectOutPath->objPath / findMain.filename().stem()).string() , ".o ")};
-        std::string moduleOut {fmt((projectOutPath->modulePath / findMain.filename().stem()).string() , ".pcm ")};
-        std::string mainOutput {fmt( " ",findMain.string(),modules.empty() ? "" : fmt(" -fprebuilt-module-path=", (projectOutPath->modulePath / ".").string())," -c -o ")};
-        
-        std::string cmd {fmt(Compiler, Options,mainOutput,objOutput)};
-        object.emplace_back(objOutput);
+        std::string cmd {fmt(Compiler, Options,f_includefound ? compileInclude : "",cppOutput, objOutput)};
+        if (!f_inObject)
+        {
+            std::cout << " objout " << objOutput << std::endl;
+            object.emplace_back(objOutput);
+        } 
         std::printf("%s \n",cmd.c_str());
         std::system(cmd.c_str());
     }
