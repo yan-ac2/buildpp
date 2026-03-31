@@ -1,5 +1,4 @@
 #include "build.h"
-#include <cstdlib>
 
 
 class ThreadPool {
@@ -28,7 +27,7 @@ public:
             stop_ = true;
         }
         cv_.notify_all();
-        std::cout << "exiting"_fmt.setColor(fmt::Bold_Green) << std::endl;
+        print << "exiting"_fmt.color(fmt::Bold_Green).endl();
         for (auto& thread : threads_) {
             thread.join();
         }
@@ -52,84 +51,73 @@ public:
 };
 
 int test()
-{ try 
+{ 
+    print << "compile test"_fmt.color(fmt::Bold_Green).endl();
+    outputPath outPath;
+    outPath.setRootPath(".")
+    .setExePath("")
+    .setOutpath("_buildtest");
+
+    Project test(&outPath,Project::exe,true);
+
+    #ifdef _WIN32
+    test.setCompiler("clang++").setOptions("-O0 -Wall -std=c++23")
+    #elif __unix__
+    test.setCompiler("clang++-20")
+    .setOptions("-O3 -std=c++23 -stdlib=libc++ ")
+    #endif
+    .setProjectPath(".")
+    .setSourcePath("")
+    .setMain((test._sourcePath / "test.cc").string())
+    .addSource({"sptr.cc"})
+    .getCppFile();
+    
+    #ifdef __unix__
+    test.addDependency("sptr.cc",{"c++","c++abi"});
+    #endif
+    for (const auto& i : test._project)
     {
-        std::cout << "compile test"_fmt.setColor(fmt::Bold_Green) << std::endl;
-        outputPath outPath;
-        outPath.setRootPath(".").
-        setExePath("").
-        setOutpath("_buildtest");
-
-        Project test(&outPath,Project::exe,true);
-
-        #ifdef _WIN32
-        test.setCompiler("clang++").setOptions("-O0 -Wall -std=c++23")
-        #elif __unix__
-        .setCompiler("clang++-20");
-        .setOptions("-O3 -std=c++23 -stdlib=libc++ ");
-        #endif
-        .setProjectPath(".")
-        .setSourcePath("")
-        .setMain((test._sourcePath / "test.cc").string())
-        .addSource({"sptr.cc"})
-        .getCppFile();
-        
-        #ifdef __unix__
-        test.addDependency("test.cc",{"c++","c++abi"});
-        #endif
-        for (const auto& i : test._project)
-        {
-            test.compileCpp(i);
-        }
-
-        test.link("test");
-        return 0;
-    }catch(int)
-    {
-        std::cerr << "test failed"_fmt.setColor(fmt::Bold_Red) << std::endl;
-        return 1;
+        test.compileCpp(i);
     }
+
+    test.link("test");
+    return 0;
+    
 }
 
 
 int selfCompile(bool recompile)
 {
-    try {
+    print << "compile self"_fmt.color(fmt::Bold_Green).endl();
+    outputPath outPath;
+    outPath.setRootPath(".")
+    .setExePath("").
+    setOutpath("_buildself");
+
+    Project rebuild(&outPath,Project::exe,recompile);
+
+    #ifdef _WIN32
+    rebuild.setCompiler("clang++").setOptions("-O0 -Wall -std=c++23")
+    #elif __unix__
+    rebuild.setCompiler("clang++-20")
+    .setOptions("-O3 -fno-exceptions -std=c++23 -stdlib=libc++ ")
+    #endif
+    .setProjectPath(".")
+    .setSourcePath("")
+    .setMain((rebuild._sourcePath / "build.cc").string())
+    .addSource({"build.cc"})
+    .getCppFile();
     
-        std::cout << "compile self"_fmt.setColor(fmt::Bold_Green) << std::endl;
-        outputPath outPath;
-        outPath.setRootPath(".")
-        .setExePath("").
-        setOutpath("_buildself");
-    
-        Project rebuild(&outPath,Project::exe,recompile);
-    
-        #ifdef _WIN32
-        rebuild.setCompiler("clang++").setOptions("-O0 -Wall -std=c++23")
-        #elif __unix__
-        .setCompiler("clang++-20");
-        .setOptions("-O3 -std=c++23 -stdlib=libc++ ");
-        #endif
-        .setProjectPath(".")
-        .setSourcePath("")
-        .setMain((rebuild._sourcePath / "build.cc").string())
-        .addSource({"build.cc"})
-        .getCppFile();
-        
-        #ifdef __unix__
-        rebuild.addDependency("build.cc",{"c++","c++abi"});
-        #endif
-        for (const auto& i : rebuild._project)
-        {
-            rebuild.compileCpp(i);
-        }
-    
-        rebuild.link("build");
-        return 0;
-    } catch (int) {
-        std::cerr << "self failed"_fmt.setColor(fmt::Bold_Red) << std::endl;
-        return 1;
+    #ifdef __unix__
+    rebuild.addDependency("build.cc",{"c++","c++abi"});
+    #endif
+    for (const auto& i : rebuild._project)
+    {
+        rebuild.compileCpp(i);
     }
+
+    rebuild.link("build");
+    return 0;
 }
 
 int compileProject(bool recompile)
@@ -142,7 +130,6 @@ int compileProject(bool recompile)
     outPath.setExePath("");
     outPath.setOutpath("_build");
 
-    
     cProject libGLAD(&outPath, cProject::staticLib,recompile);
     #ifdef _WIN32
     libGLAD.setCompiler("clang");
@@ -161,14 +148,15 @@ int compileProject(bool recompile)
     #elif __unix__
     libGLAD.addDependency("glad.c", {"GL"});
     #endif
-    Project mainProj(&outPath, Project::exe,false);
+
+    Project mainProj(&outPath, Project::exe,recompile);
 
     #ifdef _WIN32
     mainProj.setCompiler("clang++")
     .setOptions("-O0 -std=c++23")
     #elif __unix__
     mainProj.setCompiler("clang++-20")
-    .setOptions("-O3 -stdlib=libc++ -std=c++23")
+    .setOptions("-O3 -fno-exceptions -stdlib=libc++ -std=c++23")
     #endif
 
     .setProjectPath((rootPath / "example").string())
@@ -180,15 +168,16 @@ int compileProject(bool recompile)
     .addInclude(mainProj._sourcePath  / "lib" / "RGFW")
     .addInclude(mainProj._sourcePath  / "lib" / "glad" / "include")
     .getCppFile();
-    mainProj.scanHeader().scanModule();
+
+    mainProj.scanHeader().scanModule()
     #ifdef _WIN32
-    mainProj.addDependency("lib.RGFW.ccm",{"opengl32", "gdi32"});
+    .addDependency("lib.RGFW.ccm",{"opengl32", "gdi32"})
     #elif __unix__
-    mainProj.addDependency("lib.RGFW.ccm",{"GL", "X11", "Xrandr"});
-    mainProj.addDependency("lib.std.ccm",{"c++","c++abi"});
+    .addDependency("lib.RGFW.ccm",{"GL", "X11", "Xrandr"})
+    .addDependency("lib.std.ccm",{"c++","c++abi"})
     #endif
     // mainProj.dumpProject();
-    mainProj.dumpIncludeMap()
+    .dumpIncludeMap()
     .dumpModule()
     .dumpDependencies()
     .dumpModuleMap()
@@ -217,23 +206,11 @@ int compileProject(bool recompile)
     mainProj.link("main");
     return 0;
 }
-int stuff(int a,int b)
-{
-    std::cout << "stuff " << a << " " << b << std::endl;
-    return a + b;
-};
-float stuff2(int a,int b)
-{
-    std::cout << "stuff " << a * b << " " << b * a << std::endl;
-    return a + b;
-};
 
 auto main(int argc, const char* argv[]) -> int 
 {
-    fprint out;
-    out << "CPP BUILD"_fmt.setColor(fmt::Bold_Purple).sv() << out.endl();
-    //cmd << "secho hello" >> "err"_fmt.setColor(fmt::Bold_Yellow);
-    //sys("sdecho hello");
+    print << "CPP BUILD \n"_fmt.color(fmt::Bold_Purple).sv();
+
     std::string inputLine = argv[1];
     if (argc < 2) {return 1;} else 
     {

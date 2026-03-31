@@ -1,3 +1,4 @@
+#include <cstring>
 #include <iostream>
 
 template<typename T,T v>
@@ -19,11 +20,18 @@ template<typename T>     struct isPtr<T*> : true_t<> {};
 template<typename T, typename U> struct is_same_t       {static constexpr bool value = false_t<>::value;};
 template<typename T>             struct is_same_t<T, T> {static constexpr bool value = true_t<>::value;};
 
-template<typename T> struct remove_ptr { using type = T;};
-template<typename T> struct remove_ptr<T*> { using type = T;};
+template<typename T> struct remove_ptr           { using type = T;};
+template<typename T> struct remove_ptr<T*>       { using type = T;};
 template<typename T> struct remove_ptr<T* const> { using type = T;};
-template<typename T>                   struct is_fn : false_t<> {};
-template<typename R, typename... Args> struct is_fn<R(Args...)> : true_t<> {};
+
+template<typename F>                   struct isFn : false_t<> {};
+template<typename F, typename... Args> struct isFn<F(Args...)> : true_t<> {};
+
+
+template<typename F>                   struct isFn_Ptr : false_t<> {};
+template<typename F,typename... Args>  struct isFn_Ptr<F(*)(Args...)> : true_t<> {};
+
+static_assert(isFn<remove_ptr<int(*)()>::type>::value, "is fucntion");
 //static_assert(is_bool<bool>::value, "is bool" );
 static_assert(is_same_t<remove_ptr<int(*)()>::type,int()>::value, "is true");
 //static_assert(is_fn<int>::value, "is fn");
@@ -91,12 +99,12 @@ class sPtr
 
 class fn
 {
-    void* _fn;
+    void(*_fn)();
     public:
-    template<typename Fn> requires (isPtr<Fn>::value && is_fn<remove_ptr<Fn>::type>::value)
-    constexpr fn(Fn f) 
+    template<typename Fn> requires (isPtr<Fn>::value && isFn_Ptr<Fn>::value)
+    constexpr fn(Fn&& f) 
     {
-        _fn = reinterpret_cast<void*>(f);
+        std::memcpy(&_fn,&f,8);
     }
     template<typename... Args>
     constexpr fn& run(auto&& f, Args&&... args) {
@@ -104,12 +112,6 @@ class fn
         fn(std::forward<Args>(args)...);
         return *this;
     }
-    constexpr fn& run(auto&& f) {
-        auto fn = reinterpret_cast<decltype(f)>(_fn);
-        fn();
-        return *this;
-    }
-    constexpr fn& operator=(auto&& f) {_fn = reinterpret_cast<void*>(f); return *this;}
 };
 int test()
 {
@@ -119,7 +121,7 @@ int test()
 int main ()
 {
     sPtr<int> sptr(new int(5));
-    fn f(test);
+    fn f(&test);
 
     std::cout << *sptr << " sizeof ptr " << sizeof(sptr) << std::endl;
     std::cout << sptr.use_count() << std::endl;
