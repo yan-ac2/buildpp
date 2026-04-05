@@ -61,19 +61,19 @@ int test()
     Project test(&outPath,Project::exe,true);
 
     #ifdef _WIN32
-    test.setCompiler("clang++").setOptions("-O0 -Wall -std=c++23")
+    test.setCompiler("clang++").setOptions("-O0 -Wall -nostdlib -std=c++23")
     #elif __unix__
     test.setCompiler("clang++-20")
     .setOptions("-O3 -std=c++23 -stdlib=libc++ ")
     #endif
     .setProjectPath(".")
     .setSourcePath("")
-    .setMain((test._sourcePath / "test.cc").string())
-    .addSource({"sptr.cc"})
+    .setMain(fs::path("test.cc").string())
+    .addSource({"test.cc"})
     .getCppFile();
     
     #ifdef __unix__
-    test.addDependency("sptr.cc",{"c++","c++abi"});
+    test.addDependency("test.cc",{"c++","c++abi"});
     #endif
     for (const auto& i : test._project)
     {

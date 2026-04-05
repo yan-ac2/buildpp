@@ -94,7 +94,7 @@ struct fmt {
         }
     };
 };
-constexpr fmt operator""_fmt(const char* str,unsigned long) { return fmt(str);}
+constexpr fmt operator""_fmt(const char* str,size_t) { return fmt(str);}
 
 static struct implPrint
 {
@@ -168,7 +168,7 @@ struct outputPath {
             if (!fs::exists(lm_dir)) 
             {
                 if (fs::create_directory(lm_dir)) {
-                    print << fmt("Directory created: " , lm_dir.c_str() , "\n");
+                    print << fmt("Directory created: " , lm_dir.string() , "\n");
                 } else {
                     err(true,fmt("Failed to create directory: "));
                 }        
