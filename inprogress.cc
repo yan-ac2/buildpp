@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <cstdio>
 
 // class DetailedException : public std::exception {
@@ -335,89 +336,108 @@
 // };
 class string {
     struct store {
-        enum {
-            large = 0,
-            small = 1
+        size_t len;
+        enum : bool {
+            large,
+            small
         }tag;
-        unsigned int len;
+        enum : bool {
+            yes,
+            no
+        }allocated;
         union {
             struct {
                 char* str;
                 size_t cap;
             }Large;
-            struct {char str[23];} Small;
-        };
+            struct {char str[24];} Small;
+        }type;
         ~store(){
             if(tag == large) {
-                if (Large.str != nullptr)
+                if (allocated == yes)
                 {
                     printf("delete \n");
-                    delete[] Large.str;
-                    Large.str = nullptr;
+                    delete[] type.Large.str;
+                    type.Large.str = nullptr;
                 }
             }
         };
+        void newLarge(size_t newLen) {
+            allocated = yes;
+            type.Large.cap = newLen;
+            type.Large.str = new char[type.Large.cap];
+        }
+        void delLarge() {
+            allocated = no;
+            delete [] type.Large.str;
+            type.Large.str = nullptr;
+        }
     }storage;
-    unsigned int getLen(const char* str) 
+    size_t getLen(const char* str) 
     {
-        unsigned int len = 0;
+        size_t len = 0;
         for (;str[len] != '\0';len++){}
         return len;
     }
     void copy(char* to,const char* from) 
     {
-        for (unsigned int i = 0;from[i] != '\0';i++){
+        for (size_t i = 0;from[i] != '\0';i++){
             to[i] = from[i];
         }
     }
     public:
-    string() : storage({.len = 0}) {}
-    string(const char* inStr) {
+    explicit constexpr string() : storage({.len = 0,.tag = storage.small,.allocated = store::no}) {
+        storage.type.Small.str[0] = '\0';
+    }
+    constexpr string(const char* inStr) {
         storage.len = getLen(inStr);
-        if (storage.len > sizeof(storage.Small.str)) {
+        if (storage.len > sizeof(storage.type)) {
             storage.tag = store::large;
-            storage.Large.cap = storage.len;
-            storage.Large.str = new char[storage.Large.cap]();
-            copy(storage.Large.str, inStr);
-            storage.Large.str[storage.len] = '\0';
+            storage.type.Large.cap = storage.len;
+            storage.newLarge(storage.len);
+            copy(storage.type.Large.str, inStr);
+            storage.type.Large.str[storage.len] = '\0';
         } else {
             storage.tag = store::small;
-            copy(storage.Small.str, inStr);
-            storage.Small.str[storage.len] = '\0';
+            copy(storage.type.Small.str, inStr);
+            storage.type.Small.str[storage.len] = '\0';
         }
     }
-    string& operator =(const char* inStr) {
-        storage.len = getLen(inStr);
-        if (storage.len > sizeof(storage.Small.str)) {
-            if (storage.Large.str != nullptr && storage.Large.cap < storage.len) {
-                printf("new again \n");
-                delete [] storage.Large.str;
-                storage.Large.cap = storage.len;
-                storage.Large.str = new char[storage.Large.cap];
+    constexpr string& operator =(const char* inStr) {
+        size_t newLen = getLen(inStr);
+        
+        if (newLen > 22) { // 22 + 1 for null terminator = 23 (your Small size)
+            if (storage.tag == store::large) {
+                // Already large, check if we can reuse the existing heap buffer
+                    if (storage.type.Large.cap < newLen) {
+                        storage.delLarge();
+                        storage.newLarge(newLen); // Should allocate cap + 1
+                    }
+                    } else {
+                        // Switching from small to large
+                        storage.tag = store::large;
+                        storage.type.Large.cap = newLen;
+                        storage.newLarge(newLen);
+                    }
+                copy(storage.type.Large.str, inStr);
+                storage.type.Large.str[newLen] = '\0';
             } else {
-                printf("new \n");
-                storage.Large.cap = storage.len;
-                storage.Large.str = new char[storage.Large.cap];
+                // Destination is small
+                if (storage.allocated == store::yes) {
+                    storage.delLarge();
+                }
+                storage.tag = store::small;
+                copy(storage.type.Small.str, inStr);
+                storage.type.Small.str[newLen] = '\0';
             }
-            copy(storage.Large.str, inStr);
-            storage.Large.str[storage.len] = '\0';
-        } else {
-            if (storage.Large.str != nullptr && storage.tag == store::large) {
-                printf("delete ptr \n");
-                delete [] storage.Large.str;
-                storage.Large.str = nullptr;
-            }
-            storage.tag = store::small;
-            copy(storage.Small.str, inStr);
-            storage.Small.str[storage.len] = '\0';
-        }
+        storage.len = newLen;
         return *this;
     }
-    const char* data() {
+    const char* data() const {
         if (storage.tag == store::small) {
-            return storage.Small.str;
+            return storage.type.Small.str;
         } else {
-            return storage.Large.str;
+            return storage.type.Large.str;
         }
     }
 };
@@ -463,6 +483,8 @@ int main()
         s= "small";
         printf("%s \n", s.data());
         s= "again";
+        printf("%s \n", s.data());
+        s = "hello again from world number 4200";
         printf("%s \n", s.data());
         // s = "sssssssssssssssssssssssssssssssss";
         // printf("%s %zu\n", s.data() ,s.cap());
