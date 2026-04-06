@@ -64,16 +64,16 @@ int test()
     test.setCompiler("clang++").setOptions("-O0 -Wall -nostdlib -std=c++23")
     #elif __unix__
     test.setCompiler("clang++-20")
-    .setOptions("-O3 -std=c++23 -stdlib=libc++ ")
+    .setOptions("-O0 -std=c++23 -nostdlib -fno-exception ")
     #endif
     .setProjectPath(".")
     .setSourcePath("")
-    .setMain(fs::path("test.cc").string())
-    .addSource({"test.cc"})
+    .setMain(fs::path("inprogress.cc").string())
+    .addSource({"inprogress.cc"})
     .getCppFile();
     
     #ifdef __unix__
-    test.addDependency("test.cc",{"c++","c++abi"});
+    // test.addDependency("inprogress.cc",{"c++","c++abi"});
     #endif
     for (const auto& i : test._project)
     {
