@@ -28,11 +28,13 @@ struct match<T, U, Rest...> {
 template <typename T> struct removeArray      { using type = T;};
 template <typename T> struct removeArray<T[]> { using type = T;};
 
+struct variantBuffer{char buffer;};
+void* operator new[] (size_t size,variantBuffer* p) {return p;}
 template<typename... Types>
 struct variant{
     static constexpr size_t data_size = getMax<sizeof(Types)...>::value;
     static constexpr size_t data_align = getMax<alignof(Types)...>::value;
-    alignas(data_align) char buffer[data_size];
+    alignas(data_align) variantBuffer buffer[data_size];
     int type_index = -1;
 
     template <size_t Index, typename T, typename... Rest>
