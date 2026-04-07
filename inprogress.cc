@@ -15,6 +15,9 @@ inline void* operator new (size_t size,variantBuffer* p) {return p;}
 
 template<typename... Types>
 struct variant{
+    template<typename T> struct removeRef {using type = T;};
+    template<typename T> struct removeRef<T&> {using type = T;};
+    template<typename T> struct removeRef<T&&> {using type = T;};
     template<size_t T,size_t... Rest>
     struct getMax {
         static constexpr size_t value = T > getMax<Rest...>::value 
@@ -58,7 +61,7 @@ struct variant{
         type_index = -1; 
     }
     template <typename T>
-    void set(T&& value) {
+    variant& set(T&& value) {
         // 1. Destroy whatever was there before
         if (type_index != -1) destroy_current();
         
@@ -69,9 +72,10 @@ struct variant{
         
         // 3. Update the index so we know how to delete it later
         type_index = match<T,Types...>::value; 
+        return *this;
     }
     template <typename T>
-    inline T& get(int e = __LINE__) {
+    inline T& get() {
         // 1. Get the compile-time index of type T
         constexpr int target_index = match<T, Types...>::value;
         
@@ -79,7 +83,7 @@ struct variant{
         if (type_index != target_index) {
             // In a no-stdlib environment, you might log an error or assert
             // instead of throwing an exception.
-            printf( "%d  Invalid variant access! \n", e);
+            printf( "Invalid variant access! \n");
             std::exit(1);
         }
         // 3. The Magic Trick: Reinterpret Cast
@@ -90,8 +94,8 @@ struct variant{
     const T& get() const {
         constexpr int target_index = match<T, Types...>::value;
         if (type_index != target_index) printf("Invalid access");
-
-        return *static_cast<T*>(static_cast<void*>(buffer));
+        
+        return *static_cast<const T*>(static_cast<const void*>(buffer));
     }
     ~variant() { destroy_current();}
 };
@@ -214,134 +218,164 @@ struct variant{
 // };
 
 class string {
-    struct small {char str[23]; small(){str[0] = '\0';}};
+    using char_ptr = char*;
+    struct small {char str[23]; 
+        small(){str[0] = '\0';}
+        small(const char* other) {
+            str[copy(str, other)] = '\0';
+        }
+    };
     struct large {
         char* str;
         size_t cap;
-        large(){str = nullptr;}
-        // void newStr() {this->str = new char[this->cap];}
+        large() : str(nullptr) , cap(0){}
+        large(size_t in, const char* other) : cap(in) {
+            str = new char[cap + 1]();
+            if (other) {str[copy(str, other)] = '\0';}
+        }
         ~large() {
-            if(str != nullptr) {
-                printf("delete ptr \n");
-                delete [] str;
+            if (str != nullptr) {
+                delete[] str;
+                str = nullptr;
             }
         }
+        large(large&& other) noexcept : str(other.str), cap(other.cap) {
+            other.str = nullptr;
+        }
+
+        large(const large&) = delete;
     };
-    bool autoShrink : 1 = true;
+
+    bool autoShrink : 1;
     size_t len : 63;
     variant<small,large> storage;
-    constexpr size_t getLen(const char* str) 
+    static constexpr size_t getLen(const char* str) 
     {
         size_t inlen = 0;
         for (;str[inlen] != '\0';inlen++){}
         return inlen;
     }
-    constexpr void copy(char* to,const char* from) 
+    static size_t copy(char* to,const char* from) 
     {
-        for (size_t i = 0;from[i] != '\0';i++){
+        size_t i = 0;
+        for (;from[i] != '\0';i++){
             to[i] = from[i];
         }
+        return i;
     }
     public:
-    explicit string() : len(0) {}
 
-    string(const char* instr) {
-        this->len = getLen(instr);
+    explicit string() : autoShrink(true),len(0) {}
+
+    string(const char* instr) : autoShrink(true) {
+        len = getLen(instr);
         if (len > 22) {
-            storage.set(large{});
-            // printf("storage index %d", storage.type_index);
-            storage.get<large>().cap = len;
-            storage.get<large>().str = new char[storage.get<large>().cap]();
-            //storage.get<large>().newStr();
-            copy(storage.get<large>().str, instr);
-            storage.get<large>().str[len] = '\0';
+            storage.set(large{len, instr});
         } else {
-            storage.set(small{});
-            copy(storage.get<small>().str,instr);
-            storage.get<small>().str[len] = '\0';
+            storage.set(small{instr});
         }
     }
 
-    constexpr string& operator =(const char* inStr) {
+    string(const string& other) : autoShrink(other.autoShrink),len(other.len)  {
+        if (other.storage.type_index == 1) { // Large
+            const large& o_large = other.storage.get<large>();
+            storage.set(large{o_large.cap, o_large.str});
+        } else { // Small
+            storage.set(small{other.storage.get<small>().str});
+        }
+    }
+
+    string& operator=(const char* inStr) {
         size_t newLen = getLen(inStr);
-            if (newLen > 22 || (storage.type_index == 1 && autoShrink)) 
-            { // 22 + 1 for null terminator = 23 (your Small size)
-                if (storage.type_index == 1) 
-                    {
-                        // Already large, check if we can reuse the existing heap buffer
-                        if (storage.get<large>().cap < newLen) {
-                            delete[] storage.get<large>().str;
-                            storage.get<large>().cap = newLen;
-                            storage.get<large>().str = new char[newLen]();
-                        }
-                    } else {
-                        // Switching from small to large
-                        storage.set(large{});
-                        storage.get<large>().cap = newLen;
-                        storage.get<large>().str = new char[newLen]();
-                    }
-                copy(storage.get<large>().str, inStr);
-                storage.get<large>().str[newLen] = '\0';
+        
+        // Logic: Should we stay/become Large?
+        if (newLen > 22 || (storage.type_index == 1 && !autoShrink)) {
+            if (storage.type_index == 1) {
+                large& l = storage.get<large>();
+                if (l.cap < newLen) {
+                    delete[] l.str;
+                    l.str = new char[newLen + 1]();
+                    l.cap = newLen;
+                }
+                l.str[copy(l.str, inStr)] = '\0';
             } else {
-                // Destination is small
-                // storage.type_index = 0;
-                if (storage.type_index != 0) storage.set(small{});
-                copy(storage.get<small>().str, inStr);
-                storage.get<small>().str[newLen] = '\0';
+                storage.set(large{newLen, inStr});
             }
+        } else {
+            // Stay/become Small
+            if (storage.type_index == 1) {storage.set(small{inStr});}
+            else {storage.get<small>().str[copy(storage.get<small>().str, inStr)] = '\0';}
+        }
         len = newLen;
         return *this;
     }
 
     constexpr string& reserve(size_t newSize) {
-        if (newSize < 22) {return *this;}
-        
-        if (storage.type_index == 1) 
+        if ((len + newSize) > 22) 
         {
-            const char* temp = storage.get<large>().str;
-            storage.get<large>().cap += newSize;
-            delete [] storage.get<large>().str;
-            storage.get<large>().str = new char[storage.get<large>().cap]();
-            for (int i = 0;temp[i] != '\0';i++) {storage.get<large>().str[i] = temp[i];} 
+            if (storage.type_index == 1) 
+            {
+                large& l = storage.get<large>();
+                char* temp = new char[len]();
+                temp[copy(temp, l.str)] = '\0';
+                l.cap += newSize;
+                delete [] l.str;
+                l.str = new char[l.cap]();
+                temp[copy(l.str, temp)] = '\0'; 
+            } else {
+                large& l = storage.set(large{}).get<large>();
+                l.str = new char[newSize]();
+            }
+            return *this;
         } else {
-            storage.set(large{});
-            storage.get<large>().cap += newSize;
-            storage.get<large>().str = new char[newSize]();
+            return *this;
         }
-
-        return *this;
     }
 
-    constexpr string& append (const char* in)
-    {
+    string& append(const char* in) {
         size_t inlen = getLen(in);
-        if ((len + inlen) > 22 || (storage.type_index == 1 && autoShrink))
-        {
-            if (storage.type_index == 1)
-            {
-                if (storage.get<large>().cap < (len + inlen)) {
-                    reserve(inlen);
-                }
+        size_t totalLen = len + inlen;
+
+        if (totalLen > 22) {
+            if (storage.type_index == 0) { // Upgrade Small to Large
+                small old = storage.get<small>();
+                // Current storage is now large, copy the 'append' part
+                char* dest = storage.set(large{totalLen, old.str})
+                .get<large>().str;
                 
-                for (int i = 0;in[i] != '\0';i++) {storage.get<large>().str[(len + i)] = in[i];}
-                storage.get<large>().str[len + inlen] = '\0';
+                for (size_t i = 0; i < inlen; i++) { dest[len + i] = in[i]; }
+                dest[totalLen] = '\0';
+            } else { // Already Large
+                large& l = storage.get<large>();
+                if (l.cap < totalLen) {
+                    char* newStr = new char[totalLen + 1]();
+                    copy(newStr, l.str);
+                    delete[] l.str;
+                    l.str = newStr;
+                    l.cap = totalLen;
+                }
+                for (size_t i = 0; i < inlen; i++) { l.str[len + i] = in[i]; }
+                l.str[totalLen] = '\0';
             }
         } else {
-            for (int i = 0;in[i] != '\0';i++) {storage.get<small>().str[len + i] = in[i];}
-            storage.get<small>().str[len + inlen] = '\0';
+            // Stay Small
+            char* dest = storage.get<small>().str;
+            for (size_t i = 0; i < inlen; i++) { dest[len + i] = in[i]; }
+            dest[totalLen] = '\0';
         }
-        len += inlen;
+        len = totalLen;
         return *this;
     }
+
     const char* data() {
         return storage.type_index == 1 ? 
         storage.get<large>().str:
         storage.get<small>().str;
     }
     size_t getCap() {
-        return storage.type_index == 1 
-        ? storage.get<large>().cap
-        : sizeof(small) ;
+        return storage.type_index == 1 ? 
+        storage.get<large>().cap : 
+        sizeof(small) ;
     }
     string& Shrink(bool b = false) {autoShrink = b; return *this;}
     int getindex() {return storage.type_index;}
@@ -392,30 +426,33 @@ int main()
         // test.set(12.04f);
         // printf("%f %d \n" ,test.get<float>(),test.type_index);
         string s ("hello world before reserve");
-        printf("%s %zu \n",s.data(),s.getCap());
+        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
         //s.reserve(50);
         s.append(" after append");
-        printf("%s %zu \n",s.data(),s.getCap());
+        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
+        string c (s);
+        c.append(" copy");
+        printf("%s %zu %d \n",c.data(),c.getCap(),c.getindex());
         s = ("hello world from world number");
-        printf("%s %zu \n",s.data(),s.getCap());
+        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
         s = "hello world numbers 3200";
-        printf("%s %zu \n",s.data(),s.getCap());
+        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
         s = "hello again from world number 3200";
-        printf("%s %zu \n",s.data(),s.getCap());
+        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
         s = "small";
-        printf("%s %zu \n",s.data(),s.getCap());
+        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
         s.append(" append");
-        printf("%s %zu \n",s.data(),s.getCap());
+        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
         s = "again";
-        printf("%s %zu \n",s.data(),s.getCap());
+        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
         s = "hello again from world number 4200";
-        printf("%s %zu \n",s.data(),s.getCap());
+        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
         s = "sssssssssssssssssssssssssssssssss";
-        printf("%s %zu \n",s.data(),s.getCap());
+        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
         s = "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww";
-        printf("%s %zu \n",s.data(),s.getCap());
+        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
         s = "wwwwwwwwwwwwwwwwwwwwww";
-        printf("%s %zu \n",s.data(),s.getCap());
+        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
         // s = "aaa";
         // printf("%s \n", s.data());
         
