@@ -35,8 +35,8 @@ struct integral_constant {
 template <bool Val> using bool_constant = integral_constant<bool, Val>;
 using false_t = bool_constant<false>;
 using true_t = bool_constant<true>;
-template<class T,class U> struct is_same {static  constexpr char value = 0;};
-template<class T> struct is_same<T,T>    {static  constexpr char value = 1;};
+template<class T,class U> struct is_same : false_t {};
+template<class T> struct is_same<T,T>    : true_t{};
 
 
 struct variantBuffer{char buffer;};
@@ -164,38 +164,36 @@ class string {
 
     struct variant{
         alignas(8) variantBuffer buffer[22];
-        bool autoshrink  = true;
-        char type_index  = -1;
+        bool autoshrink = true;
+        char type_index = -1;
         size_t len;
         
         void destroy_current() {
             if (type_index == -1) return;
-            
-            // Start the recursive search for the correct type to destroy
-            // printf("destroy current \n");
+
             if (type_index == 1) {
-                static_cast<large*>(static_cast<void*>(buffer))->~large();
+                reinterpret_cast<large*>(buffer)->~large();
             }
             
             type_index = -1; 
         }
         template <typename T>
         constexpr variant& set(T&& value) {
-            // 1. Destroy whatever was there before
-            if (type_index != -1) destroy_current();
+            destroy_current();
             
             new (buffer) T(static_cast<T&&>(value));
-            type_index = is_same<T, large>::value; 
+            type_index = is_same<T, large>::value ? 1 : 0; 
+            // printf("name %s %d \n" ,typeid(T).name(),type_index);
             return *this;
         }
         template <typename T>
         constexpr T& get() {
-            return *static_cast<T*>(static_cast<void*>(buffer));
+            return *reinterpret_cast<T*>(buffer);
         }
         template <typename T>
         const T& get() const {
             
-            return *static_cast<const T*>(static_cast<const void*>(buffer));
+            return *reinterpret_cast<const T*>(buffer);
         }
         ~variant() { destroy_current();}
     } storage;
@@ -328,19 +326,15 @@ class string {
         return *this;
     }
 
-    const char* data() const {
-        const char* get[2] {
-            storage.get<small>().str,
-            storage.get<large>().str
-        };
-        return get[storage.type_index]; 
+    const char* data() const { 
+        return storage.type_index == 1 ?
+        storage.get<large>().str: 
+        storage.get<small>().str;
     }
     size_t cap() const {
-        size_t get[] {
-            sizeof(small),
-            storage.get<large>().cap 
-        };
-        return get[storage.type_index];
+        return storage.type_index == 1 ?
+        storage.get<large>().cap: 
+        21;
     }
     int getindex() {return storage.type_index;}
 };
