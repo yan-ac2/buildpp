@@ -1,237 +1,153 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
-// class DetailedException : std::exception
-// {
-//     public:
-//     std::source_location where() {
-//         return std::source_location::current();
-//     }
-// };
+#include <stdexcept>
+#include <source_location>
+#include <iostream>
+
+class MyException : public std::runtime_error {
+    std::string _file;
+    int _line;
+    std::string _function;
+
+public:
+    MyException(const std::string& msg, 
+                const std::source_location& loc = std::source_location::current())
+        : std::runtime_error(msg),
+          _file(loc.file_name()),
+          _line(loc.line()),
+          _function(loc.function_name()) {}
+
+    void print() const {
+        std::cout << "Error at " << _file << ":" << _line 
+                  << " in " << _function << ": " << std::runtime_error::what() << "\n";
+    }
+};
+
+template <class Ty, Ty Val>
+struct integral_constant {
+    static constexpr Ty value = Val;
+    using value_type = Ty;
+    using type       = integral_constant;
+    constexpr operator value_type() const noexcept  {return value;}
+    constexpr value_type operator()() const noexcept {return value;}
+};
+template <bool Val> using bool_constant = integral_constant<bool, Val>;
+using false_t = bool_constant<false>;
+using true_t = bool_constant<true>;
+template<class T,class U> struct is_same {static  constexpr char value = 0;};
+template<class T> struct is_same<T,T>    {static  constexpr char value = 1;};
 
 
 struct variantBuffer{char buffer;};
 inline void* operator new (size_t size,variantBuffer* p) {return p;}
 
-template<typename... Types>
-struct variant{
-    template<typename T> struct removeRef {using type = T;};
-    template<typename T> struct removeRef<T&> {using type = T;};
-    template<typename T> struct removeRef<T&&> {using type = T;};
-    template<size_t T,size_t... Rest>
-    struct getMax {
-        static constexpr size_t value = T > getMax<Rest...>::value 
-        ? T : getMax<Rest...>::value;
-    };
-
-    template<size_t T>
-    struct getMax<T> { static constexpr size_t value = T; };
+// template<typename... Types>
+// struct variant{
+//     template <typename T, typename... Type> struct match;
+//     // Match found!
+//     template <typename T, typename... Rest>
+//     struct match<T, T, Rest...> {static constexpr int value = 0;};
     
-    template <typename T, typename... Type> struct match;
-    
-    // Match found!
-    template <typename T, typename... Rest>
-    struct match<T, T, Rest...> {static constexpr int value = 0;};
-    
-    // Not a match, keep looking...
-    template <typename T, typename U, typename... Rest>
-    struct match<T, U, Rest...> { static constexpr int value = 1 + match<T, Rest...>::value;};
+//     // Not a match, keep looking...
+//     template <typename T, typename U, typename... Rest>
+//     struct match<T, U, Rest...> { static constexpr int value = 1 + match<T, Rest...>::value;};
 
-    static constexpr size_t data_size   = getMax<sizeof(Types)...>::value;
-    static constexpr size_t data_align  = getMax<alignof(Types)...>::value;
 
-    alignas(data_align) variantBuffer buffer[data_size];
-    char type_index = -1;
+//     alignas(8) variantBuffer buffer[32];
+//     char type_index = -1;
 
-    template <size_t Index, typename T, typename... Rest>
-    void destroy_at_index(int target) {
-        if (Index == target) {
-            static_cast<T*>(static_cast<void*>(buffer))->~T();
-        } else if constexpr (sizeof...(Rest) > 0) {
-            destroy_at_index<Index + 1, Rest...>(target);
-        }
-    }
-    void destroy_current() {
-        if (type_index == -1) return;
-        
-        // Start the recursive search for the correct type to destroy
-        printf("destroy current \n");
-        destroy_at_index<0, Types...>(type_index);
-        
-        type_index = -1; 
-    }
-    template <typename T>
-    variant& set(T&& value) {
-        // 1. Destroy whatever was there before
-        if (type_index != -1) destroy_current();
-        
-        // T* ptr = static_cast<T*>(static_cast<void*>(buffer));
-        // *ptr = static_cast<T&&>(value);
-        // 2. "Placement New" - Construct T exactly at the address of our buffer
-        new (buffer) T(static_cast<T&&>(value));
-        
-        // 3. Update the index so we know how to delete it later
-        type_index = match<T,Types...>::value; 
-        return *this;
-    }
-    template <typename T>
-    inline T& get() {
-        // 1. Get the compile-time index of type T
-        constexpr int target_index = match<T, Types...>::value;
-        
-        // 2. Runtime Check: Does it match what's actually in the buffer?
-        if (type_index != target_index) {
-            // In a no-stdlib environment, you might log an error or assert
-            // instead of throwing an exception.
-            printf( "Invalid variant access! \n");
-            std::exit(1);
-        }
-        // 3. The Magic Trick: Reinterpret Cast
-        // We treat the address of 'buffer' as the address of an object of type T.
-        return *static_cast<T*>(static_cast<void*>(buffer));
-    }
-    template <typename T>
-    const T& get() const {
-        constexpr int target_index = match<T, Types...>::value;
-        if (type_index != target_index) printf("Invalid access");
-        
-        return *static_cast<const T*>(static_cast<const void*>(buffer));
-    }
-    ~variant() { destroy_current();}
-};
-
-// class string {
-//     struct store {
-//         size_t len;
-//         enum : bool {
-//             large,
-//             small
-//         }tag;
-//         enum : bool {
-//             yes,
-//             no
-//         }allocated;
-//         union {
-//             struct {
-//                 char* str;
-//                 size_t cap;
-//             }Large;
-//             struct {char str[24];} Small;
-//         }type;
-        
-//         void newLarge(size_t newLen) {
-//             allocated = yes;
-//             type.Large.cap = newLen;
-//             type.Large.str = new char[type.Large.cap];
-//         }
-//         void delLarge() {
-//             allocated = no;
-//             delete [] type.Large.str;
-//             type.Large.str = nullptr;
-//         }
-//     }storage;
-//     size_t getLen(const char* str) 
-//     {
-//         size_t len = 0;
-//         for (;str[len] != '\0';len++){}
-//         return len;
-//     }
-//     void copy(char* to,const char* from) 
-//     {
-//         for (size_t i = 0;from[i] != '\0';i++){
-//             to[i] = from[i];
+//     template <size_t Index, typename T, typename... Rest>
+//     void destroy_at_index(int target) {
+//         if (Index == target) {
+//             static_cast<T*>(static_cast<void*>(buffer))->~T();
+//         } else if constexpr (sizeof...(Rest) > 0) {
+//             destroy_at_index<Index + 1, Rest...>(target);
 //         }
 //     }
-//     public:
-//     explicit constexpr string() : storage({.len = 0,.tag = storage.small,.allocated = store::no}) {
-//         storage.type.Small.str[0] = '\0';
-//     }
-//     constexpr string(const char* inStr) {
-//         storage.len = getLen(inStr);
-//         if (storage.len > sizeof(storage.type)) {
-//             storage.tag = store::large;
-//             storage.type.Large.cap = storage.len;
-//             storage.newLarge(storage.len);
-//             copy(storage.type.Large.str, inStr);
-//             storage.type.Large.str[storage.len] = '\0';
-//         } else {
-//             storage.tag = store::small;
-//             copy(storage.type.Small.str, inStr);
-//             storage.type.Small.str[storage.len] = '\0';
-//         }
-//     }
-//     // constexpr string(string&& other) {
-//     //     this->storage = other.storage;
-//     //     //if (other.storage.allocated == storage.yes) { other.storage.delLarge();}
-//     // }
-//     // constexpr string(const string& other) {
-//     //     if (*this == other) {return;}
-//     //     this->storage = other.storage;
-//     // }
-//     constexpr string& operator =(const char* inStr) {
-//         size_t newLen = getLen(inStr);
+//     void destroy_current() {
+//         if (type_index == -1) return;
         
-//         if (newLen > 22) { // 22 + 1 for null terminator = 23 (your Small size)
-//             if (storage.tag == store::large) {
-//                 // Already large, check if we can reuse the existing heap buffer
-//                     if (storage.type.Large.cap < newLen) {
-//                         storage.delLarge();
-//                         storage.newLarge(newLen); // Should allocate cap + 1
-//                     }
-//                     } else {
-//                         // Switching from small to large
-//                         storage.tag = store::large;
-//                         storage.type.Large.cap = newLen;
-//                         storage.newLarge(newLen);
-//                     }
-//                 copy(storage.type.Large.str, inStr);
-//                 storage.type.Large.str[newLen] = '\0';
-//             } else {
-//                 // Destination is small
-//                 if (storage.allocated == store::yes) {
-//                     storage.delLarge();
-//                 }
-//                 storage.tag = store::small;
-//                 copy(storage.type.Small.str, inStr);
-//                 storage.type.Small.str[newLen] = '\0';
-//             }
-//         storage.len = newLen;
+//         // Start the recursive search for the correct type to destroy
+//         printf("destroy current \n");
+//         destroy_at_index<0, Types...>(type_index);
+        
+//         type_index = -1; 
+//     }
+//     template <typename T>
+//     variant& set(T&& value) {
+//         // 1. Destroy whatever was there before
+//         if (type_index != -1) destroy_current();
+        
+//         // T* ptr = static_cast<T*>(static_cast<void*>(buffer));
+//         // *ptr = static_cast<T&&>(value);
+//         // 2. "Placement New" - Construct T exactly at the address of our buffer
+//         new (buffer) T(static_cast<T&&>(value));
+        
+//         // 3. Update the index so we know how to delete it later
+//         type_index = match<T,Types...>::value; 
 //         return *this;
 //     }
-//     const char* data() const {
-//         if (storage.tag == store::small) {
-//             return storage.type.Small.str;
-//         } else {
-//             return storage.type.Large.str;
+//     template <typename T>
+//     inline T& get() {
+//         // 1. Get the compile-time index of type T
+//         constexpr int target_index = match<T, Types...>::value;
+        
+//         // 2. Runtime Check: Does it match what's actually in the buffer?
+//         if (type_index != target_index) {
+//             // In a no-stdlib environment, you might log an error or assert
+//             // instead of throwing an exception.
+//             printf( "Invalid variant access! \n");
+//             std::exit(1);
 //         }
+//         // 3. The Magic Trick: Reinterpret Cast
+//         // We treat the address of 'buffer' as the address of an object of type T.
+//         return *static_cast<T*>(static_cast<void*>(buffer));
 //     }
-//     ~string() {
-//         if(storage.tag == storage.large) {
-//             if (storage.allocated == storage.yes)
-//             {
-//                 printf("delete \n");
-//                 delete[] storage.type.Large.str;
-//                 storage.type.Large.str = nullptr;
-//             }
-//         }
+//     template <typename T>
+//     const T& get() const {
+//         constexpr int target_index = match<T, Types...>::value;
+//         if (type_index != target_index) printf("Invalid access");
+        
+//         return *static_cast<const T*>(static_cast<const void*>(buffer));
 //     }
+//     ~variant() { destroy_current();}
 // };
 
+
 class string {
-    using char_ptr = char*;
-    struct small {char str[23]; 
+    struct small {char str[22]; 
         small(){str[0] = '\0';}
-        small(const char* other) {
-            str[copy(str, other)] = '\0';
+        small(const char* other,const size_t& len) {
+            copy(str,other,len);
         }
     };
     struct large {
         char* str;
         size_t cap;
         large() : str(nullptr) , cap(0){}
-        large(size_t in, const char* other) : cap(in) {
+        large(const size_t& in, const char* other,const size_t& len) : cap(in) {
             str = new char[cap + 1]();
-            if (other) {str[copy(str, other)] = '\0';}
+            copy(str,other,len);
+        }
+        large& newCap (const size_t& in) {cap = in; return *this;}
+        large& deleteStr() {
+            if (str != nullptr) {
+                delete[] str;
+                str = nullptr;
+            }
+            return *this;
+        };
+        large& newStr(const char* other = "") {
+            str = new char[cap + 1]();
+            if (other) {
+                size_t i = 0;
+                for (;other[i] != '\0';i++){
+                    str[i] = other[i];
+                }
+                str[i] = '\0';
+            }
+            return *this;
         }
         ~large() {
             if (str != nullptr) {
@@ -246,85 +162,121 @@ class string {
         large(const large&) = delete;
     };
 
-    bool autoShrink : 1;
-    size_t len : 63;
-    variant<small,large> storage;
-    static constexpr size_t getLen(const char* str) 
+    struct variant{
+        alignas(8) variantBuffer buffer[22];
+        bool autoshrink = true;
+        char type_index = -1;
+        
+        void destroy_current() {
+            if (type_index == -1) return;
+            
+            // Start the recursive search for the correct type to destroy
+            // printf("destroy current \n");
+            if (type_index == 1) {
+                static_cast<large*>(static_cast<void*>(buffer))->~large();
+            }
+            
+            type_index = -1; 
+        }
+        template <typename T>
+        constexpr variant& set(T&& value) {
+            // 1. Destroy whatever was there before
+            if (type_index != -1) destroy_current();
+            
+            new (buffer) T(static_cast<T&&>(value));
+            type_index = is_same<T, large>::value; 
+            return *this;
+        }
+        template <typename T>
+        constexpr T& get() {
+            return *static_cast<T*>(static_cast<void*>(buffer));
+        }
+        template <typename T>
+        const T& get() const {
+            
+            return *static_cast<const T*>(static_cast<const void*>(buffer));
+        }
+        ~variant() { destroy_current();}
+    } storage;
+
+    size_t len ;
+    constexpr static size_t getLen(const char* str) 
     {
         size_t inlen = 0;
         for (;str[inlen] != '\0';inlen++){}
         return inlen;
     }
-    static size_t copy(char* to,const char* from) 
+    constexpr static void copy(char* to,const char* from,const size_t& len) 
     {
         size_t i = 0;
-        for (;from[i] != '\0';i++){
+        for (;len - i != 0;i++){
             to[i] = from[i];
+            to[len - i] = from[len - i];
         }
-        return i;
+        to[len] = '\0';
     }
     public:
 
-    explicit string() : autoShrink(true),len(0) {}
+    explicit string() : len(0) {}
 
-    string(const char* instr) : autoShrink(true) {
+    string(const char* instr)  {
         len = getLen(instr);
-        if (len > 22) {
-            storage.set(large{len, instr});
+        if (len > 21) {
+            storage.set(large{len, instr,len});
         } else {
-            storage.set(small{instr});
+            storage.set(small{instr,len});
         }
     }
 
-    string(const string& other) : autoShrink(other.autoShrink),len(other.len)  {
+    string(const string& other) : len(other.len)  {
         if (other.storage.type_index == 1) { // Large
             const large& o_large = other.storage.get<large>();
-            storage.set(large{o_large.cap, o_large.str});
+            storage.set(large{o_large.cap, o_large.str,other.len});
         } else { // Small
-            storage.set(small{other.storage.get<small>().str});
+            storage.set(small{other.storage.get<small>().str,other.len});
         }
     }
 
     string& operator=(const char* inStr) {
-        size_t newLen = getLen(inStr);
-        
-        // Logic: Should we stay/become Large?
-        if (newLen > 22 || (storage.type_index == 1 && !autoShrink)) {
+        len = getLen(inStr);
+    
+            // Logic: Should we stay/become Large?
+        if (len > 21 || (storage.type_index == 1 && storage.autoshrink)) {
             if (storage.type_index == 1) {
-                large& l = storage.get<large>();
-                if (l.cap < newLen) {
-                    delete[] l.str;
-                    l.str = new char[newLen + 1]();
-                    l.cap = newLen;
+                auto & stored = storage.get<large>();
+                if (stored.cap < len) {
+                    stored.newCap(len).deleteStr().newStr();
                 }
-                l.str[copy(l.str, inStr)] = '\0';
+                copy(stored.str, inStr,len);
             } else {
-                storage.set(large{newLen, inStr});
+                storage.set(large{len, inStr,len});
             }
         } else {
             // Stay/become Small
-            if (storage.type_index == 1) {storage.set(small{inStr});}
-            else {storage.get<small>().str[copy(storage.get<small>().str, inStr)] = '\0';}
+            if (storage.type_index == 1) {
+                storage.set(small{inStr,len});
+            }
+            auto& stored = storage.get<small>();
+            copy(stored.str, inStr,len);
         }
-        len = newLen;
         return *this;
     }
 
     constexpr string& reserve(size_t newSize) {
-        if ((len + newSize) > 22) 
+        if ((len + newSize) > 21) 
         {
+            auto& stored = storage.get<large>();
             if (storage.type_index == 1) 
             {
-                large& l = storage.get<large>();
-                char* temp = new char[len]();
-                temp[copy(temp, l.str)] = '\0';
-                l.cap += newSize;
-                delete [] l.str;
-                l.str = new char[l.cap]();
-                temp[copy(l.str, temp)] = '\0'; 
+                char* temp = new char[len];
+                copy(temp, stored.str,len);
+                stored.cap += newSize; 
+                char * dest = stored.deleteStr().newStr().str; 
+                copy(dest, temp,len);
+                // delete [] storage.get<large>().str;
+                // storage.get<large>().str = new char[storage.get<large>().cap]();
             } else {
-                large& l = storage.set(large{}).get<large>();
-                l.str = new char[newSize]();
+                storage.set(large{newSize,"",0});
             }
             return *this;
         } else {
@@ -336,31 +288,40 @@ class string {
         size_t inlen = getLen(in);
         size_t totalLen = len + inlen;
 
-        if (totalLen > 22) {
+        if (totalLen >= 21) {
             if (storage.type_index == 0) { // Upgrade Small to Large
                 small old = storage.get<small>();
                 // Current storage is now large, copy the 'append' part
-                char* dest = storage.set(large{totalLen, old.str})
-                .get<large>().str;
+                char* dest = storage.set(large{totalLen, old.str,len}).get<large>().str;
                 
-                for (size_t i = 0; i < inlen; i++) { dest[len + i] = in[i]; }
-                dest[totalLen] = '\0';
-            } else { // Already Large
-                large& l = storage.get<large>();
-                if (l.cap < totalLen) {
-                    char* newStr = new char[totalLen + 1]();
-                    copy(newStr, l.str);
-                    delete[] l.str;
-                    l.str = newStr;
-                    l.cap = totalLen;
+                for (size_t i = 0; (inlen - i) != 0; i++) { 
+                    dest[len + i] = in[i]; 
+                    dest[(len + inlen) - i] = in[inlen - i]; 
                 }
-                for (size_t i = 0; i < inlen; i++) { l.str[len + i] = in[i]; }
-                l.str[totalLen] = '\0';
+                dest[totalLen] = '\0';
+
+            } else { // Already Large
+                auto& stored = storage.get<large>();
+                if (stored.cap < totalLen) {
+                    char* newStr = new char[len];
+                    copy(newStr, stored.str,len);
+                    char* dest = stored.deleteStr().newCap(totalLen).newStr().str;
+                    copy(dest, newStr,len);
+                } 
+                for (size_t i = 0; (inlen - i) != 0; i++) { 
+                    stored.str[len + i] = in[i]; 
+                    stored.str[(len + inlen) - i] = in[inlen - i]; 
+                }
+                stored.str[totalLen] = '\0';
             }
         } else {
             // Stay Small
             char* dest = storage.get<small>().str;
-            for (size_t i = 0; i < inlen; i++) { dest[len + i] = in[i]; }
+            for (size_t i = 0; inlen - i != 0; i++) { 
+                dest[len + i] = in[i];
+                dest[inlen - i] = in[inlen - i];
+
+            }
             dest[totalLen] = '\0';
         }
         len = totalLen;
@@ -372,93 +333,227 @@ class string {
         storage.get<large>().str:
         storage.get<small>().str;
     }
-    size_t getCap() {
+    size_t cap() {
         return storage.type_index == 1 ? 
         storage.get<large>().cap : 
         sizeof(small) ;
     }
-    string& Shrink(bool b = false) {autoShrink = b; return *this;}
     int getindex() {return storage.type_index;}
 };
+// class string {
+//     struct largeStr {
+//         char* str;
+//         size_t cap;
+//         bool mem;
+//     };
+//     struct smallStr {char str[24];};
+
+//     size_t len;
+//     bool large;
+//     struct store {
+//         union {
+//             largeStr Large;
+//             smallStr Small;
+//         }type;
+        
+//         store& newLarge(size_t newLen) {
+//             auto& l = type.Large;
+//             l.mem = true;
+//             l.cap = newLen;
+//             l.str = new char[l.cap];
+//             return *this;
+//         }
+//         store& capLarge(size_t newLen) {
+//             auto& l = type.Large;
+//             l.cap = newLen;
+//             return *this;
+//         }
+//         store& delLarge() {
+//             auto& l = type.Large;
+//             if (l.mem) {
+//                 printf("delete \n");
+//                 delete [] type.Large.str;
+//                 type.Large.str = nullptr;
+//             }
+//             l.mem = false;
+//             return *this;
+//         }
+//     }storage;
+
+//     size_t getLen(const char* str) 
+//     {
+//         size_t len = 0;
+//         for (;str[len] != '\0';len++){}
+//         return len;
+//     }
+//     size_t copy(char* to,const char* from) 
+//     {
+//         size_t i = 0;
+//         for (;from[i] != '\0';i++){
+//             to[i] = from[i];
+//         }
+//         return i;
+//     }
+    
+//     public:
+
+//     explicit constexpr string() : storage({.len = 0,.large = false}) {
+//         storage.type.Small.str[0] = '\0';
+//     }
+    
+//     constexpr string(const char* inStr) {
+//         storage.len = getLen(inStr);
+//         if (storage.len > 23) {
+//             storage.large = true;
+//             auto& large = storage.type.Large; 
+//             storage.capLarge(storage.len).newLarge(storage.len);
+//             large.str[copy(large.str, inStr)] = '\0';
+//         } else {
+//             storage.large = false;
+//             auto& small = storage.type.Small; 
+//             small.str[copy(small.str, inStr)] = '\0';
+//         }
+//     }
+//     // constexpr string(string&& other) {
+//     //     this->storage = other.storage;
+//     //     //if (other.storage.allocated == storage.yes) { other.storage.delLarge();}
+//     // }
+//     constexpr string(const string& other) :storage({.len = other.storage.len,.large = other.storage.large}) {
+//         if (this->storage.large) {
+//             this->storage.capLarge(other.storage.type.Large.cap)
+//             .newLarge(other.storage.len);
+//             this->storage.type.Large.str[copy(storage.type.Large.str, other.storage.type.Large.str)] = '\0';
+//         } else {
+//             this->storage.type.Small.str[copy(storage.type.Small.str, other.storage.type.Small.str)] = '\0';
+//         }
+//     }
+    
+//     constexpr string& operator =(const char* inStr) {
+//         size_t newLen = getLen(inStr);
+        
+//         if (newLen > 23) { // 22 + 1 for null terminator = 23 (your Small size)
+//             if (storage.large == true) {
+//                 // Already large, check if we can reuse the existing heap buffer
+//                     if (storage.type.Large.cap < newLen) {
+//                         storage.delLarge().newLarge(newLen); // Should allocate cap + 1
+//                     }
+//                     } else {
+//                         // Switching from small to large
+//                         storage.large = true;
+//                         storage.capLarge(newLen).newLarge(newLen);
+//                     }
+//                 copy(storage.type.Large.str, inStr);
+//                 storage.type.Large.str[newLen] = '\0';
+//             } else {
+//                 // Destination is small
+//                 if (storage.large == true) {
+//                     storage.delLarge();
+//                 }
+//                 storage.large = false;
+//                 copy(storage.type.Small.str, inStr);
+//                 storage.type.Small.str[newLen] = '\0';
+//             }
+//         storage.len = newLen;
+//         return *this;
+//     }
+
+//     string& append(const char* in) {
+//         size_t inlen = getLen(in);
+//         size_t totalLen = storage.len + inlen;
+
+//         if (totalLen > 23) {
+//             if (!storage.large) { // Upgrade Small to Large
+//                 smallStr old = storage.type.Small;
+//                 size_t i = 0;
+//                 // Current storage is now large, copy the 'append' part
+//                 storage.type.Large.cap = totalLen;
+//                 storage.newLarge(totalLen);
+//                 char* dest = storage.type.Large.str;
+//                 for (; old.str[i] != '\0'; i++) { dest[i] = in[i]; }
+//                 for (; i < inlen; i++) { dest[storage.len + i] = in[i]; }
+//                 dest[totalLen] = '\0';
+//             } else { // Already Large
+//                 largeStr& l = storage.type.Large;
+//                 if (l.cap < totalLen) {
+//                     char* newStr = new char[storage.len + 1]();
+//                     copy(newStr, l.str);
+//                     storage.delLarge().newLarge(totalLen);
+//                 }
+//                 for (size_t i = 0; i < inlen; i++) { l.str[storage.len + i] = in[i]; }
+//                 l.str[totalLen] = '\0';
+//             }
+//         } else {
+//             // Stay Small
+//             char* dest = storage.type.Small.str;
+//             for (size_t i = 0; i < inlen; i++) { dest[storage.len + i] = in[i]; }
+//             dest[totalLen] = '\0';
+//         }
+//         storage.len = totalLen;
+//         return *this;
+//     }
+    
+//     const char* data() const {
+//         return storage.large ? 
+//         storage.type.Large.str:
+//         storage.type.Small.str;
+//     }
+//     size_t cap() const {
+//         return storage.large ? 
+//         storage.type.Large.cap:
+//         23;
+//     }
+//     ~string() {
+//         if(storage.large == true) {
+//             if (storage.type.Large.mem == true)
+//             {
+//                 printf("delete string\n");
+//                 storage.delLarge();
+//             }
+//         }
+//     }
+// };
 
 int main()
 {
-    // try 
-    // {
+    try 
+    {
         
-        // va v;
-        // v.tag = va::s;
-        // const char* ss = "hello world trash";
-        // int is = 0;
-        // for (; ss[is] != '\0'; is++) {
-        //     v.small.str[is] = ss[is];
-        // }
-        // v.small.str[is] = '\0';
-        // printf("%s %d\n", v.small.str ,v.tag);
-        // v.tag = va::l;
-        // v.large.str = new char[32]();
-        // v.large.cap = 32;
-        // is = 0;
-        // for (; ss[is] != '\0'; is++) {
-        //     v.large.str[is] = ss[is];
-        // }
-        // v.large.str[is] = ss[is];
-        // printf("%s %d\n", v.large.str ,v.tag);
-        // const char* sw = "world hello";
-        // is = 0;
-        // for (; sw[is] != '\0'; is++) {
-        //     v.large.str[is] = sw[is];
-        // }
-        // v.large.str[is] = ss[is];
-        // printf("%s %d\n", v.large.str ,v.tag);
-        // struct smallstr {char str[24];};
-        // variant<smallstr,string> var;
-        // var.set(smallstr{});
-        // const char* test = "variant test";
-        // int i = 0;
-        // for (;test[i] != '\0';i++) {var.get<smallstr>().str[i] = test[i];}
-        // printf("%s \n", var.get<smallstr>().str);
-        // var.set<string>("hello variant number 4000");
-        // printf("%s \n", var.get<string>().data());
-        // variant<int,float> test;
-        // test.set(12);
-        // printf("%d %d \n", test.get<int>() , test.type_index);
-        // test.set(12.04f);
-        // printf("%f %d \n" ,test.get<float>(),test.type_index);
+        
         string s ("hello world before reserve");
-        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
+        // s.reserve(20);
+        printf("%s %llu \n",s.data() , s.cap());
+        s.append(" new char");
+        printf("%s %llu \n",s.data() , s.cap());
         //s.reserve(50);
-        s.append(" after append");
-        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
+        // s.append(" after append");
+        // c.append(" copy");
         string c (s);
-        c.append(" copy");
-        printf("%s %zu %d \n",c.data(),c.getCap(),c.getindex());
+        c.append(" is c");
+        printf("%s %llu \n",c.data() , c.cap());
         s = ("hello world from world number");
-        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
+        printf("%s %llu \n",s.data() , s.cap());
         s = "hello world numbers 3200";
-        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
+        printf("%s %llu \n",s.data() , s.cap());
         s = "hello again from world number 3200";
-        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
+        printf("%s %llu \n",s.data() , s.cap());
         s = "small";
-        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
-        s.append(" append");
-        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
+        printf("%s %llu \n",s.data() , s.cap());
         s = "again";
-        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
+        printf("%s %llu \n",s.data() , s.cap());
         s = "hello again from world number 4200";
-        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
+        printf("%s %llu \n",s.data() , s.cap());
         s = "sssssssssssssssssssssssssssssssss";
-        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
+        printf("%s %llu \n",s.data() , s.cap());
         s = "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww";
-        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
+        printf("%s %llu \n",s.data() , s.cap());
         s = "wwwwwwwwwwwwwwwwwwwwww";
-        printf("%s %zu %d \n",s.data(),s.getCap(),s.getindex());
+        printf("%s %llu \n",s.data() , s.cap());
         // s = "aaa";
         // printf("%s \n", s.data());
         
-    // } catch (DetailedException e)
-    // {
-    //     printf("%d  \n",e.where().line());
-    // }
+    } catch (MyException e)
+    {
+        e.print();
+    }
     return 0; 
 }

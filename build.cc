@@ -61,7 +61,7 @@ int test()
     Project test(&outPath,Project::exe,true);
 
     #ifdef _WIN32
-    test.setCompiler("clang++").setOptions("-O0 -Wall -nostdlib -std=c++23")
+    test.setCompiler("clang++").setOptions("-O3 -Wall -std=c++23")
     #elif __unix__
     test.setCompiler("clang++-20")
     .setOptions("-O0 -std=c++23 -nostdlib -fno-exception ")
