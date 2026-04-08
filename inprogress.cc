@@ -164,8 +164,9 @@ class string {
 
     struct variant{
         alignas(8) variantBuffer buffer[22];
-        bool autoshrink = true;
-        char type_index = -1;
+        bool autoshrink  = true;
+        char type_index  = -1;
+        size_t len;
         
         void destroy_current() {
             if (type_index == -1) return;
@@ -199,7 +200,6 @@ class string {
         ~variant() { destroy_current();}
     } storage;
 
-    size_t len ;
     constexpr static size_t getLen(const char* str) 
     {
         size_t inlen = 0;
@@ -217,62 +217,62 @@ class string {
     }
     public:
 
-    explicit string() : len(0) {}
+    explicit string() : storage({.len = 0}) {}
 
     string(const char* instr)  {
-        len = getLen(instr);
-        if (len > 21) {
-            storage.set(large{len, instr,len});
+        storage.len = getLen(instr);
+        if (storage.len > 21) {
+            storage.set(large{storage.len, instr,storage.len});
         } else {
-            storage.set(small{instr,len});
+            storage.set(small{instr,storage.len});
         }
     }
 
-    string(const string& other) : len(other.len)  {
+    string(const string& other) : storage({.len = other.storage.len})  {
         if (other.storage.type_index == 1) { // Large
             const large& o_large = other.storage.get<large>();
-            storage.set(large{o_large.cap, o_large.str,other.len});
+            storage.set(large{o_large.cap, o_large.str,other.storage.len});
         } else { // Small
-            storage.set(small{other.storage.get<small>().str,other.len});
+            storage.set(small{other.storage.get<small>().str,other.storage.len});
         }
     }
 
     string& operator=(const char* inStr) {
-        len = getLen(inStr);
+        storage.len = getLen(inStr);
     
             // Logic: Should we stay/become Large?
-        if (len > 21 || (storage.type_index == 1 && storage.autoshrink)) {
+        if (storage.len > 21 || (storage.type_index == 1 && storage.autoshrink)) {
             if (storage.type_index == 1) {
                 auto & stored = storage.get<large>();
-                if (stored.cap < len) {
-                    stored.newCap(len).deleteStr().newStr();
+                if (stored.cap < storage.len) {
+                    stored.newCap(storage.len).deleteStr().newStr();
                 }
-                copy(stored.str, inStr,len);
+                copy(stored.str, inStr,storage.len);
             } else {
-                storage.set(large{len, inStr,len});
+                storage.set(large{storage.len, inStr,storage.len});
             }
         } else {
             // Stay/become Small
             if (storage.type_index == 1) {
-                storage.set(small{inStr,len});
+                storage.set(small{inStr,storage.len});
             }
             auto& stored = storage.get<small>();
-            copy(stored.str, inStr,len);
+            copy(stored.str, inStr,storage.len);
         }
         return *this;
     }
 
     constexpr string& reserve(size_t newSize) {
-        if ((len + newSize) > 21) 
+        if ((storage.len + newSize) > 21) 
         {
             auto& stored = storage.get<large>();
             if (storage.type_index == 1) 
             {
-                char* temp = new char[len];
-                copy(temp, stored.str,len);
+                char* temp = new char[storage.len];
+                copy(temp, stored.str,storage.len);
                 stored.cap += newSize; 
                 char * dest = stored.deleteStr().newStr().str; 
-                copy(dest, temp,len);
+                copy(dest, temp,storage.len);
                 // delete [] storage.get<large>().str;
                 // storage.get<large>().str = new char[storage.get<large>().cap]();
             } else {
@@ -286,31 +286,31 @@ class string {
 
     string& append(const char* in) {
         size_t inlen = getLen(in);
-        size_t totalLen = len + inlen;
+        size_t totalLen = storage.len + inlen;
 
-        if (totalLen >= 21) {
+        if (totalLen > 21) {
             if (storage.type_index == 0) { // Upgrade Small to Large
                 small old = storage.get<small>();
                 // Current storage is now large, copy the 'append' part
-                char* dest = storage.set(large{totalLen, old.str,len}).get<large>().str;
+                char* dest = storage.set(large{totalLen, old.str,storage.len}).get<large>().str;
                 
                 for (size_t i = 0; (inlen - i) != 0; i++) { 
-                    dest[len + i] = in[i]; 
-                    dest[(len + inlen) - i] = in[inlen - i]; 
+                    dest[storage.len + i] = in[i]; 
+                    dest[(storage.len + inlen) - i] = in[inlen - i]; 
                 }
                 dest[totalLen] = '\0';
 
             } else { // Already Large
                 auto& stored = storage.get<large>();
                 if (stored.cap < totalLen) {
-                    char* newStr = new char[len];
-                    copy(newStr, stored.str,len);
+                    char* newStr = new char[storage.len];
+                    copy(newStr, stored.str,storage.len);
                     char* dest = stored.deleteStr().newCap(totalLen).newStr().str;
-                    copy(dest, newStr,len);
+                    copy(dest, newStr,storage.len);
                 } 
                 for (size_t i = 0; (inlen - i) != 0; i++) { 
-                    stored.str[len + i] = in[i]; 
-                    stored.str[(len + inlen) - i] = in[inlen - i]; 
+                    stored.str[storage.len + i] = in[i]; 
+                    stored.str[(storage.len + inlen) - i] = in[inlen - i]; 
                 }
                 stored.str[totalLen] = '\0';
             }
@@ -318,28 +318,33 @@ class string {
             // Stay Small
             char* dest = storage.get<small>().str;
             for (size_t i = 0; inlen - i != 0; i++) { 
-                dest[len + i] = in[i];
+                dest[storage.len + i] = in[i];
                 dest[inlen - i] = in[inlen - i];
 
             }
             dest[totalLen] = '\0';
         }
-        len = totalLen;
+        storage.len = totalLen;
         return *this;
     }
 
-    const char* data() {
-        return storage.type_index == 1 ? 
-        storage.get<large>().str:
-        storage.get<small>().str;
+    const char* data() const {
+        const char* get[2] {
+            storage.get<small>().str,
+            storage.get<large>().str
+        };
+        return get[storage.type_index]; 
     }
-    size_t cap() {
-        return storage.type_index == 1 ? 
-        storage.get<large>().cap : 
-        sizeof(small) ;
+    size_t cap() const {
+        size_t get[] {
+            sizeof(small),
+            storage.get<large>().cap 
+        };
+        return get[storage.type_index];
     }
     int getindex() {return storage.type_index;}
 };
+
 // class string {
 //     struct largeStr {
 //         char* str;
