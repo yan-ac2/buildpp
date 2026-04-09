@@ -1,28 +1,31 @@
 #include <algorithm>
-#include <cstddef>
 #include <cstdlib>
 #include <cstdio>
 #include <filesystem>
 #include <string>
 #include <fstream>
-#include <thread>
 #include <vector>
 #include <queue>
-#include <mutex>
-#include <condition_variable>
-#include <functional>
 #include <string_view>
 #include <unordered_map>
-#include <type_traits>
 #include <source_location>
 
+template<typename T> struct remove_ptr {
+    using type = T;
+};
+template<typename T> struct remove_ptr<T*> {
+    using type = T;
+};
+template<typename T>
 
+using remove_ptr_t = remove_ptr<T>::type;
+using size_t = __SIZE_TYPE__;
 namespace  fs = std::filesystem;
 using namespace std::string_view_literals;
 template<typename... Args> concept onlyStr = (std::convertible_to<Args, std::string_view> && ...);
 
 template<typename T>
-concept funcPtr = std::is_pointer_v<T> && std::is_function_v<std::remove_pointer_t<T>>;
+concept funcPtr = std::is_pointer_v<T> && std::is_function_v<remove_ptr_t<T>>;
 
 struct fmt {
     std::string str;

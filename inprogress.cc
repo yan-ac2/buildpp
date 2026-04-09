@@ -296,7 +296,6 @@ class string {
                     dest[storage.len + i] = in[i]; 
                     dest[(storage.len + inlen) - i] = in[inlen - i]; 
                 }
-                dest[totalLen] = '\0';
 
             } else { // Already Large
                 auto& stored = storage.get<large>();
@@ -310,7 +309,6 @@ class string {
                     stored.str[storage.len + i] = in[i]; 
                     stored.str[(storage.len + inlen) - i] = in[inlen - i]; 
                 }
-                stored.str[totalLen] = '\0';
             }
         } else {
             // Stay Small
@@ -318,20 +316,38 @@ class string {
             for (size_t i = 0; inlen - i != 0; i++) { 
                 dest[storage.len + i] = in[i];
                 dest[inlen - i] = in[inlen - i];
-
             }
-            dest[totalLen] = '\0';
         }
         storage.len = totalLen;
         return *this;
     }
 
+    char& front() {
+        return storage.type_index == 1 ?
+        storage.get<large>().str[0]:
+        storage.get<small>().str[0];
+    }
+    const char& front() const {
+        return storage.type_index == 1 ?
+        storage.get<large>().str[0]:
+        storage.get<small>().str[0];
+    }
+    char& back() {
+        return storage.type_index == 1 ?
+        storage.get<large>().str[storage.len - 1]:
+        storage.get<small>().str[storage.len - 1];
+    }
+    const char& back() const {
+        return storage.type_index == 1 ?
+        storage.get<large>().str[storage.len - 1]:
+        storage.get<small>().str[storage.len - 1];
+    }
     const char* data() const { 
         return storage.type_index == 1 ?
         storage.get<large>().str: 
         storage.get<small>().str;
     }
-    size_t cap() const {
+    const size_t cap() const {
         return storage.type_index == 1 ?
         storage.get<large>().cap: 
         21;
@@ -514,45 +530,45 @@ class string {
 
 int main()
 {
-    try 
-    {
+    // try 
+    // {
         
         
         string s ("hello world before reserve");
         // s.reserve(20);
-        printf("%s %llu \n",s.data() , s.cap());
+        printf("%s %zu \n",s.data() , s.cap());
         s.append(" new char");
-        printf("%s %llu \n",s.data() , s.cap());
+        printf("%s %zu \n",s.data() , s.cap());
         //s.reserve(50);
         // s.append(" after append");
         // c.append(" copy");
         string c (s);
         c.append(" is c");
-        printf("%s %llu \n",c.data() , c.cap());
+        printf("%s %zu \n",c.data() , c.cap());
         s = ("hello world from world number");
-        printf("%s %llu \n",s.data() , s.cap());
+        printf("%s %zu \n",s.data() , s.cap());
         s = "hello world numbers 3200";
-        printf("%s %llu \n",s.data() , s.cap());
+        printf("%s %zu \n",s.data() , s.cap());
         s = "hello again from world number 3200";
-        printf("%s %llu \n",s.data() , s.cap());
+        printf("%s %zu \n",s.data() , s.cap());
         s = "small";
-        printf("%s %llu \n",s.data() , s.cap());
+        printf("%s %zu \n",s.data() , s.cap());
         s = "again";
-        printf("%s %llu \n",s.data() , s.cap());
+        printf("%s %zu \n",s.data() , s.cap());
         s = "hello again from world number 4200";
-        printf("%s %llu \n",s.data() , s.cap());
+        printf("%s %zu \n",s.data() , s.cap());
         s = "sssssssssssssssssssssssssssssssss";
-        printf("%s %llu \n",s.data() , s.cap());
+        printf("%s %zu \n",s.data() , s.cap());
         s = "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww";
-        printf("%s %llu \n",s.data() , s.cap());
+        printf("%s %zu \n",s.data() , s.cap());
         s = "wwwwwwwwwwwwwwwwwwwwww";
-        printf("%s %llu \n",s.data() , s.cap());
+        printf("%s %zu \n",s.data() , s.cap());
         // s = "aaa";
         // printf("%s \n", s.data());
         
-    } catch (MyException e)
-    {
-        e.print();
-    }
+    // } catch (MyException e)
+    // {
+    //     e.print();
+    // }
     return 0; 
 }

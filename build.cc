@@ -1,5 +1,10 @@
 #include "build.h"
 
+#include <functional>
+#include <mutex>
+#include <condition_variable>
+#include <thread>
+
 
 class ThreadPool {
 public:
@@ -64,7 +69,7 @@ int test()
     test.setCompiler("clang++").setOptions("-O3 -Wall -std=c++23")
     #elif __unix__
     test.setCompiler("clang++-20")
-    .setOptions("-O0 -std=c++23 -nostdlib -fno-exception ")
+    .setOptions("-O0 -std=c++23 -nostdlib -fno-exceptions ")
     #endif
     .setProjectPath(".")
     .setSourcePath("")
