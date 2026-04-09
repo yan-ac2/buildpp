@@ -6,12 +6,10 @@ module;
 #include <cstdio>
 #include <type_traits>
 #include <functional>
-#include <format>
 export module lib.std;
 export namespace std
 {
     using std::vector;
-    using std::format;
     using string = std::string;
     using string_view = std::string_view;
     using std::printf;

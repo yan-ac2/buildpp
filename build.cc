@@ -63,7 +63,7 @@ int test()
     .setExePath("")
     .setOutpath("_buildtest");
 
-    Project test(&outPath,Project::exe,true);
+    Project test(&outPath,true,nullptr,Project::exe);
 
     #ifdef _WIN32
     test.setCompiler("clang++").setOptions("-O3 -Wall -std=c++23")
@@ -99,13 +99,13 @@ int selfCompile(bool recompile)
     .setExePath("").
     setOutpath("_buildself");
 
-    Project rebuild(&outPath,Project::exe,recompile);
+    Project rebuild(&outPath,recompile,nullptr);
 
     #ifdef _WIN32
     rebuild.setCompiler("clang++").setOptions("-O0 -Wall -std=c++23")
     #elif __unix__
     rebuild.setCompiler("clang++-20")
-    .setOptions("-O3 -fno-exceptions -std=c++23 -stdlib=libc++ ")
+    .setOptions("-O3 -Wall -std=c++23 -stdlib=libc++ ")
     #endif
     .setProjectPath(".")
     .setSourcePath("")
@@ -129,7 +129,7 @@ int compileProject(bool recompile)
 {
     ThreadPool pool(std::thread::hardware_concurrency());
     const fs::path rootPath = ".";
-    
+    compileCommand cmdJson;
     outputPath outPath;
     outPath.setRootPath(".");
     outPath.setExePath("");
@@ -154,13 +154,13 @@ int compileProject(bool recompile)
     libGLAD.addDependency("glad.c", {"GL"});
     #endif
 
-    Project mainProj(&outPath, Project::exe,recompile);
+    Project mainProj(&outPath,recompile,&cmdJson);
 
     #ifdef _WIN32
     mainProj.setCompiler("clang++")
     .setOptions("-O0 -std=c++23")
     #elif __unix__
-    mainProj.setCompiler("clang++-20")
+    mainProj.setCompiler("clang-scan-deps-20 -format=p1689 -- /usr/bin/clang++-20")
     .setOptions("-O3 -fno-exceptions -stdlib=libc++ -std=c++23")
     #endif
 
@@ -206,7 +206,7 @@ int compileProject(bool recompile)
         pool.enqueue ([&i,&mainProj]{mainProj.compileCpp(i);});
     }
     while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(1000));};
-
+    for (int i = 0;i != 30;i++);
     
     mainProj.link("main");
     return 0;
