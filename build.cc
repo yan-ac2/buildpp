@@ -3,6 +3,7 @@
 #include <functional>
 #include <mutex>
 #include <condition_variable>
+#include <system_error>
 #include <thread>
 
 
@@ -102,7 +103,7 @@ int selfCompile(bool recompile)
     Project rebuild(&outPath,recompile,nullptr);
 
     #ifdef _WIN32
-    rebuild.setCompiler("clang++").setOptions("-O0 -Wall -std=c++23")
+    rebuild.setCompiler("clang++").setOptions("-O3 -Wall -std=c++23")
     #elif __unix__
     rebuild.setCompiler("clang++-20")
     .setOptions("-O3 -Wall -std=c++23 -stdlib=libc++ ")
@@ -127,88 +128,93 @@ int selfCompile(bool recompile)
 
 int compileProject(bool recompile)
 {
-    ThreadPool pool(std::thread::hardware_concurrency());
-    const fs::path rootPath = ".";
-    compileCommand cmdJson;
-    outputPath outPath;
-    outPath.setRootPath(".");
-    outPath.setExePath("");
-    outPath.setOutpath("_build");
-
-    cProject libGLAD(&outPath, cProject::staticLib,recompile);
-    #ifdef _WIN32
-    libGLAD.setCompiler("clang");
-    #elif __unix__
-    libGLAD.setCompiler("clang-20");
-    #endif
-    libGLAD.setOptions("-O0");
-    libGLAD.setProjectPath((rootPath / "example" / "source" / "lib" / "glad").string());
-    libGLAD.setSourcePath("src");
-    libGLAD.setMain((libGLAD.sourcePath / "glad.c").string());
-    libGLAD.addInclude(libGLAD.path / "include");
-    libGLAD.getCFile();
-    libGLAD.scanInclude();
-    #ifdef _WIN32
-    libGLAD.addDependency("glad.c", {"opengl32"});
-    #elif __unix__
-    libGLAD.addDependency("glad.c", {"GL"});
-    #endif
-
-    Project mainProj(&outPath,recompile,&cmdJson);
-
-    #ifdef _WIN32
-    mainProj.setCompiler("clang++")
-    .setOptions("-O0 -std=c++23")
-    #elif __unix__
-    mainProj.setCompiler("clang-scan-deps-20 -format=p1689 -- /usr/bin/clang++-20")
-    .setOptions("-O3 -fno-exceptions -stdlib=libc++ -std=c++23")
-    #endif
-
-    .setProjectPath((rootPath / "example").string())
-    .setSourcePath("source")
-    .setMain("main.cc")
-    .addIncludePath((libGLAD.path / "include" / "glad").string())
+    try {
     
-    //mainProj.addInclude(rootPath / "usr" / "include" / "X11" );
-    .addInclude(mainProj._sourcePath  / "lib" / "RGFW")
-    .addInclude(mainProj._sourcePath  / "lib" / "glad" / "include")
-    .getCppFile();
-
-    mainProj.scanHeader().scanModule()
-    #ifdef _WIN32
-    .addDependency("lib.RGFW.ccm",{"opengl32", "gdi32"})
-    #elif __unix__
-    .addDependency("lib.RGFW.ccm",{"GL", "X11", "Xrandr"})
-    .addDependency("lib.std.ccm",{"c++","c++abi"})
-    #endif
-    // mainProj.dumpProject();
-    .dumpIncludeMap()
-    .dumpModule()
-    .dumpDependencies()
-    .dumpModuleMap()
-    .dumpInclude();
-
-    // defer end([&mainProj]{
-    //     std::cout << "linking"_fmt.setColor(fmt::Bold_Green) << std::endl;
-    //     mainProj.link("main");
-    // });
-    for (const auto& i : libGLAD.project) {
-        pool.enqueue ([&i,&libGLAD]{libGLAD.compileC(i);});
+        ThreadPool pool(std::thread::hardware_concurrency());
+        const fs::path rootPath = ".";
+        compileCommand* cmdJson = new compileCommand();
+        outputPath outPath;
+        outPath.setRootPath(".");
+        outPath.setExePath("");
+        outPath.setOutpath("_build");
+    
+        cProject libGLAD(&outPath, cProject::staticLib,recompile);
+        #ifdef _WIN32
+        libGLAD.setCompiler("clang");
+        #elif __unix__
+        libGLAD.setCompiler("clang-20");
+        #endif
+        libGLAD.setOptions("-O0");
+        libGLAD.setProjectPath((rootPath / "example" / "source" / "lib" / "glad").string());
+        libGLAD.setSourcePath("src");
+        libGLAD.setMain((libGLAD.sourcePath / "glad.c").string());
+        libGLAD.addInclude(libGLAD.path / "include");
+        libGLAD.getCFile();
+        libGLAD.scanInclude();
+        #ifdef _WIN32
+        libGLAD.addDependency("glad.c", {"opengl32"});
+        #elif __unix__
+        libGLAD.addDependency("glad.c", {"GL"});
+        #endif
+    
+        Project mainProj(&outPath,recompile,cmdJson);
+    
+        #ifdef _WIN32
+        mainProj.setCompiler("clang++")
+        .setOptions("-O0 -std=c++23")
+        #elif __unix__
+        mainProj.setCompiler("clang-scan-deps-20 -format=p1689 -- /usr/bin/clang++-20")
+        .setOptions("-O3 -fno-exceptions -stdlib=libc++ -std=c++23")
+        #endif
+    
+        .setProjectPath((rootPath / "example").string())
+        .setSourcePath("source")
+        .setMain("main.cc")
+        .addIncludePath((libGLAD.path / "include" / "glad").string())
+        
+        //mainProj.addInclude(rootPath / "usr" / "include" / "X11" );
+        .addInclude(mainProj._sourcePath  / "lib" / "RGFW")
+        .addInclude(mainProj._sourcePath  / "lib" / "glad" / "include")
+        .getCppFile();
+    
+        mainProj.scanHeader().scanModule()
+        #ifdef _WIN32
+        .addDependency("lib.RGFW.ccm",{"opengl32", "gdi32"})
+        #elif __unix__
+        .addDependency("lib.RGFW.ccm",{"GL", "X11", "Xrandr"})
+        .addDependency("lib.std.ccm",{"c++","c++abi"})
+        #endif
+        // mainProj.dumpProject();
+        .dumpIncludeMap()
+        .dumpModule()
+        .dumpDependencies()
+        .dumpModuleMap()
+        .dumpInclude();
+    
+        // defer end([&mainProj]{
+        //     std::cout << "linking"_fmt.setColor(fmt::Bold_Green) << std::endl;
+        //     mainProj.link("main");
+        // });
+        for (const auto& i : libGLAD.project) {
+            pool.enqueue ([&i,&libGLAD]{libGLAD.compileC(i);});
+        }
+        while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
+        mainProj.getLib(&libGLAD);
+    
+        mainProj.compileModule();
+        
+        while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
+        
+        for (const auto& i : mainProj._project) {
+            // pool.enqueue ([&i,&mainProj]{mainProj.compileCpp(i);});
+            mainProj.compileCpp(i);
+        }
+        while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
+        
+        mainProj.link("main");
+    } catch (std::error_code e) {
+        print << e.message();
     }
-    while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
-    mainProj.getLib(&libGLAD);
-
-    mainProj.compileModule();
-    
-    while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
-    
-    for (const auto& i : mainProj._project) {
-        pool.enqueue ([&i,&mainProj]{mainProj.compileCpp(i);});
-    }
-    while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(1000));};
-    for (int i = 0;i != 30;i++);
-    
-    mainProj.link("main");
     return 0;
 }
 

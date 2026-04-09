@@ -1,0 +1,10 @@
+CompileFlags:
+    Add:
+    - "-std=c++23"
+    - "-Wall"
+    - "-fmodules"
+    - "-fprebuilt-module-path=.\\_build\\module\\."
+    - "-I.\\example\\source\\lib\\RGFW"
+    - "-I.\\example\\source\\lib\\glad\\include"
+    CompilationDatabase: .
+    Compiler : clang++

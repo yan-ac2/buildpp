@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <initializer_list>
+#include <regex>
 #include <string>
 #include <fstream>
 #include <vector>
@@ -64,6 +65,17 @@ struct fmt {
         str.reserve((color == fmt::Black) ? 13 : 14);
         str.insert(0, this->getColor(color))
         .append(this->getColor(Not_color));
+        return *this;
+    }
+    constexpr std::vector<std::string_view> toArray() {
+        std::vector<std::string_view> temp;
+        for (auto idx = str.begin();idx != str.end();idx++) {
+            
+        }
+        return temp;
+    }
+    constexpr fmt& clean() { 
+        str.erase(std::unique(str.begin(), str.end(), [](char lhs,char rhs){return (lhs == rhs) && (lhs == ' ');}), str.end());
         return *this;
     }
     constexpr fmt& endl() {this->str.append("\n"); return *this;}
@@ -263,14 +275,24 @@ struct fileExtension
 class compileCommand {
     utl::json::node jsonNode;
     public:
-    compileCommand& addCompilecmd(std::string_view cmd) {
-        utl::json::node innode = cmd;
+    // compileCommand& addCompilecmd(std::string path,std::string arg,std::string file) {
+    //     utl::json::node innode;
+    //     innode["directory"] = path;
+    //     innode["arguments"] = arg ;
+    //     innode["file"] = file ;
+
+    //     jsonNode.push_back(innode);
+    //     return *this;
+    // }
+    compileCommand& addCompilecmd(std::string arg) {
+        utl::json::node innode = arg;
+
         jsonNode.push_back(innode);
         return *this;
     }
     void write(fs::path to)
     {
-        jsonNode.to_file(to);
+        jsonNode.to_file(to.string());
     }
 
 
@@ -557,7 +579,7 @@ class Project
     std::unordered_map<std::string,std::string> _moduleDeps;
 
     constexpr Project& setMain(std::string_view main)     {_Main = main; return *this;}
-    constexpr Project& setCompiler(std::string_view comp) {_Compiler = fmt(comp," ").sv(); return *this;}
+    constexpr Project& setCompiler(std::string_view comp) {_Compiler = comp; return *this;}
     constexpr Project& setOptions (std::string_view opt)  {_Options = fmt(" ",opt," ").sv(); return *this;}
     constexpr Project& setProjectPath(std::string_view in){_path = in; return *this;}
     constexpr Project& setSourcePath(std::string_view in) {_sourcePath = _path / in; return *this;}
@@ -672,21 +694,22 @@ class Project
                 }();
                 
                 const std::string f_module       {fmt((mPath / f_path.stem()).string(), file.pcmModule)};
-                const std::string f_moduleOutput {fmt(" -o ", f_module)};
-                const std::string f_srcInput     {fmt(" -fprebuilt-module-path=",(mPath / ".").string()," --precompile ", f_path.string()," ")};
+                const std::string f_srcInput     {fmt("-fprebuilt-module-path=",(mPath / ".").string()," --precompile ", f_path.string()," ")};
+                const std::string f_moduleOutput {fmt("-o ", f_module)};
                 
                 for (const auto& [mod , dep] : _moduleMap)
                 {
                     if (fs::path(mod).filename().string() == f_path.filename().string()) {
                         for(const auto& d : dep)
                         {
-                            std::string_view temp = d.substr(0,d.find_last_of('.'));
-                            _moduleDeps[f_path.filename().string()].append(fmt(" -fmodule-file=",temp,"=",(mPath / temp).string(),file.pcmModule," "));
+                            fs::path temp = fs::path(d).filename();
+                            _moduleDeps[f_path.filename().string()].append(fmt(" -fmodule-file=",temp.stem().string(),"=",(mPath / temp.stem()).string(),file.pcmModule," "));
                         }
                     }
                 }
 
-                const std::string f_cmd          {fmt(_Compiler, _Options , f_found ? _compileInclude : "",_moduleDeps[f_path.filename().string()] ,f_srcInput , f_moduleOutput," -MD -MT impl_part.ddi -MF impl_part.dep")};
+                const std::string f_cmd {fmt(_Compiler, _Options , f_found ? _compileInclude : "",_moduleDeps[f_path.filename().string()] ,f_srcInput , f_moduleOutput).clean()};
+                // if(cmdJson != nullptr) {cmdJson->addCompilecmd((fs::current_path()/"example"/"source").string().c_str(),f_cmd,f_path.filename().string().c_str());}
                 if(cmdJson != nullptr) {cmdJson->addCompilecmd(f_cmd);}
                 
                 //this->object.push_back(f_obj);
@@ -724,7 +747,7 @@ class Project
     void compileCpp(std::string_view inPath)
     {
         const fs::path f_path = inPath;
-        const std::string f_objOutput {fmt((OutPath->objPath / f_path.filename().stem()).string() , file.objFile)};
+        const std::string f_objOutput {fmt((OutPath->objPath / f_path.filename().stem()).string().c_str() , file.objFile)};
 
         const bool f_includefound = std::find_if(_includeMap.begin(), _includeMap.end(), [&f_path](const auto& p) 
         {return p.second[0] == f_path.string();}) != _includeMap.end();
@@ -744,11 +767,12 @@ class Project
             return false;
         }();
             
-        const std::string f_cppOutput {fmt( " ",f_path.string(), _modules.empty() ? "" : 
-            fmt(" -fprebuilt-module-path=", (OutPath->modulePath / ".").string()).sv()," -c -o ")};
+        const std::string f_cppOutput {fmt(f_path.string(), _modules.empty() ? "" : 
+            fmt(" -fprebuilt-module-path=", (OutPath->modulePath / ".").string().c_str())," -c -o ")};
             
-        const std::string f_cmd {fmt(_Compiler, _Options,f_includefound ? _compileInclude : "",f_inModuledep ? _moduleDeps[f_path.filename().string()] : "",f_cppOutput, f_objOutput," -MD -MT impl_part.ddi -MF impl_part.dep")};
+        const std::string f_cmd {fmt(_Compiler, _Options,f_includefound ? _compileInclude : "",f_inModuledep ? _moduleDeps[f_path.filename().string()] : "",f_cppOutput, f_objOutput).clean()};
         
+        // if(cmdJson != nullptr) { cmdJson->addCompilecmd((fs::current_path()/"example"/"source").string().c_str(),f_cmd,f_path.filename().string().c_str());}
         if(cmdJson != nullptr) { cmdJson->addCompilecmd(f_cmd);}
         
         if (!f_inObject)
@@ -779,9 +803,9 @@ class Project
         print << fmt("linking"_fmt.color(fmt::Bold_Green).endl());
         const std::string targetOut {fmt((OutPath->exePath / target).string())};
         const std::string Executable {fmt(" -o ", targetOut, file.platform)};
-        std::string Object     {fmt(_modules.empty() ? "" : fmt(" -fprebuilt-module-path=", (OutPath->modulePath / ".").string()), " " )};
+        std::string Object     {fmt(_modules.empty() ? "" : fmt(" -fprebuilt-module-path=", (OutPath->modulePath / ".").string()))};
         if (fs::exists(fmt(targetOut, file.platform).sv())) {
-            fs::rename(fmt(targetOut, file.platform).sv(), fmt(targetOut, file.platform, ".old").sv());
+            fs::rename(fmt(targetOut, file.platform).str, fmt(targetOut, file.platform, ".old").str);
         }
         for (const auto& p : _object) {
             for (const auto& deps : _dependency)
@@ -795,9 +819,10 @@ class Project
             Object.append(fmt(" ",p).sv());
         }
 
-        const std::string f_cmd {fmt("clang++-20",Object,Executable)};
+        const std::string f_cmd {fmt(_Compiler,Object,Executable).clean()};
         print << f_cmd << "\n";
-        if(cmdJson != nullptr)cmdJson->write(fs::current_path()/"compile_command.json");
+
+        if(cmdJson != nullptr)cmdJson->write(fs::current_path()/"compile_commands.json");
         cmd << f_cmd.c_str() >> "linking error"_fmt.color(fmt::Bold_Red);
     }
 
@@ -807,7 +832,7 @@ class Project
         if (!fs::exists(IncludePath)) { err(true,fmt("Include path ",IncludePath.string(), "does not exist").color(fmt::Bold_Red));}
         
         _includePath.push_back(IncludePath.string());
-        _compileInclude.append(fmt("-I ",IncludePath.string(), " "));
+        _compileInclude.append(fmt("-I",IncludePath.string()," "));
         return *this;
     }
 
