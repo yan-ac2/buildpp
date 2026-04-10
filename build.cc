@@ -68,7 +68,7 @@ int test()
     .setOutfolder(rootPath / ".build")
     .setOutpath(rootPath / ".build" / "test");
 
-    Project test(&outPath,true,nullptr,Project::exe);
+    Project test(&outPath,true,Project::exe);
 
     #ifdef _WIN32
     test.setCompiler("clang++").setOptions("-O3 -Wall -std=c++23")
@@ -78,8 +78,8 @@ int test()
     #endif
     .setProjectPath(rootPath)
     .setSourcePath("testlib")
-    .setMain((test.SourcePath / "inprogress.cc").string())
-    .addSource({(test.SourcePath / "inprogress.cc").string()})
+    .setMain((test.Path / "inprogress.cc").string())
+    .addSource({(test.Path / "inprogress.cc").string()})
     .getCppFile();
     
     #ifdef __unix__
@@ -116,8 +116,8 @@ int selfCompile(bool recompile)
     .setOptions("-O3 -Wall -std=c++23 -stdlib=libc++ ")
     #endif
     .setProjectPath(rootPath)
-    .setSourcePath("")
-    .setMain((rebuild.SourcePath / "build.cc").string())
+    .setSourcePath(rootPath)
+    .setMain((rebuild.Path / "build.cc").string())
     .addSource({"build.cc"})
     .getCppFile();
     
@@ -149,24 +149,25 @@ int compileProject(bool recompile)
     
         cProject libGLAD(&outPath, cProject::staticLib,recompile);
         #ifdef _WIN32
-        libGLAD.setCompiler("clang");
+        libGLAD.setCompiler("clang")
         #elif __unix__
-        libGLAD.setCompiler("clang-20");
+        libGLAD.setCompiler("clang-20")
         #endif
-        libGLAD.setOptions("-O0");
-        libGLAD.setProjectPath(rootPath / "example" / "source" / "lib" / "glad");
-        libGLAD.setSourcePath("src");
-        libGLAD.setMain((libGLAD.sourcePath / "glad.c").string());
-        libGLAD.addInclude(libGLAD.path / "include");
-        libGLAD.getCFile();
-        libGLAD.scanInclude();
+        .addCompileCommand(&cmdJson)
+        .setOptions("-O0")
+        .setProjectPath(rootPath / "example" / "source" / "lib" / "glad")
+        .setSourcePath("src")
+        .setMain((libGLAD.sourcePath / "glad.c").string())
+        .addInclude(libGLAD.path / "include")
+        .getCFile()
+        .scanInclude()
         #ifdef _WIN32
-        libGLAD.addDependency("glad.c", {"opengl32"});
+        .addDependency("glad.c", {"opengl32"})
         #elif __unix__
-        libGLAD.addDependency("glad.c", {"GL"});
+        .addDependency("glad.c", {"GL"});
         #endif
     
-        Project mainProj(&outPath,recompile,&cmdJson);
+        Project mainProj(&outPath,recompile);
     
         #ifdef _WIN32
         mainProj.setCompiler("clang++")
@@ -175,9 +176,9 @@ int compileProject(bool recompile)
         mainProj.setCompiler("clang++-20")
         .setOptions("-O3 -fno-exceptions -stdlib=libc++ -std=c++23")
         #endif
-    
+        .addCompileCommand(&cmdJson)
         .setProjectPath((rootPath / "example"))
-        .setSourcePath("source")
+        .setSourcePath(mainProj.Path / "source")
         .setMain("main.cc")
         .addIncludePath((libGLAD.path / "include" / "glad"))
         
@@ -208,9 +209,8 @@ int compileProject(bool recompile)
             pool.enqueue ([&i,&libGLAD]{libGLAD.compileC(i);});
         }
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
-        mainProj.getLib(&libGLAD);
-    
-        mainProj.compileModule();
+        
+        mainProj.getLib(&libGLAD).compileModule();
         
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
         
@@ -219,7 +219,9 @@ int compileProject(bool recompile)
             mainProj.compileCpp(i);
         }
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
-        
+
+        if(mainProj.cmdJson != nullptr) mainProj.cmdJson->write(fs::current_path()/"compile_commands.json");
+
         mainProj.link("main");
     
     return 0;
