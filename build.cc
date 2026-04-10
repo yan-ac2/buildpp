@@ -1,9 +1,9 @@
-#include "build.h"
+#include "build.hpp"
 
+#include <filesystem>
 #include <functional>
 #include <mutex>
 #include <condition_variable>
-#include <system_error>
 #include <thread>
 
 
@@ -59,10 +59,14 @@ public:
 int test()
 { 
     print << "compile test"_fmt.color(fmt::Bold_Green).endl();
+    const fs::path rootPath = fs::current_path();
+    const fs::path exePath = rootPath / "bin";
+
     outputPath outPath;
-    outPath.setRootPath(".")
-    .setExePath("")
-    .setOutpath("_buildtest");
+    outPath.setRootPath(rootPath)
+    .setExePath(exePath)
+    .setOutfolder(rootPath / ".build")
+    .setOutpath(rootPath / ".build" / "test");
 
     Project test(&outPath,true,nullptr,Project::exe);
 
@@ -72,16 +76,16 @@ int test()
     test.setCompiler("clang++-20")
     .setOptions("-O0 -std=c++23 -nostdlib -fno-exceptions ")
     #endif
-    .setProjectPath(".")
-    .setSourcePath("")
-    .setMain(fs::path("inprogress.cc").string())
-    .addSource({"inprogress.cc"})
+    .setProjectPath(rootPath)
+    .setSourcePath("testlib")
+    .setMain((test.SourcePath / "inprogress.cc").string())
+    .addSource({(test.SourcePath / "inprogress.cc").string()})
     .getCppFile();
     
     #ifdef __unix__
     // test.addDependency("inprogress.cc",{"c++","c++abi"});
     #endif
-    for (const auto& i : test._project)
+    for (const auto& i : test.ProjectFile)
     {
         test.compileCpp(i);
     }
@@ -95,12 +99,15 @@ int test()
 int selfCompile(bool recompile)
 {
     print << "compile self"_fmt.color(fmt::Bold_Green).endl();
-    outputPath outPath;
-    outPath.setRootPath(".")
-    .setExePath("").
-    setOutpath("_buildself");
 
-    Project rebuild(&outPath,recompile,nullptr);
+    const fs::path rootPath = fs::current_path();
+    outputPath outPath;
+    outPath.setRootPath(rootPath)
+    .setExePath(rootPath)
+    .setOutfolder(rootPath / ".build")
+    .setOutpath(rootPath/".build" / "self");
+
+    Project rebuild(&outPath,recompile);
 
     #ifdef _WIN32
     rebuild.setCompiler("clang++").setOptions("-O3 -Wall -std=c++23")
@@ -108,16 +115,16 @@ int selfCompile(bool recompile)
     rebuild.setCompiler("clang++-20")
     .setOptions("-O3 -Wall -std=c++23 -stdlib=libc++ ")
     #endif
-    .setProjectPath(".")
+    .setProjectPath(rootPath)
     .setSourcePath("")
-    .setMain((rebuild._sourcePath / "build.cc").string())
+    .setMain((rebuild.SourcePath / "build.cc").string())
     .addSource({"build.cc"})
     .getCppFile();
     
     #ifdef __unix__
     rebuild.addDependency("build.cc",{"c++","c++abi"});
     #endif
-    for (const auto& i : rebuild._project)
+    for (const auto& i : rebuild.ProjectFile)
     {
         rebuild.compileCpp(i);
     }
@@ -128,15 +135,17 @@ int selfCompile(bool recompile)
 
 int compileProject(bool recompile)
 {
-    try {
-    
         ThreadPool pool(std::thread::hardware_concurrency());
-        const fs::path rootPath = ".";
-        compileCommand* cmdJson = new compileCommand();
+        const fs::path rootPath = fs::current_path();
+        const fs::path exePath = rootPath / "bin";
+
+        compileCommand cmdJson;
         outputPath outPath;
-        outPath.setRootPath(".");
-        outPath.setExePath("");
-        outPath.setOutpath("_build");
+        outPath.setRootPath(rootPath)
+        .setExePath(exePath)
+        .setOutfolder(rootPath / ".build")
+        .setOutpath(rootPath / ".build" / "project");
+
     
         cProject libGLAD(&outPath, cProject::staticLib,recompile);
         #ifdef _WIN32
@@ -145,7 +154,7 @@ int compileProject(bool recompile)
         libGLAD.setCompiler("clang-20");
         #endif
         libGLAD.setOptions("-O0");
-        libGLAD.setProjectPath((rootPath / "example" / "source" / "lib" / "glad").string());
+        libGLAD.setProjectPath(rootPath / "example" / "source" / "lib" / "glad");
         libGLAD.setSourcePath("src");
         libGLAD.setMain((libGLAD.sourcePath / "glad.c").string());
         libGLAD.addInclude(libGLAD.path / "include");
@@ -157,24 +166,24 @@ int compileProject(bool recompile)
         libGLAD.addDependency("glad.c", {"GL"});
         #endif
     
-        Project mainProj(&outPath,recompile,cmdJson);
+        Project mainProj(&outPath,recompile,&cmdJson);
     
         #ifdef _WIN32
         mainProj.setCompiler("clang++")
         .setOptions("-O0 -std=c++23")
         #elif __unix__
-        mainProj.setCompiler("clang-scan-deps-20 -format=p1689 -- /usr/bin/clang++-20")
+        mainProj.setCompiler("clang++-20")
         .setOptions("-O3 -fno-exceptions -stdlib=libc++ -std=c++23")
         #endif
     
-        .setProjectPath((rootPath / "example").string())
+        .setProjectPath((rootPath / "example"))
         .setSourcePath("source")
         .setMain("main.cc")
-        .addIncludePath((libGLAD.path / "include" / "glad").string())
+        .addIncludePath((libGLAD.path / "include" / "glad"))
         
         //mainProj.addInclude(rootPath / "usr" / "include" / "X11" );
-        .addInclude(mainProj._sourcePath  / "lib" / "RGFW")
-        .addInclude(mainProj._sourcePath  / "lib" / "glad" / "include")
+        .addInclude(rootPath/"example"/"source"/ "lib" / "RGFW")
+        .addInclude(rootPath/"example"/"source"/ "lib" / "glad" / "include")
         .getCppFile();
     
         mainProj.scanHeader().scanModule()
@@ -205,16 +214,14 @@ int compileProject(bool recompile)
         
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
         
-        for (const auto& i : mainProj._project) {
+        for (const auto& i : mainProj.ProjectFile) {
             // pool.enqueue ([&i,&mainProj]{mainProj.compileCpp(i);});
             mainProj.compileCpp(i);
         }
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
         
         mainProj.link("main");
-    } catch (std::error_code e) {
-        print << e.message();
-    }
+    
     return 0;
 }
 

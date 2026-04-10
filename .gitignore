@@ -1,8 +1,10 @@
 bin/
-build/
-_build/
-_buildself/
+.build/
+bin/
+.cache/
+.vscode/
 *.exe
 *.out
 *.old
-.vscode/
+*.o
+*.json

@@ -51,13 +51,13 @@ struct vec3
 
     std::string str() const {
         std::string local;
-        local.append("[ ");
-        local.append(std::to_string(this->x));
-        local.append(" , "); 
-        local.append(std::to_string(this->y));
-        local.append(" , "); 
-        local.append(std::to_string(this->z));
-        local.append(" ]\n");
+        local.append("[ ")
+        .append(std::to_string(this->x))
+        .append(" , ")
+        .append(std::to_string(this->y))
+        .append(" , ")
+        .append(std::to_string(this->z))
+        .append(" ]\n");
         return local; 
     };
 };

@@ -7,7 +7,6 @@
 #include <cstdio>
 #include <filesystem>
 #include <initializer_list>
-#include <regex>
 #include <string>
 #include <fstream>
 #include <vector>
@@ -28,6 +27,7 @@ template<typename T>
 
 using remove_ptr_t = remove_ptr<T>::type;
 using size_t = __SIZE_TYPE__;
+
 namespace  fs = std::filesystem;
 using namespace std::string_view_literals;
 template<typename... Args> concept onlyStr = (std::convertible_to<Args, std::string_view> && ...);
@@ -171,15 +171,39 @@ struct outputPath {
     fs::path modulePath {};
     fs::path exePath    {};
 
-    outputPath& setRootPath(std::string_view root) { rootPath = root; return *this;}
-    outputPath& setExePath(std::string_view exe) {
-        if(rootPath.empty()) {return err(true,"root path is empty");} 
-        exePath = rootPath / exe;
+    outputPath& setRootPath(fs::path root) { rootPath = root; return *this;}
+    outputPath& setExePath(fs::path exe) {
+        if(rootPath.empty()) {return err(true,"root path is empty");}
+        if (!fs::exists(exe)) 
+        {
+            if (fs::create_directory(exe)) {
+                print << fmt("Directory created: " , exe.string() , "\n");
+            } else {
+                err(true,fmt("Failed to create directory: "));
+            }        
+        } else {
+            print << fmt("Directory already exists: "_fmt.color(fmt::Bold_Yellow) , exe.string(),"\n");
+        } 
+        exePath = exe;
         return err();
     }
-    void setOutpath(std::string_view out) {
+    outputPath& setOutfolder(fs::path folder) {
+    if(rootPath.empty()) {return err(true,"root path is empty");} 
+        if (!fs::exists(folder)) 
+        {
+            if (fs::create_directory(folder)) {
+                print << fmt("Directory created: " , folder.string() , "\n");
+            } else {
+                err(true,fmt("Failed to create directory: "));
+            }        
+        } else {
+            print << fmt("Directory already exists: "_fmt.color(fmt::Bold_Yellow) , folder.string(),"\n");
+        }
+        return *this;
+    }
+    void setOutpath(fs::path out) {
         if(rootPath.empty()) { err(true,"root path is empty");}
-        outPath = rootPath / out;
+        outPath = out;
         objPath = outPath / "obj";
         modulePath = outPath / "module";
         for (const auto& lm_dir : {outPath,objPath,modulePath})
@@ -275,21 +299,22 @@ struct fileExtension
 class compileCommand {
     utl::json::node jsonNode;
     public:
-    // compileCommand& addCompilecmd(std::string path,std::string arg,std::string file) {
-    //     utl::json::node innode;
-    //     innode["directory"] = path;
-    //     innode["arguments"] = arg ;
-    //     innode["file"] = file ;
-
-    //     jsonNode.push_back(innode);
-    //     return *this;
-    // }
-    compileCommand& addCompilecmd(std::string arg) {
-        utl::json::node innode = arg;
+    compileCommand& addCompilecmd(std::string path,std::string arg,std::string file,std::string out) {
+        utl::json::node innode;
+        innode["directory"] = path;
+        innode["command"] = arg ;
+        innode["file"] = file ;
+        innode["output"] = out ;
 
         jsonNode.push_back(innode);
         return *this;
     }
+    // compileCommand& addCompilecmd(std::string arg) {
+    //     utl::json::node innode = arg;
+
+    //     jsonNode.push_back(innode);
+    //     return *this;
+    // }
     void write(fs::path to)
     {
         jsonNode.to_file(to.string());
@@ -338,8 +363,8 @@ class cProject{
     void setMain(std::string_view main)         {Main = main;}
     void setCompiler(std::string_view comp)     {Compiler = fmt(comp, " ").sv();}
     void setOptions (std::string_view opt)      {Options = fmt(opt, " ").sv();}
-    void setProjectPath(std::string_view in)    {path = in;}
-    void setSourcePath(std::string_view in)     {sourcePath = path / in;}
+    void setProjectPath(fs::path in)    {path = in;}
+    void setSourcePath(fs::path in)     {sourcePath = path / in;}
     void setSource(std::initializer_list<std::string_view> in) {
         project.reserve(in.size());
         for (const auto& i : in) {
@@ -547,10 +572,10 @@ class Project
     outputPath* OutPath;
     compileCommand* cmdJson;
     const fileExtension file;
-    std::string _Main            {};
-    std::string _Options         {};
-    std::string _Compiler        {};
-    std::string _compileInclude  {};
+    std::string Main            {};
+    std::string Options         {};
+    std::string Compiler        {};
+    std::string compileInclude  {};
 
     constexpr Project& err(bool e = false,std::string_view msg = "",std::string fn = std::source_location::current().function_name()) {
         if (e) {print << fmt (msg , "at" , __FILE__ , "\n"); std::exit(1);} 
@@ -565,57 +590,56 @@ class Project
     } outFile;
 
     
-    fs::path _path       {};
-    fs::path _sourcePath {};
-    std::string moduleDeps;
-    std::vector<std::string> _includePath {};
-    std::vector<std::string> _project     {};
-    std::vector<std::string> _object      {};
-    std::vector<std::string> _include     {};
-    std::vector<std::pair<std::string, std::string>> _dependency {};
-    std::vector<std::pair<std::string, std::string>> _modules    {};
-    std::unordered_map<std::string_view,std::vector<std::string_view>>   _includeMap {};
-    std::unordered_map<std::string_view,std::vector<std::string_view>>   _moduleMap  {};
+    fs::path Path       {};
+    fs::path SourcePath {};
+    std::vector<std::string> IncludePath {};
+    std::vector<std::string> ProjectFile {};
+    std::vector<std::string> Object      {};
+    std::vector<std::string> Include     {};
+    std::vector<std::pair<std::string, std::string>> Dependency {};
+    std::vector<std::pair<std::string, std::string>> Modules    {};
+    std::unordered_map<std::string_view,std::vector<std::string_view>>   IncludeMap {};
+    std::unordered_map<std::string_view,std::vector<std::string_view>>   ModuleMap  {};
     std::unordered_map<std::string,std::string> _moduleDeps;
 
-    constexpr Project& setMain(std::string_view main)     {_Main = main; return *this;}
-    constexpr Project& setCompiler(std::string_view comp) {_Compiler = comp; return *this;}
-    constexpr Project& setOptions (std::string_view opt)  {_Options = fmt(" ",opt," ").sv(); return *this;}
-    constexpr Project& setProjectPath(std::string_view in){_path = in; return *this;}
-    constexpr Project& setSourcePath(std::string_view in) {_sourcePath = _path / in; return *this;}
-    constexpr Project& addIncludePath(std::string_view in) {_includePath.emplace_back(in); return *this;}
-    constexpr Project& addSource(std::initializer_list<std::string_view> in)    {
-        _project.reserve(in.size());
+    constexpr Project& setMain        (std::string_view main) {Main = main; return *this;}
+    constexpr Project& setCompiler    (std::string_view comp) {Compiler = comp; return *this;}
+    constexpr Project& setOptions     (std::string_view opt)  {Options = fmt(" ",opt," ").sv(); return *this;}
+    constexpr Project& setProjectPath (fs::path in)           {Path = in; return *this;}
+    constexpr Project& setSourcePath  (fs::path in)           {SourcePath = Path / in; return *this;}
+    constexpr Project& addIncludePath (fs::path in)           {IncludePath.emplace_back(in.string()); return *this;}
+    
+    constexpr Project& addSource(std::initializer_list<std::string_view> in) {
+        ProjectFile.reserve(in.size());
         for (const auto& i : in) {
-            if (!fs::exists(_path / i)) { err (true,fmt("source file "_fmt.color(fmt::Red) , i , " does not exist" ));}
-            _project.emplace_back((_path / i).string()); 
+            if (!fs::exists(Path / i)) { err (true,fmt("source file "_fmt.color(fmt::Red) , i , " does not exist" ));}
+            ProjectFile.emplace_back((Path / i).string()); 
         }
         return *this;
     }
 
-    
     constexpr Project(outputPath* path,bool recomp = false,compileCommand* comp = nullptr , projectType exe = Project::exe) {
         OutPath = path;
         outFile = exe;
         cmdJson = comp;
         recompile = recomp;
-        print << fmt("Project initialized at "_fmt.color(fmt::Green) , this->_path.string(),"\n" );
+        print << fmt("Project initialized at "_fmt.color(fmt::Green) , this->Path.string(),"\n" );
     };
 
     Project& getLib(cProject* cProj)
     {
         if (cProj->outFile == cProject::staticLib) {
             if (cProj->object.size() > 1) {
-                this->_object.reserve(cProj->object.size());
+                this->Object.reserve(cProj->object.size());
             }
             if (cProj->dependency.size() > 1) {
-                this->_dependency.reserve(cProj->dependency.size());
+                this->Dependency.reserve(cProj->dependency.size());
             }
             for (const auto& obj : cProj->object) {
-                this->_object.emplace_back(obj);
+                this->Object.emplace_back(obj);
             }
             for (const auto& dep : cProj->dependency) {
-                this->_dependency.emplace_back(dep);
+                this->Dependency.emplace_back(dep);
             }
         }
         return *this;
@@ -639,7 +663,7 @@ class Project
             f_deps.append(fmt(" -l" , d , " "));
         }
 
-        for (const auto& mod : _project) {
+        for (const auto& mod : ProjectFile) {
             std::string filename = fs::path(mod).filename().string();
             print << fmt("check file " , filename , " against " , inFile , "\n");
             if (filename == inFile) {
@@ -648,19 +672,19 @@ class Project
                 break;
             }
         }
-        _dependency.emplace_back(f_file, f_deps);
+        Dependency.emplace_back(f_file, f_deps);
         return *this;
     }
 
     void compileModule() {
         std::queue<std::string> queue;
         const auto& mPath = OutPath->modulePath;
-        for (const auto& i : _modules) {queue.push(i.first);}
+        for (const auto& i : Modules) {queue.push(i.first);}
         
         for (;!queue.empty();)
         {
             const fs::path f_path {queue.front()};
-            const auto modMap = _moduleMap.find(queue.front())->second;
+            const auto modMap = ModuleMap.find(queue.front())->second;
             bool nosub = [&modMap,&mPath,this] -> bool{
 
                 if (!modMap.empty())
@@ -684,7 +708,7 @@ class Project
                 
                 
                 const bool f_found = [this,&f_path](){
-                    for (const auto& i : _includeMap)
+                    for (const auto& i : IncludeMap)
                     {
                         for (const auto& m : i.second) {
                             if (m == f_path.string()) return true;
@@ -697,7 +721,7 @@ class Project
                 const std::string f_srcInput     {fmt("-fprebuilt-module-path=",(mPath / ".").string()," --precompile ", f_path.string()," ")};
                 const std::string f_moduleOutput {fmt("-o ", f_module)};
                 
-                for (const auto& [mod , dep] : _moduleMap)
+                for (const auto& [mod , dep] : ModuleMap)
                 {
                     if (fs::path(mod).filename().string() == f_path.filename().string()) {
                         for(const auto& d : dep)
@@ -708,9 +732,9 @@ class Project
                     }
                 }
 
-                const std::string f_cmd {fmt(_Compiler, _Options , f_found ? _compileInclude : "",_moduleDeps[f_path.filename().string()] ,f_srcInput , f_moduleOutput).clean()};
-                // if(cmdJson != nullptr) {cmdJson->addCompilecmd((fs::current_path()/"example"/"source").string().c_str(),f_cmd,f_path.filename().string().c_str());}
-                if(cmdJson != nullptr) {cmdJson->addCompilecmd(f_cmd);}
+                const std::string f_cmd {fmt(Compiler, Options , f_found ? compileInclude : "",_moduleDeps[f_path.filename().string()] ,f_srcInput , f_moduleOutput).clean()};
+                // if(cmdJson != nullptr) {cmdJson->addCompilecmd((fs::current_path()/"example"/"source").string().c_str(),f_cmd,f_path.string().c_str(),f_module);}
+                // if(cmdJson != nullptr) {cmdJson->addCompilecmd(f_cmd);}
                 
                 //this->object.push_back(f_obj);
                 if (recompile) {
@@ -746,13 +770,13 @@ class Project
 
     void compileCpp(std::string_view inPath)
     {
-        const fs::path f_path = inPath;
+        const fs::path    f_path = inPath;
         const std::string f_objOutput {fmt((OutPath->objPath / f_path.filename().stem()).string().c_str() , file.objFile)};
 
-        const bool f_includefound = std::find_if(_includeMap.begin(), _includeMap.end(), [&f_path](const auto& p) 
-        {return p.second[0] == f_path.string();}) != _includeMap.end();
+        const bool f_includefound = std::find_if(IncludeMap.begin(), IncludeMap.end(), [&f_path](const auto& p) 
+        {return p.second[0] == f_path.string();}) != IncludeMap.end();
         const bool f_inObject = [&f_objOutput,this]() {
-            for (const auto& obj : _object) {
+            for (const auto& obj : Object) {
                 if (obj == f_objOutput) {
                     return true;
                     break;
@@ -767,17 +791,17 @@ class Project
             return false;
         }();
             
-        const std::string f_cppOutput {fmt(f_path.string(), _modules.empty() ? "" : 
+        const std::string f_cppOutput {fmt(f_path.string(), Modules.empty() ? "" : 
             fmt(" -fprebuilt-module-path=", (OutPath->modulePath / ".").string().c_str())," -c -o ")};
             
-        const std::string f_cmd {fmt(_Compiler, _Options,f_includefound ? _compileInclude : "",f_inModuledep ? _moduleDeps[f_path.filename().string()] : "",f_cppOutput, f_objOutput).clean()};
+        const std::string f_cmd {fmt(Compiler, Options,f_includefound ? compileInclude : "",f_inModuledep ? _moduleDeps[f_path.filename().string()] : "",f_cppOutput, f_objOutput).clean()};
         
-        // if(cmdJson != nullptr) { cmdJson->addCompilecmd((fs::current_path()/"example"/"source").string().c_str(),f_cmd,f_path.filename().string().c_str());}
-        if(cmdJson != nullptr) { cmdJson->addCompilecmd(f_cmd);}
+        if(cmdJson != nullptr) { cmdJson->addCompilecmd((fs::current_path()/"example"/"source").string().c_str(),f_cmd,f_path.string().c_str(),f_objOutput);}
+        // if(cmdJson != nullptr) { cmdJson->addCompilecmd(f_cmd);}
         
         if (!f_inObject)
         {
-            _object.emplace_back(f_objOutput);
+            Object.emplace_back(f_objOutput);
         } 
 
         
@@ -801,66 +825,66 @@ class Project
     
     void link(std::string_view target) {
         print << fmt("linking"_fmt.color(fmt::Bold_Green).endl());
-        const std::string targetOut {fmt((OutPath->exePath / target).string())};
-        const std::string Executable {fmt(" -o ", targetOut, file.platform)};
-        std::string Object     {fmt(_modules.empty() ? "" : fmt(" -fprebuilt-module-path=", (OutPath->modulePath / ".").string()))};
-        if (fs::exists(fmt(targetOut, file.platform).sv())) {
-            fs::rename(fmt(targetOut, file.platform).str, fmt(targetOut, file.platform, ".old").str);
+        const std::string f_targetOut {fmt((OutPath->exePath / target).string())};
+        const std::string f_Executable {fmt(" -o ", f_targetOut, file.platform)};
+        std::string f_Object     {fmt(Modules.empty() ? "" : fmt(" -fprebuilt-module-path=", (OutPath->modulePath / ".").string()))};
+        if (fs::exists(fmt(f_targetOut, file.platform).sv())) {
+            fs::rename(fmt(f_targetOut, file.platform).str, fmt(f_targetOut, file.platform, ".old").str);
         }
-        for (const auto& p : _object) {
-            for (const auto& deps : _dependency)
+        for (const auto& p : Object) {
+            for (const auto& deps : Dependency)
             {
                 if (fs::path(deps.first).stem().string() == fs::path(p).stem().string())
                 {
                     print << fmt("check dependency in " , deps.first , " for " , p).endl();
-                    Object.append(deps.second);   
+                    f_Object.append(deps.second);   
                 }
             }
-            Object.append(fmt(" ",p).sv());
+            f_Object.append(fmt(" ",p).sv());
         }
 
-        const std::string f_cmd {fmt(_Compiler,Object,Executable).clean()};
+        const std::string f_cmd {fmt(Compiler,f_Object,f_Executable).clean()};
         print << f_cmd << "\n";
 
         if(cmdJson != nullptr)cmdJson->write(fs::current_path()/"compile_commands.json");
         cmd << f_cmd.c_str() >> "linking error"_fmt.color(fmt::Bold_Red);
     }
 
-    Project& addInclude(fs::path IncludePath) {
+    Project& addInclude(fs::path inPath) {
         if (IncludePath.empty())         { err(true,"IncludePath cannot be empty"_fmt.color(fmt::Bold_Red));} 
 
-        if (!fs::exists(IncludePath)) { err(true,fmt("Include path ",IncludePath.string(), "does not exist").color(fmt::Bold_Red));}
+        if (!fs::exists(inPath)) { err(true,fmt("Include path ",inPath.string(), "does not exist").color(fmt::Bold_Red));}
         
-        _includePath.push_back(IncludePath.string());
-        _compileInclude.append(fmt("-I",IncludePath.string()," "));
+        IncludePath.push_back(inPath.string());
+        compileInclude.append(fmt("-I",inPath.string()," "));
         return *this;
     }
 
     void getCppFile() {
-        if (!fs::exists(_sourcePath) || !fs::is_directory(_sourcePath)) {err (true, "Directory does not exist."_fmt.color(fmt::Bold_Red));}
+        if (!fs::exists(SourcePath) || !fs::is_directory(SourcePath)) {err (true, "Directory does not exist."_fmt.color(fmt::Bold_Red));}
 
-        fs::directory_iterator iterator(_sourcePath);
-        if (_project.empty())
+        fs::directory_iterator iterator(SourcePath);
+        if (ProjectFile.empty())
         {
             for (const auto& entry : iterator) {
                 if (entry.is_regular_file() && (file.isModule(entry.path().extension().string()) || file.isCpp(entry.path().extension().string()))) {
                     
                     print << fmt("add project file " , entry.path().filename().string() , " " , entry.path().string()).endl();
-                    _project.emplace_back(entry.path().string());
+                    ProjectFile.emplace_back(entry.path().string());
                 }
             }
-            if (_project.size() > 1) {
-                _object.reserve(_project.size());
-                _modules.reserve(_project.size());
+            if (ProjectFile.size() > 1) {
+                Object.reserve(ProjectFile.size());
+                Modules.reserve(ProjectFile.size());
             }
         }
-        for (const auto& includeScan : _includePath) {
+        for (const auto& includeScan : IncludePath) {
             fs::directory_iterator iterator2(includeScan);
             for (const auto& entry : iterator2) {
                 if (entry.is_regular_file() && file.isCppHeader(entry.path().extension().string()) ) {
 
                     print << fmt("add include " , entry.path().filename().string() , " " , entry.path().string()).endl();
-                    _include.push_back(entry.path().filename().string());
+                    Include.push_back(entry.path().filename().string());
                     
                 }
             }
@@ -870,7 +894,7 @@ class Project
 
     Project& scanHeader() {
         print << "Scanning Files"_fmt.color(fmt::Bold_Green).endl();
-        for (const auto& p : _project) {
+        for (const auto& p : ProjectFile) {
             print << "scan " << p << " ";
             if (p.empty()) {err(true,"Error: Empty project path"_fmt.color(fmt::Bold_Red));}
             
@@ -886,8 +910,8 @@ class Project
                 if (epos != std::string::npos) {
                     print << fmt(" export module found in " , p ).endl();
                     moduleName = line.substr(epos + file.exportToken.length());
-                    _moduleMap[p];
-                    _modules.push_back ({p, moduleName});
+                    ModuleMap[p];
+                    Modules.push_back ({p, moduleName});
                     break; // only one export module per file is allowed 
                 }
             }
@@ -902,10 +926,10 @@ class Project
                     includeFound = {fs::path{line.substr(pos + file.includeToken.length())}.filename().string()};
                     std::erase_if(includeFound, [](char c) { return c == '"' || c == '<' || c == '>' || c == ' '; });
                     
-                    for (const auto& map : _include) {
+                    for (const auto& map : Include) {
                         if (map == includeFound) {
                             print << fmt("include found "_fmt.color(fmt::Blue) , map , " in " , p);
-                            _includeMap[map] = {p};
+                            IncludeMap[map] = {p};
                             
                         }
                     }
@@ -919,7 +943,7 @@ class Project
     }
 
     Project& scanModule() {
-        for (const auto& p : _project) {
+        for (const auto& p : ProjectFile) {
             const auto& name = fs::path(p).filename().stem().string();
             print << fmt("Scan module " , p ).endl();
             if (p.empty())        {err(true ,"Error: Empty project path"); }
@@ -934,12 +958,12 @@ class Project
                 if (ipos != std::string::npos && line.find('.') != std::string::npos) {
                     moduleName = line.substr(ipos + file.importToken.length());
                     print << fmt("import module "_fmt.color(fmt::Bold_Blue) , moduleName , " found in " , p).endl();
-                    for (const auto& i : _modules)
+                    for (const auto& i : Modules)
                     {
                         if (i.second == moduleName)
                         {
                             print << fmt("compare module "_fmt.color(fmt::Bold_Cyan) , i.second , " found in " , std::string_view(p).substr(0,p.find_last_of("."))).endl();
-                            _moduleMap[p].push_back(std::string_view(i.first).substr(p.find(name)));
+                            ModuleMap[p].push_back(std::string_view(i.first).substr(p.find(name)));
                         }
                     }
                 }
@@ -951,7 +975,7 @@ class Project
 
     Project& dumpModuleMap() {
         print << "Dump Module Map"_fmt.color(fmt::Yellow).endl();
-        for (const auto& [key, value] : _moduleMap) {
+        for (const auto& [key, value] : ModuleMap) {
             print << "moduleMap (first) " << key << " (second) ";
 
             for (const auto& v : value) {
@@ -964,7 +988,7 @@ class Project
 
     Project& dumpProject() {
         print << " dump project"_fmt.color(fmt::Yellow).endl();
-        for (const auto& p : _project) {
+        for (const auto& p : ProjectFile) {
             print << p << "\n";
         }
         return *this;
@@ -973,14 +997,14 @@ class Project
     Project& dumpInclude()
     {
         print << "dump include"_fmt.color(fmt::Yellow).endl();
-        for (const auto& i : _include) {
+        for (const auto& i : Include) {
             print << "include " << i << "\n";
         }
         return *this;
     }
     Project& dumpModule() {
         print << "dump module"_fmt.color(fmt::Yellow).endl();
-        for (const auto& i : _modules) {
+        for (const auto& i : Modules) {
             print << "module " << i.first << " module name " << i.second << "\n";
         }
         return *this;
@@ -988,7 +1012,7 @@ class Project
 
     Project& dumpIncludeMap() {
         print << "dump include map "_fmt.color(fmt::Yellow).endl();
-        for (const auto& [key, value] : _includeMap) {
+        for (const auto& [key, value] : IncludeMap) {
             print << "include " << key << " ";
             for (const auto& v : value) {
                 print << v << " "; 
@@ -1000,7 +1024,7 @@ class Project
     Project& dumpDependencies()
     {
         print << "dump dependencies "_fmt.color(fmt::Yellow).endl();
-        for (const auto& dep : _dependency)
+        for (const auto& dep : Dependency)
         {
             print << fmt("file " , dep.first , " depends on " , dep.second).endl();
         }
@@ -1009,7 +1033,7 @@ class Project
 
     Project& dumpObjects() {
         print << "dump Objects"_fmt.color(fmt::Yellow).endl();
-        for (const auto& p : _object) {
+        for (const auto& p : Object) {
             print << p << "\n";
         }
         return *this;
