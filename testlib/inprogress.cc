@@ -34,10 +34,14 @@ struct integral_constant {
 };
 template <bool Val> using bool_constant = integral_constant<bool, Val>;
 using false_t = bool_constant<false>;
-using true_t = bool_constant<true>;
-template<class T,class U> struct is_same : false_t {};
-template<class T> struct is_same<T,T>    : true_t{};
+using true_t  = bool_constant<true>;
+template<class T,class U> struct is_same : false_t {using type = T;};
+template<class T> struct is_same<T,T>    : true_t  {using type = T;};
 
+template<typename T> struct is_ptr :false_t {using type = T;};
+template<typename T> struct is_ptr<T*> :true_t {using type = T;};
+
+template<typename T> concept nonull  = requires (T p) { {p != nullptr};};
 
 struct variantBuffer{char buffer;};
 inline void* operator new (size_t size,variantBuffer* p) {return p;}
@@ -163,6 +167,9 @@ class string {
     };
 
     struct variant{
+        template <typename T> using is_large = is_same<T, large> ;
+        template <typename T> using is_small = is_same<T, small> ;
+
         alignas(8) variantBuffer buffer[22];
         bool autoshrink = true;
         char type_index = -1;
@@ -177,20 +184,20 @@ class string {
             
             type_index = -1; 
         }
-        template <typename T>
+        template <typename T> requires (is_large<T>::value || is_small<T>::value)
         constexpr variant& set(T&& value) {
             destroy_current();
             
             new (buffer) T(static_cast<T&&>(value));
-            type_index = is_same<T, large>::value ? 1 : 0; 
+            type_index = is_large<T>::value ? 1 : 0; 
             // printf("name %s %d \n" ,typeid(T).name(),type_index);
             return *this;
         }
-        template <typename T>
+        template <typename T> requires (is_large<T>::value || is_small<T>::value)
         constexpr T& get() {
             return *reinterpret_cast<T*>(buffer);
         }
-        template <typename T>
+        template <typename T> requires (is_large<T>::value || is_small<T>::value)
         const T& get() const {
             
             return *reinterpret_cast<const T*>(buffer);

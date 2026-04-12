@@ -17,19 +17,13 @@
 
 #include "json.hpp"
 
-template<typename T> struct remove_ptr {
-    using type = T;
-};
-template<typename T> struct remove_ptr<T*> {
-    using type = T;
-};
-template<typename T>
-
-using remove_ptr_t = remove_ptr<T>::type;
-using size_t = __SIZE_TYPE__;
-
 namespace  fs = std::filesystem;
+using size_t = __SIZE_TYPE__;
 using namespace std::string_view_literals;
+
+template<typename T> struct remove_ptr {using type = T;};
+template<typename T> using remove_ptr_t = remove_ptr<T>::type;
+
 template<typename... Args> concept onlyStr = (std::convertible_to<Args, std::string_view> && ...);
 
 template<typename T>
@@ -177,12 +171,12 @@ struct outputPath {
         if (!fs::exists(exe)) 
         {
             if (fs::create_directory(exe)) {
-                print << fmt("Directory created: " , exe.string() , "\n");
+                print << fmt("Directory created: " , exe.string() , "\n").sv();
             } else {
                 err(true,fmt("Failed to create directory: "));
             }        
         } else {
-            print << fmt("Directory already exists: "_fmt.color(fmt::Bold_Yellow) , exe.string(),"\n");
+            print << fmt("Directory already exists: "_fmt.color(fmt::Bold_Yellow) , exe.string(),"\n").sv();
         } 
         exePath = exe;
         return err();
@@ -202,14 +196,14 @@ struct outputPath {
         return *this;
     }
     void setOutpath(fs::path out) {
-        if(rootPath.empty()) { err(true,"root path is empty");}
+        if(rootPath.empty()) { err(true,"root path is empty"sv);}
         outPath = out;
         objPath = outPath / "obj";
         modulePath = outPath / "module";
         for (const auto& lm_dir : {outPath,objPath,modulePath})
         {
             if (!lm_dir.has_parent_path()) {
-                err(true,fmt("Error: Path has no parent path: " ,lm_dir.string()," "));
+                err(true,fmt("Error: Path has no parent path: " ,lm_dir.string()).sv());
             }
     
             if (!fs::exists(lm_dir)) 
@@ -299,7 +293,7 @@ struct fileExtension
 class compileCommand {
     utl::json::node jsonNode;
     public:
-    compileCommand& addCompilecmd(std::string path,std::string arg,std::string file,std::string out) {
+    compileCommand& addCompilecmd(std::string_view path,std::string_view arg,std::string_view file,std::string_view out) {
         utl::json::node innode;
         innode["directory"] = path;
         innode["command"] = arg ;
@@ -502,7 +496,7 @@ class cProject{
                 }();
 
         const std::string f_cmd {fmt(Compiler, f_found ? compileInclude : "" ,fmt(" -c ", inPath, " -o ", f_obj)).clean()};
-        if(cmdJson != nullptr) cmdJson->addCompilecmd(f_path.parent_path(), f_cmd, f_path.string(), f_obj);
+        if(cmdJson != nullptr) cmdJson->addCompilecmd(f_path.parent_path().string(), f_cmd, f_path.string(), f_obj);
         object.push_back(f_obj);
         if (recompile)
         {
@@ -714,7 +708,7 @@ class Project
                     {
                         // print << fmt("check module "_fmt.color(fmt::Bold_Green) , queue.front() , " is exist "_fmt.color(fmt::Blue) , fmt((mPath / fs::path(m).stem()).string(), file.pcmModule) 
                         // , "\n").cstr(); 
-                        if (!fs::exists(fmt((mPath / fs::path(m).stem()).string(), file.pcmModule).sv())) {return false;}
+                        if (!fs::exists(fmt((mPath / m).string(), file.pcmModule).sv())) {return false;}
                     }
                 }
                 return true;
@@ -812,7 +806,7 @@ class Project
             
         const std::string f_cmd {fmt(Compiler, Options,f_includefound ? compileInclude : "",f_inModuledep ? ModuleDeps[f_path.filename().string()] : "",f_cppOutput, f_objOutput).clean()};
         
-        if(cmdJson != nullptr) { cmdJson->addCompilecmd(f_path.parent_path(),f_cmd,f_path.string().c_str(),f_objOutput);}
+        if(cmdJson != nullptr) { cmdJson->addCompilecmd(f_path.parent_path().string(),f_cmd,f_path.string().c_str(),f_objOutput);}
         // if(cmdJson != nullptr) { cmdJson->addCompilecmd(f_cmd);}
         
         if (!f_inObject)

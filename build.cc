@@ -112,7 +112,7 @@ int selfCompile(bool recompile)
     #ifdef _WIN32
     rebuild.setCompiler("clang++").setOptions("-O3 -Wall -std=c++23")
     #elif __unix__
-    rebuild.setCompiler("clang++-20")
+    rebuild.setCompiler("clang++")
     .setOptions("-O3 -Wall -std=c++23 -stdlib=libc++ ")
     #endif
     .setProjectPath(rootPath)
@@ -151,7 +151,7 @@ int compileProject(bool recompile)
         #ifdef _WIN32
         libGLAD.setCompiler("clang")
         #elif __unix__
-        libGLAD.setCompiler("clang-20")
+        libGLAD.setCompiler("clang")
         #endif
         .addCompileCommand(&cmdJson)
         .setOptions("-O0")
@@ -173,7 +173,7 @@ int compileProject(bool recompile)
         mainProj.setCompiler("clang++")
         .setOptions("-O0 -std=c++23")
         #elif __unix__
-        mainProj.setCompiler("clang++-20")
+        mainProj.setCompiler("clang++")
         .setOptions("-O3 -fno-exceptions -stdlib=libc++ -std=c++23")
         #endif
         .addCompileCommand(&cmdJson)
