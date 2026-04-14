@@ -12,10 +12,21 @@ export
 	using glHints = RGFW_glHints;
 	using mWindow = RGFW_window;
 	using mEvent = RGFW_event;
+	using mSurface = RGFW_surface;
 	
 	enum Key : uint8;
 	enum eventType : uint8;
 	enum Flags : uint32;
+	enum surfaceFlags : uint8
+	{
+		formatRGB8 = 0,    /*!< 8-bit RGB (3 channels) */
+		formatBGR8,    /*!< 8-bit BGR (3 channels) */
+		formatRGBA8,   /*!< 8-bit RGBA (4 channels) */
+		formatARGB8,   /*!< 8-bit RGBA (4 channels) */
+		formatBGRA8,   /*!< 8-bit BGRA (4 channels) */
+		formatABGR8,   /*!< 8-bit BGRA (4 channels) */
+		formatCount
+	};
 
 	void initWindow(mWindow*,cstr,int32,int32,uint32);
 	void set_Quitkey(mWindow* ,uint8);
@@ -23,14 +34,22 @@ export
 	void FreeWindow(mWindow*);
 	int32 ShouldClose(mWindow*);
 
-	uint8 CheckEvent(mWindow*,mEvent*);
+	uint8 (&CheckEvent)(mWindow*,mEvent*) = RGFW_window_checkEvent;
 	int32 getKey(const mEvent*);
 
-	void setGLhints(glHints*); 
-	glHints* getGLhints();
-	void setGLctx(mWindow*,glHints*);
-	void PollEvent(int32); 
-	void GLSwapBuffer(mWindow*); 
+	mSurface* createSurface (uint8* buff,int32 w,int32 h,surfaceFlags f) {
+		return RGFW_createSurface(buff,w,h,static_cast<uint8>(f));
+	};
+	
+
+	void(&setGLhints)(glHints*) = RGFW_setGlobalHints_OpenGL; 
+	RGFW_glContext* (&setGLctx)(mWindow*,glHints*) = RGFW_window_createContext_OpenGL;
+	glHints* (&getGLhints)() = RGFW_getGlobalHints_OpenGL;
+	void (&GLSwapBuffer)(mWindow*) = RGFW_window_swapBuffers_OpenGL; 
+	void BlitSurface (mWindow* win,mSurface* surface) {return RGFW_window_blitSurface(win,surface);};
+	void (&surfaceFree)(mSurface*) = RGFW_surface_free;
+	
+	void (&PollEvent)(int32) = RGFW_waitForEvent; 
 	
 }
 
@@ -49,33 +68,8 @@ void set_Quitkey(mWindow* win ,uint8 key) {
 	win->internal.exitKey = key;
 }
 
-void GLSwapBuffer(mWindow* win) 
-{
-	RGFW_window_swapBuffers_OpenGL(win);
-}
-void setGLhints(glHints* hint)
-{
-	RGFW_setGlobalHints_OpenGL(hint);
-} 
-void setGLctx(mWindow* win,glHints* hint)
-{
-	RGFW_window_createContext_OpenGL(win,hint);
-}
-glHints* getGLhints()
-{
-	return RGFW_getGlobalHints_OpenGL();
-}
-
-
-uint8 CheckEvent(mWindow* win, mEvent* ev) {
-	return RGFW_window_checkEvent(win, ev);
-}
 inline int32 getKey(const mEvent* ev) {
 	return ev->key.value;
-}
-void PollEvent(int32 ms)
-{
-	RGFW_waitForEvent(ms);
 }
 
 

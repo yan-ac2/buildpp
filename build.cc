@@ -162,7 +162,7 @@ int compileProject(bool recompile)
         .getCFile()
         .scanInclude()
         #ifdef _WIN32
-        .addDependency("glad.c", {"opengl32"})
+        .addDependency("glad.c", {"opengl32"});
         #elif __unix__
         .addDependency("glad.c", {"GL"});
         #endif
@@ -189,7 +189,7 @@ int compileProject(bool recompile)
     
         mainProj.scanHeader().scanModule()
         #ifdef _WIN32
-        .addDependency("lib.RGFW.ccm",{"opengl32", "gdi32"})
+        .addDependency("lib.RGFW.ccm",{"gdi32","opengl32"})
         #elif __unix__
         .addDependency("lib.RGFW.ccm",{"GL", "X11", "Xrandr"})
         .addDependency("lib.std.ccm",{"c++","c++abi"})

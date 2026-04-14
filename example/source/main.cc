@@ -4,25 +4,27 @@ class App
 {
     mWindow  _win;
     mEvent   _ev;
-    Gl      _ren;
+    softwareRenderer _ren;
     public:
     mWindow* win = &_win;
     mEvent* ev = &_ev;
-    Gl* ren = &_ren;
+    softwareRenderer* ren = &_ren;
     int i;
     
-    void init()
+    App& init()
     {
         std::printf("init \n");
         initWindow(this->win,"win", 800, 600, Flags::WinCenter | Flags::WinOGL);
+        return *this;
     }
     
-    void reninit()
+    App& reninit()
     {
-        ren->init(4, 6,win);
+        ren->init(win);
+        return *this;
     }
     
-    void update()
+    App& update()
     {
         std::printf("loop \n");
         for (;ShouldClose(this->win) == 0;) 
@@ -37,8 +39,9 @@ class App
                         switch(getKey(this->ev))
                         {
                             case Key::key_escape: {CloseWindow(this->win); break;}
-                            case Key::key_a: {polygonMode(gl::FrontandBack,gl::Line); break;}
-                            case Key::key_b: {polygonMode(gl::FrontandBack,gl::Fill); break;}
+                            case Key::key_a: { clear(ren->buffer, ren->surface->w, win->w, win->h, color); break;}
+                            case Key::key_b: { drawRect(ren->buffer, ren->surface->w, 100, 100, 1, 1, color2); break;}
+                            case Key::key_c: { drawBitmap(ren->buffer, ren->surface->w, icon, 100, 100, 3, 3); break;}
                             default: break;
                         }
                     }
@@ -46,8 +49,8 @@ class App
                 }
             }
             ren->update(this->win);
-            this->i = i <=60 ? i += 1 : 0;
         }   
+        return *this;
     }
 };
 
@@ -55,8 +58,8 @@ class App
 int main ()
 {    
     App app;
-    app.init();
-    app.reninit();
-    app.update();
+    app.init()
+    .reninit()
+    .update();
     return 0;
 }

@@ -18,6 +18,7 @@
 #include "json.hpp"
 
 namespace  fs = std::filesystem;
+#undef size_t
 using size_t = __SIZE_TYPE__;
 using namespace std::string_view_literals;
 
@@ -700,7 +701,7 @@ class Project
         {
             const fs::path f_path {queue.front()};
             const auto modMap = ModuleMap.find(queue.front())->second;
-            bool nosub = [&modMap,&mPath,this] -> bool{
+            bool nosub = [&modMap,&mPath,&f_path,this] -> bool{
 
                 if (!modMap.empty())
                 {
@@ -708,7 +709,13 @@ class Project
                     {
                         // print << fmt("check module "_fmt.color(fmt::Bold_Green) , queue.front() , " is exist "_fmt.color(fmt::Blue) , fmt((mPath / fs::path(m).stem()).string(), file.pcmModule) 
                         // , "\n").cstr(); 
-                        if (!fs::exists(fmt((mPath / m).string(), file.pcmModule).sv())) {return false;}
+                        if (!fs::exists(fmt((mPath / m).string(), file.pcmModule).sv())) {
+                            return false;
+                        }
+                        if(fs::last_write_time(f_path) > fs::last_write_time(fmt((mPath / m).string(),file.pcmModule).sv()))
+                        {
+                            return false;
+                        }
                     }
                 }
                 return true;
