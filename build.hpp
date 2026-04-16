@@ -712,7 +712,7 @@ class Project
                         if (!fs::exists(fmt((mPath / m).string(), file.pcmModule).sv())) {
                             return false;
                         }
-                        if(fs::last_write_time(f_path) > fs::last_write_time(fmt((mPath / m).string(),file.pcmModule).sv()))
+                        if(fs::last_write_time(f_path) > fs::last_write_time(fmt((mPath / m).string(),file.pcmModule).sv()) && recompile)
                         {
                             return false;
                         }

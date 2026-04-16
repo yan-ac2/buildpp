@@ -1,14 +1,15 @@
 import lib;
+import lib.renderer;
 
 class App
 {
     mWindow  _win;
     mEvent   _ev;
-    softwareRenderer _ren;
+    sRenderer _ren;
     public:
     mWindow* win = &_win;
     mEvent* ev = &_ev;
-    softwareRenderer* ren = &_ren;
+    sRenderer* ren = &_ren;
     int i;
     
     App& init()
@@ -40,8 +41,8 @@ class App
                         {
                             case Key::key_escape: {CloseWindow(this->win); break;}
                             case Key::key_a: { clear(ren->buffer, ren->surface->w, win->w, win->h, color); break;}
-                            case Key::key_b: { drawRect(ren->buffer, ren->surface->w, 100, 100, 1, 1, color2); break;}
-                            case Key::key_c: { drawBitmap(ren->buffer, ren->surface->w, icon, 100, 100, 3, 3); break;}
+                            case Key::key_b: { drawRect(ren->buffer, ren->surface->w, 200, 200, 100, 100, color2); break;}
+                            case Key::key_c: { drawBitmap(ren->buffer, ren->surface->w, icon, 100, 100, 50, 20); break;}
                             default: break;
                         }
                     }

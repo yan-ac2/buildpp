@@ -4,6 +4,8 @@ module;
 #include <variant>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <cmath>
 #include <type_traits>
 #include <functional>
 export module lib.std;
@@ -20,7 +22,12 @@ export namespace std
     using std::visit;
     using std::monostate;
     using std::bind;  
-    using std::is_same_v;    
+    using std::is_same_v;
+    using std::exit;    
+    using std::printf;
+    using std::cosf;
+    using std::memcpy;
+    using std::memset;
     using std::int8_t;    
     using std::uint8_t;    
     using std::int32_t;    

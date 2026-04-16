@@ -189,7 +189,7 @@ int compileProject(bool recompile)
     
         mainProj.scanHeader().scanModule()
         #ifdef _WIN32
-        .addDependency("lib.RGFW.ccm",{"gdi32","opengl32"})
+        .addDependency("lib.RGFW.ccm",{"gdi32","opengl32","m"})
         #elif __unix__
         .addDependency("lib.RGFW.ccm",{"GL", "X11", "Xrandr"})
         .addDependency("lib.std.ccm",{"c++","c++abi"})
