@@ -1,5 +1,6 @@
 module;
 #include <vector>
+#include <array>
 #include <string>
 #include <variant>
 #include <cstdint>
@@ -8,6 +9,7 @@ module;
 #include <cmath>
 #include <type_traits>
 #include <functional>
+#include <utility>
 export module lib.std;
 export namespace std
 {
@@ -15,6 +17,10 @@ export namespace std
     using string = std::string;
     using string_view = std::string_view;
     using std::printf;
+    using std::array;
+    using std::round;
+    using std::swap;
+    using std::abs;
     using std::to_string;
     using std::basic_string;
     using std::char_traits;
@@ -27,6 +33,7 @@ export namespace std
     using std::printf;
     using std::cosf;
     using std::memcpy;
+    using std::malloc;
     using std::memset;
     using std::int8_t;    
     using std::uint8_t;    

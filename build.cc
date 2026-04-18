@@ -220,7 +220,7 @@ int compileProject(bool recompile)
         }
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
 
-        if(mainProj.cmdJson != nullptr) mainProj.cmdJson->write(fs::current_path()/"compile_commands.json");
+        if(mainProj.cmdJson != nullptr) mainProj.cmdJson->write(outPath.outPath/"compile_commands.json");
 
         mainProj.link("main");
     

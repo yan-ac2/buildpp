@@ -114,7 +114,7 @@ struct fmt {
 };
 constexpr fmt operator""_fmt(const char* str,size_t) { return fmt(str);}
 
-static struct implPrint
+inline struct implPrint
 {
     constexpr implPrint& operator <<(std::string_view in) {
         std::printf("%s",in.data());

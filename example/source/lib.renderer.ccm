@@ -7,9 +7,32 @@ import lib.std;
 export
 {
     uint8 color[4] = {0, 0, 0, 0};
-    uint8 color2[4] = {255, 0, 0, 255};
+    uint8 color2[4] = {100, 0, 0, 255};
     uint8 color3[4] = {0, 255, 0, 255};
     uint8 icon[4 * 3 * 3] = {0xFF, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0xFF, 0xFF, 0xFF, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF};
+    
+    struct RGBA {
+        uint32 col;
+        struct arr{uint8 a[4]; operator uint8*() {return a;}};
+        RGBA(uint8 r,uint8 g,uint8 b,uint8 a)  {
+            col = (r << 24)|(g << 16)|(b << 8)|(a);
+        }
+        uint8 operator [](uint32 idx) {
+            return idx == 0 ? static_cast<uint8>((col >> 24) & 0XFF):
+            idx == 1 ? static_cast<uint8>((col >> 16) & 0XFF):
+            idx == 2 ? static_cast<uint8>((col >> 8) & 0XFF):
+            static_cast<uint8>(col & 0XFF);
+        }
+        operator uint8*() {
+            arr ret {
+                static_cast<uint8>((col >> 24) & 0XFF),
+                static_cast<uint8>((col >> 16) & 0XFF),
+                static_cast<uint8>((col >> 8) & 0XFF),
+                static_cast<uint8>(col & 0XFF)
+            };
+            return ret;
+        };
+    };
 
     void clear(uint8* buffer, int32 bufferWidth, int32 w, int32 h, uint8* color) {
     /* if all the values are the same */
@@ -18,19 +41,55 @@ export
             std::memset(buffer, color[0], (uint32)bufferWidth * (uint32)h * 4 * sizeof(uint8));
             return;
         }
+        uint32 x, y;
+        for (y = 0; y < (uint32)h; y++) {
+            for (x = 0; x < (uint32)bufferWidth; x++) {
+                uint32 index = (y * 4 * (uint32)bufferWidth) + x * 4;
+
+                /* copy the color to that pixel */
+                std::memcpy(&buffer[index], color, 4 * sizeof(uint8));
+            }
+        }
     };
     
     
-    void drawRect(uint8* buffer, int32 bufferWidth, int32 x, int32 y, int32 w, int32 h, uint8 color[4]) {
+    void drawRect(uint8* buffer, int32 bufferWidth, int32 x, int32 y, int32 w, int32 h, uint8 colorin[4]) {
         int32 x1 = x;
         int32 y1 = y;
-        uint32 index;
-        for(x = x1; x < w + x1; x++) {
-            for(y = y1; y < h + y1; y++) {
-                index = (uint32)y * (4 * (uint32)bufferWidth) + (uint32)x * 4;
-                std::memcpy(&buffer[index], color2, 4 * sizeof(uint8));
+        for(x=x1; x < w + x1; x++) {
+            for(y=y1; y < h + y1; y++) {
+                uint32 index = ((y * (bufferWidth))  +  x) ;
+                //std::printf("x: %d y: %d \n",x,y);
+                std::memcpy(buffer + index, colorin, 4 * sizeof(uint8));
             }
         }
+    };
+
+    void drawLine(uint8* buffer,int32 bufferWidth,int32 bufferHeight, int32 x1, int32 y1, int32 y2, int32 x2, uint8 colorin[4]) {
+        bool steep = std::abs(x1-x2) < std::abs(y1-y2);
+        if (steep) { // if the line is steep, we transpose the image
+            std::swap(x1, y1);
+            std::swap(x2, y2);
+        }
+        if (x1>x2) { // make it left−to−right
+            std::swap(x1, x2);
+            std::swap(y1, y2);
+        }
+        for (int x=x1; x<=x2; x++) {
+            float t = (x-x1) / static_cast<float>(x2-x1);
+            int y = std::round( y1 + (y2-y1)*t );
+            if (steep) // if transposed, de−transpose
+            {
+                if (!bufferWidth || x<0 || y<0 || x>=bufferWidth || y>=bufferHeight) return;
+                std::memcpy(buffer +((x*4)+y*(bufferWidth*4))*(4*sizeof(uint8)), colorin,4 * sizeof(uint8));
+            }
+            else
+            {
+                if (!bufferWidth || x<0 || y<0 || x>=bufferWidth || y>=bufferHeight) return;
+                std::memcpy(buffer +((x*4)+y*(bufferWidth*4))*(4*sizeof(uint8)), colorin,4 * sizeof(uint8));
+            }
+        }
+
     };
     void drawBitmap(uint8* buffer, int32 bufferWidth, uint8* bitmap, int32 x, int32 y, int32 w, int32 h) {
     int32 y1 = y;
@@ -46,18 +105,21 @@ export
         uint8* buffer; 
         f32 theta = 0;
         sRenderer& init(mWindow* win) {
-            buffer = new uint8[win->w * win->h * 4]();
+            buffer = new uint8[win->h * win->w * 4];
             surface = createSurface(buffer,win->w,win->h,formatRGB8);
         
             return *this;
         }
         sRenderer& update(mWindow* win) {
-            // for(int y = 0; y < pixelBuffer->mHeight; ++y){
-            //     for(int x = 0; x < pixelBuffer->mWidth; ++x){
-            //         uint8 r = x*2 % 256;
-            //         uint8 g = y/8 % 256;
-            //         uint8 b = r*y % 256;
-            //         (*pixelBuffer)(x,y) = color;
+            // int32 x = 100;
+            // int32 y = 100;
+            // int32 x1 = x1;
+            // int32 y1 = y1;
+            // uint32 index;
+            // for(x = x1; x < 200 + x1; x++) {
+            //     for(y = y1; y < 200 + y1; y++) {
+            //         index = ((uint32)y + (uint32)x) * (4 * (uint32)(5));
+            //         std::memcpy(&buffer[index], color2, 4 * sizeof(uint8));
             //     }
             // }
 
