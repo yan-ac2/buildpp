@@ -73,13 +73,13 @@ int test()
     #ifdef _WIN32
     test.setCompiler("clang++").setOptions("-O3 -Wall -std=c++23")
     #elif __unix__
-    test.setCompiler("clang++-20")
-    .setOptions("-O0 -std=c++23 -nostdlib -fno-exceptions ")
+    test.setCompiler("clang++")
+    .setOptions("-O0 -std=c++23 -nostdlib ")
     #endif
     .setProjectPath(rootPath)
     .setSourcePath("testlib")
-    .setMain((test.Path / "inprogress.cc").string())
-    .addSource({(test.Path / "inprogress.cc").string()})
+    .setMain((test.SourcePath[0] / "inprogress.cc").string())
+    .addSource({(test.SourcePath[0] / "inprogress.cc").string()})
     .getCppFile();
     
     #ifdef __unix__

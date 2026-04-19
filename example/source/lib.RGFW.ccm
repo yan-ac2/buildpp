@@ -49,7 +49,7 @@ export
 	void BlitSurface (mWindow* win,mSurface* surface) {return RGFW_window_blitSurface(win,surface);};
 	void (&surfaceFree)(mSurface*) = RGFW_surface_free;
 	
-	void (&PollEvent)(int32) = RGFW_waitForEvent; 
+	auto& PollEvent = RGFW_waitForEvent; 
 	
 }
 

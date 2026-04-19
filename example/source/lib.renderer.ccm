@@ -7,30 +7,18 @@ import lib.std;
 export
 {
     uint8 color[4] = {0, 0, 0, 0};
-    uint8 color2[4] = {100, 0, 0, 255};
+    uint8 color2[4] = {0, 0, 100, 255};
     uint8 color3[4] = {0, 255, 0, 255};
     uint8 icon[4 * 3 * 3] = {0xFF, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0xFF, 0xFF, 0xFF, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF};
     
     struct RGBA {
-        uint32 col;
-        struct arr{uint8 a[4]; operator uint8*() {return a;}};
-        RGBA(uint8 r,uint8 g,uint8 b,uint8 a)  {
-            col = (r << 24)|(g << 16)|(b << 8)|(a);
+        uint8 col[4];
+
+        RGBA(uint8 r,uint8 g,uint8 b,uint8 a) : col(r,g,b,a) {
+            
         }
-        uint8 operator [](uint32 idx) {
-            return idx == 0 ? static_cast<uint8>((col >> 24) & 0XFF):
-            idx == 1 ? static_cast<uint8>((col >> 16) & 0XFF):
-            idx == 2 ? static_cast<uint8>((col >> 8) & 0XFF):
-            static_cast<uint8>(col & 0XFF);
-        }
-        operator uint8*() {
-            arr ret {
-                static_cast<uint8>((col >> 24) & 0XFF),
-                static_cast<uint8>((col >> 16) & 0XFF),
-                static_cast<uint8>((col >> 8) & 0XFF),
-                static_cast<uint8>(col & 0XFF)
-            };
-            return ret;
+        operator const uint8*() const {
+            return col;
         };
     };
 
@@ -53,12 +41,12 @@ export
     };
     
     
-    void drawRect(uint8* buffer, int32 bufferWidth, int32 x, int32 y, int32 w, int32 h, uint8 colorin[4]) {
+    void drawRect(uint8* buffer, int32 bufferWidth, int32 x, int32 y, int32 w, int32 h,const uint8 colorin[4]) {
         int32 x1 = x;
         int32 y1 = y;
         for(x=x1; x < w + x1; x++) {
             for(y=y1; y < h + y1; y++) {
-                uint32 index = ((y * (bufferWidth))  +  x) ;
+                uint32 index = ((y * (4*bufferWidth))  +  x *4) ;
                 //std::printf("x: %d y: %d \n",x,y);
                 std::memcpy(buffer + index, colorin, 4 * sizeof(uint8));
             }
@@ -81,12 +69,12 @@ export
             if (steep) // if transposed, de−transpose
             {
                 if (!bufferWidth || x<0 || y<0 || x>=bufferWidth || y>=bufferHeight) return;
-                std::memcpy(buffer +((x*4)+y*(bufferWidth*4))*(4*sizeof(uint8)), colorin,4 * sizeof(uint8));
+                std::memcpy(buffer +((x*4)+y*(bufferWidth*4)), colorin,4 * sizeof(uint8));
             }
             else
             {
                 if (!bufferWidth || x<0 || y<0 || x>=bufferWidth || y>=bufferHeight) return;
-                std::memcpy(buffer +((x*4)+y*(bufferWidth*4))*(4*sizeof(uint8)), colorin,4 * sizeof(uint8));
+                std::memcpy(buffer +((x*4)+y*(bufferWidth*4)), colorin,4 * sizeof(uint8));
             }
         }
 
@@ -106,7 +94,7 @@ export
         f32 theta = 0;
         sRenderer& init(mWindow* win) {
             buffer = new uint8[win->h * win->w * 4];
-            surface = createSurface(buffer,win->w,win->h,formatRGB8);
+            surface = createSurface(buffer,win->w,win->h,formatRGBA8);
         
             return *this;
         }

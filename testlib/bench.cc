@@ -1,7 +1,10 @@
+#define PICOBENCH_DEBUG
+#define PICOBENCH_IMPLEMENT_WITH_MAIN
+#include "picobench/include/picobench/picobench.hpp"
 #include <cstddef>
-#include <cstdio>
-#include <cstdlib>
-
+#include <string>
+#include <thread>
+#include <chrono>
 template <class Ty, Ty Val>
 struct integral_constant {
     static constexpr Ty value = Val;
@@ -19,24 +22,18 @@ template<class T> struct is_same<T,T>    : true_t  {using type = T;};
 template<typename T> struct is_ptr :false_t {using type = T;};
 template<typename T> struct is_ptr<T*> :true_t {using type = T;};
 
-template<typename T> concept nonull  = requires (T p) { {p != nullptr};};
-
 struct variantBuffer{char buffer;};
 inline void* operator new (size_t size,variantBuffer* p) {return p;}
-
 
 class string {
     struct small {
         char str[22]; 
-        small(){str[0] = '\0';}
-        constexpr small& copy(size_t to,const char* from,const size_t len) {
+        small() noexcept {str[0] = '\0';}
+        constexpr small& copy(size_t to,const char* from,const size_t len) noexcept {
             char* tptr = str + to;
-            const char* fptr = from;
-            char* etptr = str + to + len;
             const char* efptr = from + len;
-            for (;etptr >= tptr;){
-                *tptr++ = *fptr++;
-                *etptr-- = *efptr--;
+            for (;efptr >= from;){
+                *tptr++ = *from++;
             }
             return *this;
         }
@@ -45,34 +42,31 @@ class string {
     struct large {
         char* str;
         size_t cap;
-        large() : str(nullptr) , cap(0){}
-        large(const size_t& in) : cap(in) {newStr();}
+        large() noexcept : str(nullptr) , cap(0){}
+        large(const size_t& in) noexcept : cap(in) {newStr();}
         constexpr large& copy(size_t to,const char* from,const size_t len) {
             char* tptr = str + to;
-            const char* fptr = from;
-            char* etptr = str + to + len;
             const char* efptr = from + len;
-            for (;etptr >= tptr;){
-                *tptr++ = *fptr++;
-                *etptr-- = *efptr--;
+            for (;efptr >= from;){
+                *tptr++ = *from++;
             }
             return *this;
         }
-        large& newCap (const size_t& in) {cap = in; return *this;}
-        large& deleteStr() {
+        large& newCap (const size_t& in) noexcept {cap = in; return *this;}
+        large& deleteStr() noexcept {
             if (str != nullptr) {
                 delete[] str;
                 str = nullptr;
             }
             return *this;
         };
-        large& newStr() {str = new char[cap + 1]; return *this;}
-        large& newStr(size_t len,const char* other) {
+        large& newStr() noexcept {str = new char[cap + 1]; return *this;}
+        large& newStr(size_t len,const char* other) noexcept {
             str = new char[cap + 1];
             return other ? copy(0, other, len) : *this;
         }
         large(large&& other) noexcept : str(other.str), cap(other.cap) {other.str = nullptr;}
-        ~large() {deleteStr();}
+        ~large() noexcept {deleteStr();}
         large(const large&) = delete;
     };
 
@@ -82,7 +76,7 @@ class string {
 
         alignas(alignof(large) > alignof(small) ? alignof(large) : alignof(small) ) 
         variantBuffer buffer[sizeof(large)>sizeof(small)? sizeof(large) : sizeof(small)] {};
-        bool autoshrink = false;
+        bool autoshrink = true;
         enum : char {
             no_type = -1,
             s = 0,
@@ -90,14 +84,14 @@ class string {
         } type_index = no_type;
         size_t len;
         
-        void destroy_current() {
+        void destroy_current() noexcept {
             if (type_index == no_type) return;
             if (type_index == l) {reinterpret_cast<large*>(buffer)->~large();}
             if (type_index == s) {reinterpret_cast<small*>(buffer)->~small();}
             type_index = no_type; 
         }
         template <typename T> 
-        constexpr variant& set(T&& value) {
+        constexpr variant& set(T&& value) noexcept {
             destroy_current();
             new (buffer) T(static_cast<T&&>(value));
             type_index = is_large<T> ? l : s; 
@@ -105,36 +99,33 @@ class string {
         }
 
         template <typename T>
-        constexpr T& get() { return *reinterpret_cast<T*>(buffer);}
+        constexpr T& get() noexcept { return *reinterpret_cast<T*>(buffer);}
         
         template <typename T>
-        const T& get() const { return *reinterpret_cast<const T*>(buffer);}
+        const T& get() const noexcept { return *reinterpret_cast<const T*>(buffer);}
         ~variant() { destroy_current();}
     } storage;
 
-    inline constexpr size_t getLen(const char* str) 
+    inline constexpr size_t getLen(const char* str) noexcept
     {
         size_t inlen = 0;
         for (;str[inlen] != '\0';inlen++){}
         return inlen;
     }
 
-    inline constexpr void copy(char* to,const char* from,const size_t len) 
+    inline constexpr void copy(char* to,const char* from,const size_t len) noexcept
     {
         char* tptr = to;
-        const char* fptr = from;
-        char* etptr = to + len;
         const char* efptr = from + len;
-        for (;etptr >= tptr;){
-            *tptr++ = *fptr++;
-            *etptr-- = *efptr--;
+        for (;efptr >= from;){
+            *tptr++ = *from++;
         }
     }
     public:
 
-    explicit string() : storage({.len = 0}) {}
+    explicit constexpr string() noexcept : storage({.len = 0}) {}
 
-    string(const char* instr)  {
+    constexpr string(const char* instr) noexcept {
         storage.len = getLen(instr);
         if (storage.len > 21) {
             storage.set(large{storage.len}).get<large>()
@@ -145,7 +136,7 @@ class string {
         }
     }
 
-    string(const string& other) : storage({.len = other.storage.len})  {
+    constexpr string(const string& other) noexcept : storage({.len = other.storage.len}) {
         if (other.storage.type_index == 1) { // Large
             const large& o_large = other.storage.get<large>();
             storage.set(large{o_large.cap}).get<large>()
@@ -156,7 +147,7 @@ class string {
         }
     }
 
-    string& operator=(const char* inStr) {
+    constexpr string& operator=(const char* inStr) noexcept {
         storage.len = getLen(inStr);
     
             // Logic: Should we stay/become Large?
@@ -182,7 +173,7 @@ class string {
         return *this;
     }
 
-    constexpr string& reserve(size_t newSize) {
+    constexpr string& reserve(size_t newSize) noexcept {
         if ((storage.len + newSize) > 21) 
         {
             if (storage.type_index == 1) 
@@ -204,7 +195,7 @@ class string {
         }
     }
 
-    string& append(const char* in) {
+    constexpr string& append(const char* in) noexcept {
         const size_t inlen = getLen(in);
         const size_t totalLen = storage.len + inlen;
 
@@ -231,13 +222,13 @@ class string {
         storage.len = totalLen;
         return *this;
     }
-    inline char* get() noexcept {
+    constexpr char* get() noexcept {
         return storage.type_index == 1 ?
         storage.get<large>().str:
         storage.get<small>().str;
     }
     using cstr = const char*;
-    inline cstr get() const noexcept {
+    constexpr cstr get() const noexcept {
         return storage.type_index == 1 ?
         storage.get<large>().str:
         storage.get<small>().str;
@@ -258,11 +249,14 @@ class string {
     }
 };
 
-int main()
+
+using namespace std::chrono_literals;
+void stdstr(picobench::state& s)
 {
-        
-        string s ("hello world before");
-        s.reserve(32);
+    for (auto _ : s)
+    {
+        std::string s ("hello world before");
+        s.reserve(20);
         printf("%s %zu \n",s.data() , s.size());
         s.append(" new char");
         s.front() = 'f';
@@ -271,7 +265,7 @@ int main()
         // s.reserve(50);
         s.append(" after append");
         printf("%s %zu \n",s.data() , s.size());
-        string c (s);
+        std::string c (s);
         c.append(" copy");
         printf("%s %zu \n",c.data() , c.size());
         s = ("hello world from world number");
@@ -296,6 +290,51 @@ int main()
         printf("%s %zu \n",s.data() , s.size());
         s = "aaa";
         printf("%s %zu \n", s.data(), s.size());
-    
-    return 0; 
-}
+    }  
+    std::this_thread::sleep_for(10ns);  
+}    
+PICOBENCH(stdstr);
+
+    void impstr(picobench::state& s)
+    {
+        for (auto _ : s)
+        {
+            string s ("hello world before");
+            s.reserve(20);
+            printf("%s %zu \n",s.data() , s.size());
+            s.append(" new char");
+            s.front() = 'f';
+            s.back() = 's';
+            printf("%s %zu \n",s.data() , s.size());
+            // s.reserve(50);
+            s.append(" after append");
+            printf("%s %zu \n",s.data() , s.size());
+            string c (s);
+            c.append(" copy");
+            printf("%s %zu \n",c.data() , c.size());
+            s = ("hello world from world number");
+            printf("%s %zu \n",s.data() , s.size());
+            s = "hello world numbers 3200";
+            printf("%s %zu \n",s.data() , s.size());
+            s = "hello again from world number 3200";
+            printf("%s %zu \n",s.data() , s.size());
+            s = "small";
+            printf("%s %zu \n",s.data() , s.size());
+            s.append(" append");
+            printf("%s %zu \n",s.data() , s.size());
+            s = "again";
+            printf("%s %zu \n",s.data() , s.size());
+            s = "hello again from world number 4200";
+            printf("%s %zu \n",s.data() , s.size());
+            s = "sssssssssssssssssssssssssssssssss";
+            printf("%s %zu \n",s.data() , s.size());
+            s = "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww";
+            printf("%s %zu \n",s.data() , s.size());
+            s = "wwwwwwwwwwwwwwwwwwwwww";
+            printf("%s %zu \n",s.data() , s.size());
+            s = "aaa";
+            printf("%s %zu \n", s.data(), s.size());
+        }
+        std::this_thread::sleep_for(10ns);
+    }
+    PICOBENCH(impstr);

@@ -1,0 +1,5 @@
+/home/yan/proj/cppbuild/testlib/build/CMakeFiles/bench.dir
+/home/yan/proj/cppbuild/testlib/build/CMakeFiles/edit_cache.dir
+/home/yan/proj/cppbuild/testlib/build/CMakeFiles/rebuild_cache.dir
+/home/yan/proj/cppbuild/testlib/build/picobench/CMakeFiles/edit_cache.dir
+/home/yan/proj/cppbuild/testlib/build/picobench/CMakeFiles/rebuild_cache.dir
