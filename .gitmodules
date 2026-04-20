@@ -1,3 +1,3 @@
-[submodule "testlib/picobench"]
-	path = testlib/picobench
-	url = https://github.com/iboB/picobench.git
+[submodule "testlib/benchmark"]
+	path = testlib/benchmark
+	url = https://github.com/Yan-ac1/benchmark.git
