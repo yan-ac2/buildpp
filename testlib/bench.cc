@@ -1,6 +1,7 @@
-#define PICOBENCH_DEBUG
-#define PICOBENCH_IMPLEMENT_WITH_MAIN
-#include "picobench/include/picobench/picobench.hpp"
+
+#include <benchmark/benchmark.h>
+#include <benchmark/registration.h>
+#include <benchmark/state.h>
 #include <cstddef>
 #include <string>
 #include <thread>
@@ -125,15 +126,16 @@ class string {
 
     explicit constexpr string() noexcept : storage({.len = 0}) {}
 
-    constexpr string(const char* instr) noexcept {
-        storage.len = getLen(instr);
-        if (storage.len > 21) {
-            storage.set(large{storage.len}).get<large>()
-            .copy(0,instr, storage.len);
+    string(const char* instr) noexcept {
+        const size_t len = getLen(instr);
+        if (len > 21) {
+            storage.set(large{len}).get<large>()
+            .copy(0,instr, len);
         } else {
             storage.set(small{}).get<small>()
-            .copy(0,instr, storage.len);
+            .copy(0,instr, len);
         }
+        storage.len = len;
     }
 
     constexpr string(const string& other) noexcept : storage({.len = other.storage.len}) {
@@ -173,7 +175,7 @@ class string {
         return *this;
     }
 
-    constexpr string& reserve(size_t newSize) noexcept {
+    string& reserve(size_t newSize) noexcept {
         if ((storage.len + newSize) > 21) 
         {
             if (storage.type_index == 1) 
@@ -195,7 +197,7 @@ class string {
         }
     }
 
-    constexpr string& append(const char* in) noexcept {
+    string& append(const char* in) noexcept {
         const size_t inlen = getLen(in);
         const size_t totalLen = storage.len + inlen;
 
@@ -251,7 +253,7 @@ class string {
 
 
 using namespace std::chrono_literals;
-void stdstr(picobench::state& s)
+static void stdstrs(benchmark::State& s)
 {
     for (auto _ : s)
     {
@@ -290,51 +292,51 @@ void stdstr(picobench::state& s)
         printf("%s %zu \n",s.data() , s.size());
         s = "aaa";
         printf("%s %zu \n", s.data(), s.size());
-    }  
-    std::this_thread::sleep_for(10ns);  
+    } 
 }    
-PICOBENCH(stdstr);
+BENCHMARK(stdstrs);
 
-    void impstr(picobench::state& s)
+static void impstr(benchmark::State& s)
+{
+    for (auto _ : s)
     {
-        for (auto _ : s)
-        {
-            string s ("hello world before");
-            s.reserve(20);
-            printf("%s %zu \n",s.data() , s.size());
-            s.append(" new char");
-            s.front() = 'f';
-            s.back() = 's';
-            printf("%s %zu \n",s.data() , s.size());
-            // s.reserve(50);
-            s.append(" after append");
-            printf("%s %zu \n",s.data() , s.size());
-            string c (s);
-            c.append(" copy");
-            printf("%s %zu \n",c.data() , c.size());
-            s = ("hello world from world number");
-            printf("%s %zu \n",s.data() , s.size());
-            s = "hello world numbers 3200";
-            printf("%s %zu \n",s.data() , s.size());
-            s = "hello again from world number 3200";
-            printf("%s %zu \n",s.data() , s.size());
-            s = "small";
-            printf("%s %zu \n",s.data() , s.size());
-            s.append(" append");
-            printf("%s %zu \n",s.data() , s.size());
-            s = "again";
-            printf("%s %zu \n",s.data() , s.size());
-            s = "hello again from world number 4200";
-            printf("%s %zu \n",s.data() , s.size());
-            s = "sssssssssssssssssssssssssssssssss";
-            printf("%s %zu \n",s.data() , s.size());
-            s = "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww";
-            printf("%s %zu \n",s.data() , s.size());
-            s = "wwwwwwwwwwwwwwwwwwwwww";
-            printf("%s %zu \n",s.data() , s.size());
-            s = "aaa";
-            printf("%s %zu \n", s.data(), s.size());
-        }
-        std::this_thread::sleep_for(10ns);
+        string s ("hello world before");
+        s.reserve(20);
+        printf("%s %zu \n",s.data() , s.size());
+        s.append(" new char");
+        s.front() = 'f';
+        s.back() = 's';
+        printf("%s %zu \n",s.data() , s.size());
+        // s.reserve(50);
+        s.append(" after append");
+        printf("%s %zu \n",s.data() , s.size());
+        string c (s);
+        c.append(" copy");
+        printf("%s %zu \n",c.data() , c.size());
+        s = ("hello world from world number");
+        printf("%s %zu \n",s.data() , s.size());
+        s = "hello world numbers 3200";
+        printf("%s %zu \n",s.data() , s.size());
+        s = "hello again from world number 3200";
+        printf("%s %zu \n",s.data() , s.size());
+        s = "small";
+        printf("%s %zu \n",s.data() , s.size());
+        s.append(" append");
+        printf("%s %zu \n",s.data() , s.size());
+        s = "again";
+        printf("%s %zu \n",s.data() , s.size());
+        s = "hello again from world number 4200";
+        printf("%s %zu \n",s.data() , s.size());
+        s = "sssssssssssssssssssssssssssssssss";
+        printf("%s %zu \n",s.data() , s.size());
+        s = "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww";
+        printf("%s %zu \n",s.data() , s.size());
+        s = "wwwwwwwwwwwwwwwwwwwwww";
+        printf("%s %zu \n",s.data() , s.size());
+        s = "aaa";
+        printf("%s %zu \n", s.data(), s.size());
     }
-    PICOBENCH(impstr);
+}
+BENCHMARK(impstr);
+
+BENCHMARK_MAIN();

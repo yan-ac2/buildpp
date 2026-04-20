@@ -3,7 +3,18 @@ export module lib.renderer;
 import lib.RGFW;
 import lib.types;
 import lib.std;
-
+template<typename  T> requires std::is_integral<T>::value
+constexpr T abs(T a) {
+    return ((unsigned) a)>> (sizeof(T) - 1);
+}
+inline constexpr void copy(void* to,const void* from,const size_ty len) noexcept {
+    unsigned char* pto = (unsigned char*)(to);
+    const unsigned char* fptr = (const unsigned char*)(from);
+    const unsigned char* efptr = (const unsigned char*)(from) + len;
+    for (;efptr >= fptr;){
+        *pto++ = *fptr++;
+    }
+}
 export
 {
     uint8 color[4] = {0, 0, 0, 0};
@@ -13,13 +24,9 @@ export
     
     struct RGBA {
         uint8 col[4];
-
-        RGBA(uint8 r,uint8 g,uint8 b,uint8 a) : col(r,g,b,a) {
-            
-        }
-        operator const uint8*() const {
-            return col;
-        };
+        RGBA(uint8 r,uint8 g,uint8 b,uint8 a) : col(r,g,b,a) {}
+        operator const uint8*() const {return col;}
+        operator RGBA() const {return col;}
     };
 
     void clear(uint8* buffer, int32 bufferWidth, int32 w, int32 h, uint8* color) {
@@ -35,7 +42,7 @@ export
                 uint32 index = (y * 4 * (uint32)bufferWidth) + x * 4;
 
                 /* copy the color to that pixel */
-                std::memcpy(&buffer[index], color, 4 * sizeof(uint8));
+                copy(&buffer[index], color, 4 * sizeof(uint8));
             }
         }
     };
@@ -48,13 +55,13 @@ export
             for(y=y1; y < h + y1; y++) {
                 uint32 index = ((y * (4*bufferWidth))  +  x *4) ;
                 //std::printf("x: %d y: %d \n",x,y);
-                std::memcpy(buffer + index, colorin, 4 * sizeof(uint8));
+                copy(buffer + index, colorin, 4 * sizeof(uint8));
             }
         }
     };
 
     void drawLine(uint8* buffer,int32 bufferWidth,int32 bufferHeight, int32 x1, int32 y1, int32 y2, int32 x2, uint8 colorin[4]) {
-        bool steep = std::abs(x1-x2) < std::abs(y1-y2);
+        bool steep = abs(x1-x2) < abs(y1-y2);
         if (steep) { // if the line is steep, we transpose the image
             std::swap(x1, y1);
             std::swap(x2, y2);
@@ -69,12 +76,12 @@ export
             if (steep) // if transposed, de−transpose
             {
                 if (!bufferWidth || x<0 || y<0 || x>=bufferWidth || y>=bufferHeight) return;
-                std::memcpy(buffer +((x*4)+y*(bufferWidth*4)), colorin,4 * sizeof(uint8));
+                copy(buffer +((x*4)+y*(bufferWidth*4)), colorin,4 * sizeof(uint8));
             }
             else
             {
                 if (!bufferWidth || x<0 || y<0 || x>=bufferWidth || y>=bufferHeight) return;
-                std::memcpy(buffer +((x*4)+y*(bufferWidth*4)), colorin,4 * sizeof(uint8));
+                copy(buffer +((x*4)+y*(bufferWidth*4)), colorin,4 * sizeof(uint8));
             }
         }
 
@@ -83,7 +90,7 @@ export
     int32 y1 = y;
         for (y = 0; y < h; y++) {
             uint32 index = (uint32)(y + y1) * (4 * (uint32)bufferWidth) + (uint32)x * 4;
-            std::memcpy(&buffer[index], &bitmap[(uint32)y  * (4 * (uint32)w)], (uint32)w * 4 * sizeof(uint8));
+            copy(&buffer[index], &bitmap[(uint32)y  * (4 * (uint32)w)], (uint32)w * 4 * sizeof(uint8));
         }
     }
     class sRenderer {
@@ -99,19 +106,10 @@ export
             return *this;
         }
         sRenderer& update(mWindow* win) {
-            // int32 x = 100;
-            // int32 y = 100;
-            // int32 x1 = x1;
-            // int32 y1 = y1;
-            // uint32 index;
-            // for(x = x1; x < 200 + x1; x++) {
-            //     for(y = y1; y < 200 + y1; y++) {
-            //         index = ((uint32)y + (uint32)x) * (4 * (uint32)(5));
-            //         std::memcpy(&buffer[index], color2, 4 * sizeof(uint8));
-            //     }
-            // }
+            drawRect
 
             BlitSurface(win,surface);
+            clear(buffer,surface->w,surface->w,surface->h,color);
             return *this;
         }
         ~sRenderer() {surfaceFree(surface);}

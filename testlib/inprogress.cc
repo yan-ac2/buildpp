@@ -1,6 +1,8 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
+#include <type_traits>
 
 template <class Ty, Ty Val>
 struct integral_constant {
@@ -23,20 +25,24 @@ template<typename T> concept nonull  = requires (T p) { {p != nullptr};};
 
 struct variantBuffer{char buffer;};
 inline void* operator new (size_t size,variantBuffer* p) {return p;}
-
+inline constexpr void copy(void* to,const void* from,const size_t len) noexcept {
+    unsigned char* pto = static_cast<unsigned char*>(to);
+    const unsigned char* fptr = static_cast<const unsigned char*>(from);
+    const unsigned char* efptr = static_cast<const unsigned char*>(from) + len;
+    for (;efptr >= fptr;){
+        *pto++ = *fptr++;
+    }
+}
 
 class string {
     struct small {
         char str[22]; 
-        small(){str[0] = '\0';}
-        constexpr small& copy(size_t to,const char* from,const size_t len) {
+        small() noexcept {str[0] = '\0';}
+        constexpr small& copy(size_t to,const char* from,const size_t len) noexcept {
             char* tptr = str + to;
-            const char* fptr = from;
-            char* etptr = str + to + len;
             const char* efptr = from + len;
-            for (;etptr >= tptr;){
-                *tptr++ = *fptr++;
-                *etptr-- = *efptr--;
+            for (;efptr >= from;){
+                *tptr++ = *from++;
             }
             return *this;
         }
@@ -45,34 +51,31 @@ class string {
     struct large {
         char* str;
         size_t cap;
-        large() : str(nullptr) , cap(0){}
-        large(const size_t& in) : cap(in) {newStr();}
+        large() noexcept : str(nullptr) , cap(0){}
+        large(const size_t& in) noexcept : cap(in) {newStr();}
         constexpr large& copy(size_t to,const char* from,const size_t len) {
             char* tptr = str + to;
-            const char* fptr = from;
-            char* etptr = str + to + len;
             const char* efptr = from + len;
-            for (;etptr >= tptr;){
-                *tptr++ = *fptr++;
-                *etptr-- = *efptr--;
+            for (;efptr >= from;){
+                *tptr++ = *from++;
             }
             return *this;
         }
-        large& newCap (const size_t& in) {cap = in; return *this;}
-        large& deleteStr() {
+        large& newCap (const size_t& in) noexcept {cap = in; return *this;}
+        large& deleteStr() noexcept {
             if (str != nullptr) {
                 delete[] str;
                 str = nullptr;
             }
             return *this;
         };
-        large& newStr() {str = new char[cap + 1]; return *this;}
-        large& newStr(size_t len,const char* other) {
+        large& newStr() noexcept {str = new char[cap + 1]; return *this;}
+        large& newStr(size_t len,const char* other) noexcept {
             str = new char[cap + 1];
             return other ? copy(0, other, len) : *this;
         }
         large(large&& other) noexcept : str(other.str), cap(other.cap) {other.str = nullptr;}
-        ~large() {deleteStr();}
+        ~large() noexcept {deleteStr();}
         large(const large&) = delete;
     };
 
@@ -82,7 +85,7 @@ class string {
 
         alignas(alignof(large) > alignof(small) ? alignof(large) : alignof(small) ) 
         variantBuffer buffer[sizeof(large)>sizeof(small)? sizeof(large) : sizeof(small)] {};
-        bool autoshrink = false;
+        bool autoshrink = true;
         enum : char {
             no_type = -1,
             s = 0,
@@ -90,14 +93,14 @@ class string {
         } type_index = no_type;
         size_t len;
         
-        void destroy_current() {
+        void destroy_current() noexcept {
             if (type_index == no_type) return;
             if (type_index == l) {reinterpret_cast<large*>(buffer)->~large();}
             if (type_index == s) {reinterpret_cast<small*>(buffer)->~small();}
             type_index = no_type; 
         }
         template <typename T> 
-        constexpr variant& set(T&& value) {
+        constexpr variant& set(T&& value) noexcept {
             destroy_current();
             new (buffer) T(static_cast<T&&>(value));
             type_index = is_large<T> ? l : s; 
@@ -105,47 +108,36 @@ class string {
         }
 
         template <typename T>
-        constexpr T& get() { return *reinterpret_cast<T*>(buffer);}
+        constexpr T& get() noexcept { return *reinterpret_cast<T*>(buffer);}
         
         template <typename T>
-        const T& get() const { return *reinterpret_cast<const T*>(buffer);}
+        const T& get() const noexcept { return *reinterpret_cast<const T*>(buffer);}
         ~variant() { destroy_current();}
     } storage;
 
-    inline constexpr size_t getLen(const char* str) 
+    inline constexpr size_t getLen(const char* str) noexcept
     {
         size_t inlen = 0;
         for (;str[inlen] != '\0';inlen++){}
         return inlen;
     }
-
-    inline constexpr void copy(char* to,const char* from,const size_t len) 
-    {
-        char* tptr = to;
-        const char* fptr = from;
-        char* etptr = to + len;
-        const char* efptr = from + len;
-        for (;etptr >= tptr;){
-            *tptr++ = *fptr++;
-            *etptr-- = *efptr--;
-        }
-    }
     public:
 
-    explicit string() : storage({.len = 0}) {}
+    explicit constexpr string() noexcept : storage({.len = 0}) {}
 
-    string(const char* instr)  {
-        storage.len = getLen(instr);
-        if (storage.len > 21) {
-            storage.set(large{storage.len}).get<large>()
-            .copy(0,instr, storage.len);
+    string(const char* instr) noexcept {
+        const size_t len = getLen(instr);
+        if (len > 21) {
+            storage.set(large{len}).get<large>()
+            .copy(0,instr, len);
         } else {
             storage.set(small{}).get<small>()
-            .copy(0,instr, storage.len);
+            .copy(0,instr, len);
         }
+        storage.len = len;
     }
 
-    string(const string& other) : storage({.len = other.storage.len})  {
+    constexpr string(const string& other) noexcept : storage({.len = other.storage.len}) {
         if (other.storage.type_index == 1) { // Large
             const large& o_large = other.storage.get<large>();
             storage.set(large{o_large.cap}).get<large>()
@@ -156,7 +148,7 @@ class string {
         }
     }
 
-    string& operator=(const char* inStr) {
+    constexpr string& operator=(const char* inStr) noexcept {
         storage.len = getLen(inStr);
     
             // Logic: Should we stay/become Large?
@@ -182,7 +174,7 @@ class string {
         return *this;
     }
 
-    constexpr string& reserve(size_t newSize) {
+    string& reserve(size_t newSize) noexcept {
         if ((storage.len + newSize) > 21) 
         {
             if (storage.type_index == 1) 
@@ -204,7 +196,7 @@ class string {
         }
     }
 
-    string& append(const char* in) {
+    string& append(const char* in) noexcept {
         const size_t inlen = getLen(in);
         const size_t totalLen = storage.len + inlen;
 
@@ -231,13 +223,13 @@ class string {
         storage.len = totalLen;
         return *this;
     }
-    inline char* get() noexcept {
+    constexpr char* get() noexcept {
         return storage.type_index == 1 ?
         storage.get<large>().str:
         storage.get<small>().str;
     }
     using cstr = const char*;
-    inline cstr get() const noexcept {
+    constexpr cstr get() const noexcept {
         return storage.type_index == 1 ?
         storage.get<large>().str:
         storage.get<small>().str;
@@ -257,10 +249,15 @@ class string {
         if (storage.type_index == 1) {storage.destroy_current();}
     }
 };
+template<typename  T> requires std::is_integral_v<T>
+constexpr T abs(T a) {
+    return ((unsigned) a)>> (sizeof(T) - 1);
+}
 
 int main()
 {
-        
+        std::int8_t ab = abs(3.00001-8.56);
+        printf("abs %d \n" ,ab );
         string s ("hello world before");
         s.reserve(32);
         printf("%s %zu \n",s.data() , s.size());

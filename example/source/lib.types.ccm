@@ -1,6 +1,5 @@
 export module lib.types;
 import lib.std;
-
 export
 {
     using f32       = float;
@@ -11,6 +10,7 @@ export
     using uint32    = std::uint32_t;
     using int64     = std::int64_t;
     using uint64    = std::uint64_t;
+    using size_ty    = __SIZE_TYPE__;
     using cstr      = const char*;
     struct vec2;
     struct vec3;

@@ -36,6 +36,8 @@ export namespace std
     using std::memcpy;
     using std::malloc;
     using std::memset;
+    using std::is_integral;
+    using std::is_integral_v;
     using std::int8_t;    
     using std::uint8_t;    
     using std::int32_t;    
