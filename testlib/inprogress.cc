@@ -36,9 +36,9 @@ class string {
     struct small {
         char str[22]; 
         small() noexcept {str[0] = '\0';}
-        constexpr small& copy(size_t to,const char* from,const size_t len) noexcept {
+        constexpr small& copy(const size_t to,const char* from,const size_t* len) noexcept {
             char* tptr = str + to;
-            const char* efptr = from + len;
+            const char* efptr = from + *len;
             for (;from < efptr;){
                 *tptr++ = *from++;
             }
@@ -51,7 +51,7 @@ class string {
         char* str;
         size_t cap;
         large() noexcept : str(nullptr) , cap(0){}
-        large(const size_t& in) noexcept : cap(in) {}
+        large(const size_t* in) noexcept : cap(*in) {}
         constexpr large& copy(size_t to,const char* from,const size_t len) {
             char* tptr = str + to;
             const char* efptr = from + len;
@@ -60,8 +60,9 @@ class string {
             }   *tptr++ = '\0';
             return *this;
         }
+        large& addCap (const size_t* other) {cap += *other;return *this;}
         large& move (char*& temp) {temp = str;str = nullptr;return *this;}
-        large& newCap (const size_t& in) noexcept {cap = in; return *this;}
+        large& newCap (const size_t* in) noexcept {cap = *in; return *this;}
         large& deleteStr() noexcept {
             if (str != nullptr) {
                 delete[] str;
@@ -70,9 +71,9 @@ class string {
             return *this;
         };
         large& newStr() noexcept {str = new char[cap + 1]; return *this;}
-        large& newStr(const char* other,size_t len) noexcept {
+        large& newStr(const char* other,const size_t* len) noexcept {
             str = new char[cap + 1];
-            return other ? copy(0, other, len) : *this;
+            return other ? copy(0, other, *len) : *this;
         }
         large(large&& other) noexcept : cap(other.cap) {other.str = nullptr;}
         ~large() noexcept {deleteStr();}
@@ -128,10 +129,10 @@ class string {
     string(const char* instr) noexcept {
         const size_t len = getLen(instr);
         if (len > 21) {
-            storage.set(large(len)).get<large>().newStr(instr,len);
+            storage.set(large(&len)).get<large>().newStr(instr,&len);
         } else {
             storage.set(small()).get<small>()
-            .copy(0,instr, len);
+            .copy(0,instr, &len);
         }
         storage.len = len;
     }
@@ -139,10 +140,10 @@ class string {
     constexpr string(const string& other) noexcept : storage({.len = other.storage.len}) {
         if (other.storage.type_index == 1) { // Large
             const large& o_large = other.storage.get<large>();
-            storage.set(large(o_large.cap)).get<large>().newStr(o_large.str,other.storage.len);
+            storage.set(large(&o_large.cap)).get<large>().newStr(o_large.str,&other.storage.len);
         } else { // Small
             storage.set(small()).get<small>()
-            .copy(0,other.storage.get<small>().str, other.storage.len);
+            .copy(0,other.storage.get<small>().str, &other.storage.len);
         }
     }
 
@@ -154,10 +155,10 @@ class string {
             if (storage.type_index == 1) {
                 auto & stored = storage.get<large>();
                 if (stored.cap < storage.len) {
-                    stored.newCap(storage.len).deleteStr().newStr(inStr,storage.len);
+                    stored.newCap(&storage.len).deleteStr().newStr(inStr,&storage.len);
                 } else stored.copy(0, inStr,storage.len);
             } else {
-                storage.set(large(storage.len)).get<large>().newStr(inStr,storage.len);
+                storage.set(large(&storage.len)).get<large>().newStr(inStr,&storage.len);
             }
         } else {
             // Stay/become Small
@@ -165,24 +166,24 @@ class string {
                 storage.set(small());
             }
             storage.get<small>()
-            .copy(0,inStr,storage.len);
+            .copy(0,inStr,&storage.len);
         }
         return *this;
     }
 
-    string& reserve(size_t newSize) noexcept {
-        if ((storage.len + newSize) > 21) 
+    string& reserve(size_t in) noexcept {
+        const size_t newSize = storage.len + in;
+        if ((newSize) > 21) 
         {
             if (storage.type_index == 1) 
             {
                 auto& stored = storage.get<large>();
-                char* temp;
-                stored.cap += newSize; 
-                stored.move(temp).newStr(temp,storage.len);
+                char* temp; 
+                stored.addCap(&newSize).move(temp).newStr(temp,&storage.len);
                 delete [] temp;
             } else {
                 small temp = storage.get<small>();
-                storage.set(large{storage.len + newSize}).get<large>().newStr(temp.str,storage.len);
+                storage.set(large(&newSize)).get<large>().newStr(temp.str,&storage.len);
             }
             return *this;
         } else {
@@ -198,20 +199,20 @@ class string {
             if (storage.type_index == 0) { // Upgrade Small to Large
                 small old = storage.get<small>();
                 // Current storage is now large, copy the 'append' part
-                storage.set(large(totalLen)).get<large>()
-                .newStr(old.str, storage.len)
+                storage.set(large(&totalLen)).get<large>()
+                .newStr(old.str, &storage.len)
                 .copy(storage.len, in, inlen);
             } else { // Already Large
                 auto& stored = storage.get<large>();
                 if (totalLen > stored.cap) {
                     char* temp;
-                    stored.move(temp).newCap(totalLen).newStr(temp,storage.len);
+                    stored.move(temp).newCap(&totalLen).newStr(temp,&storage.len);
                     delete [] temp;
                 } 
                 stored.copy(storage.len, in, inlen);
             }
         } else {// Stay Small
-            storage.get<small>().copy(storage.len, in, inlen);
+            storage.get<small>().copy(storage.len, in, &inlen);
         }
         storage.len = totalLen;
         return *this;
@@ -253,8 +254,8 @@ int main()
         // s.reserve(50);
         s.append(" after append");
         // printf("%s %zu \n",s.data() , s.size());
-        string c (s);
-        c.append(" copy");
+        // string c (s);
+        // c.append(" copy");
         // printf("%s %zu \n",c.data() , c.size());
         s = ("hello world from world number");
         // printf("%s %zu \n",s.data() , s.size());
