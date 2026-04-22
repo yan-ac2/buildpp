@@ -1,8 +1,6 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
-#include <cmath>
-#include <type_traits>
 
 template <class Ty, Ty Val>
 struct integral_constant {
@@ -25,11 +23,11 @@ template<typename T> concept nonull  = requires (T p) { {p != nullptr};};
 
 struct variantBuffer{char buffer;};
 inline void* operator new (size_t size,variantBuffer* p) {return p;}
-inline constexpr void copy(void* to,const void* from,const size_t len) noexcept {
+inline constexpr void memcopy(void* to,const void* from,const size_t len) noexcept {
     unsigned char* pto = static_cast<unsigned char*>(to);
     const unsigned char* fptr = static_cast<const unsigned char*>(from);
     const unsigned char* efptr = static_cast<const unsigned char*>(from) + len;
-    for (;efptr >= fptr;){
+    for (;fptr < efptr;){
         *pto++ = *fptr++;
     }
 }
@@ -41,9 +39,10 @@ class string {
         constexpr small& copy(size_t to,const char* from,const size_t len) noexcept {
             char* tptr = str + to;
             const char* efptr = from + len;
-            for (;efptr >= from;){
+            for (;from < efptr;){
                 *tptr++ = *from++;
             }
+            *tptr++ = '\0';
             return *this;
         }
         ~small(){}
@@ -52,15 +51,16 @@ class string {
         char* str;
         size_t cap;
         large() noexcept : str(nullptr) , cap(0){}
-        large(const size_t& in) noexcept : cap(in) {newStr();}
+        large(const size_t& in) noexcept : cap(in) {}
         constexpr large& copy(size_t to,const char* from,const size_t len) {
             char* tptr = str + to;
             const char* efptr = from + len;
-            for (;efptr >= from;){
+            for (;from < efptr;){
                 *tptr++ = *from++;
-            }
+            }   *tptr++ = '\0';
             return *this;
         }
+        large& move (char*& temp) {temp = str;str = nullptr;return *this;}
         large& newCap (const size_t& in) noexcept {cap = in; return *this;}
         large& deleteStr() noexcept {
             if (str != nullptr) {
@@ -70,11 +70,11 @@ class string {
             return *this;
         };
         large& newStr() noexcept {str = new char[cap + 1]; return *this;}
-        large& newStr(size_t len,const char* other) noexcept {
+        large& newStr(const char* other,size_t len) noexcept {
             str = new char[cap + 1];
             return other ? copy(0, other, len) : *this;
         }
-        large(large&& other) noexcept : str(other.str), cap(other.cap) {other.str = nullptr;}
+        large(large&& other) noexcept : cap(other.cap) {other.str = nullptr;}
         ~large() noexcept {deleteStr();}
         large(const large&) = delete;
     };
@@ -85,7 +85,7 @@ class string {
 
         alignas(alignof(large) > alignof(small) ? alignof(large) : alignof(small) ) 
         variantBuffer buffer[sizeof(large)>sizeof(small)? sizeof(large) : sizeof(small)] {};
-        bool autoshrink = true;
+        bool autoshrink = false;
         enum : char {
             no_type = -1,
             s = 0,
@@ -99,7 +99,7 @@ class string {
             if (type_index == s) {reinterpret_cast<small*>(buffer)->~small();}
             type_index = no_type; 
         }
-        template <typename T> 
+        template <typename T> requires (is_large<T> || is_small<T>)
         constexpr variant& set(T&& value) noexcept {
             destroy_current();
             new (buffer) T(static_cast<T&&>(value));
@@ -107,10 +107,10 @@ class string {
             return *this;
         }
 
-        template <typename T>
+        template <typename T> requires (is_large<T> || is_small<T>)
         constexpr T& get() noexcept { return *reinterpret_cast<T*>(buffer);}
         
-        template <typename T>
+        template <typename T> requires (is_large<T> || is_small<T>)
         const T& get() const noexcept { return *reinterpret_cast<const T*>(buffer);}
         ~variant() { destroy_current();}
     } storage;
@@ -128,10 +128,9 @@ class string {
     string(const char* instr) noexcept {
         const size_t len = getLen(instr);
         if (len > 21) {
-            storage.set(large{len}).get<large>()
-            .copy(0,instr, len);
+            storage.set(large(len)).get<large>().newStr(instr,len);
         } else {
-            storage.set(small{}).get<small>()
+            storage.set(small()).get<small>()
             .copy(0,instr, len);
         }
         storage.len = len;
@@ -140,10 +139,9 @@ class string {
     constexpr string(const string& other) noexcept : storage({.len = other.storage.len}) {
         if (other.storage.type_index == 1) { // Large
             const large& o_large = other.storage.get<large>();
-            storage.set(large{o_large.cap}).get<large>()
-            .copy(0,o_large.str, other.storage.len);
+            storage.set(large(o_large.cap)).get<large>().newStr(o_large.str,other.storage.len);
         } else { // Small
-            storage.set(small{}).get<small>()
+            storage.set(small()).get<small>()
             .copy(0,other.storage.get<small>().str, other.storage.len);
         }
     }
@@ -156,17 +154,15 @@ class string {
             if (storage.type_index == 1) {
                 auto & stored = storage.get<large>();
                 if (stored.cap < storage.len) {
-                    stored.newCap(storage.len).deleteStr().newStr();
-                }
-                stored.copy(0, inStr,storage.len);
+                    stored.newCap(storage.len).deleteStr().newStr(inStr,storage.len);
+                } else stored.copy(0, inStr,storage.len);
             } else {
-                storage.set(large{storage.len}).get<large>()
-                .copy(0,inStr, storage.len);
+                storage.set(large(storage.len)).get<large>().newStr(inStr,storage.len);
             }
         } else {
             // Stay/become Small
             if (storage.type_index == 1) {
-                storage.set(small{});
+                storage.set(small());
             }
             storage.get<small>()
             .copy(0,inStr,storage.len);
@@ -180,15 +176,13 @@ class string {
             if (storage.type_index == 1) 
             {
                 auto& stored = storage.get<large>();
-                char* temp = new char[storage.len + 1];
-                copy(temp, stored.str,storage.len);
+                char* temp;
                 stored.cap += newSize; 
-                stored.deleteStr().newStr(storage.len,temp);
+                stored.move(temp).newStr(temp,storage.len);
                 delete [] temp;
             } else {
                 small temp = storage.get<small>();
-                storage.set(large{storage.len + newSize}).get<large>()
-                .copy(0, temp.str, storage.len);
+                storage.set(large{storage.len + newSize}).get<large>().newStr(temp.str,storage.len);
             }
             return *this;
         } else {
@@ -204,18 +198,17 @@ class string {
             if (storage.type_index == 0) { // Upgrade Small to Large
                 small old = storage.get<small>();
                 // Current storage is now large, copy the 'append' part
-                storage.set(large{totalLen}).get<large>()
-                .copy(0, old.str, storage.len)
+                storage.set(large(totalLen)).get<large>()
+                .newStr(old.str, storage.len)
                 .copy(storage.len, in, inlen);
             } else { // Already Large
                 auto& stored = storage.get<large>();
-                if (stored.cap < totalLen) {
-                    char* newStr = new char[storage.len + 1];
-                    copy(newStr, stored.str,storage.len);
-                    stored.deleteStr().newCap(totalLen).newStr(storage.len,newStr);
-                    delete [] newStr;
+                if (totalLen > stored.cap) {
+                    char* temp;
+                    stored.move(temp).newCap(totalLen).newStr(temp,storage.len);
+                    delete [] temp;
                 } 
-                copy(stored.str + storage.len, in, inlen);
+                stored.copy(storage.len, in, inlen);
             }
         } else {// Stay Small
             storage.get<small>().copy(storage.len, in, inlen);
@@ -245,54 +238,46 @@ class string {
         21;
     }
     constexpr int getindex() const noexcept {return storage.type_index;}
-    ~string(){
-        if (storage.type_index == 1) {storage.destroy_current();}
-    }
 };
-template<typename  T> requires std::is_integral_v<T>
-constexpr T abs(T a) {
-    return ((unsigned) a)>> (sizeof(T) - 1);
-}
+
 
 int main()
 {
-        std::int8_t ab = abs(3.00001-8.56);
-        printf("abs %d \n" ,ab );
         string s ("hello world before");
-        s.reserve(32);
-        printf("%s %zu \n",s.data() , s.size());
+        s.reserve(35);
+        // printf("%s %zu \n",s.data() , s.size());
         s.append(" new char");
         s.front() = 'f';
         s.back() = 's';
-        printf("%s %zu \n",s.data() , s.size());
+        // printf("%s %zu \n",s.data() , s.size());
         // s.reserve(50);
         s.append(" after append");
-        printf("%s %zu \n",s.data() , s.size());
+        // printf("%s %zu \n",s.data() , s.size());
         string c (s);
         c.append(" copy");
-        printf("%s %zu \n",c.data() , c.size());
+        // printf("%s %zu \n",c.data() , c.size());
         s = ("hello world from world number");
-        printf("%s %zu \n",s.data() , s.size());
+        // printf("%s %zu \n",s.data() , s.size());
         s = "hello world numbers 3200";
-        printf("%s %zu \n",s.data() , s.size());
+        // printf("%s %zu \n",s.data() , s.size());
         s = "hello again from world number 3200";
-        printf("%s %zu \n",s.data() , s.size());
+        // printf("%s %zu \n",s.data() , s.size());
         s = "small";
-        printf("%s %zu \n",s.data() , s.size());
+        // printf("%s %zu \n",s.data() , s.size());
         s.append(" append");
-        printf("%s %zu \n",s.data() , s.size());
+        // printf("%s %zu \n",s.data() , s.size());
         s = "again";
-        printf("%s %zu \n",s.data() , s.size());
+        // printf("%s %zu \n",s.data() , s.size());
         s = "hello again from world number 4200";
-        printf("%s %zu \n",s.data() , s.size());
+        // printf("%s %zu \n",s.data() , s.size());
         s = "sssssssssssssssssssssssssssssssss";
-        printf("%s %zu \n",s.data() , s.size());
+        // printf("%s %zu \n",s.data() , s.size());
         s = "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww";
-        printf("%s %zu \n",s.data() , s.size());
+        // printf("%s %zu \n",s.data() , s.size());
         s = "wwwwwwwwwwwwwwwwwwwwww";
-        printf("%s %zu \n",s.data() , s.size());
+        // printf("%s %zu \n",s.data() , s.size());
         s = "aaa";
-        printf("%s %zu \n", s.data(), s.size());
+        // printf("%s %zu \n", s.data(), s.size());
     
     return 0; 
 }
