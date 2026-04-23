@@ -10,16 +10,16 @@ struct integral_constant {
     constexpr operator value_type() const noexcept  {return value;}
     constexpr value_type operator()() const noexcept {return value;}
 };
-template <bool Val> using bool_constant = integral_constant<bool, Val>;
+template <bool Val> struct bool_constant {enum{value = Val};};
 using false_t = bool_constant<false>;
 using true_t  = bool_constant<true>;
-template<class T,class U> struct is_same : false_t {using type = T;};
-template<class T> struct is_same<T,T>    : true_t  {using type = T;};
+template<class T,class U> struct is_same {enum class v{value = false} ;using type = T;};
+template<class T> struct is_same<T,T>    {enum : bool{value = true} ;using type = T;};
 
-template<typename T> struct is_ptr :false_t {using type = T;};
-template<typename T> struct is_ptr<T*> :true_t {using type = T;};
+template<typename T> struct is_ptr :false_t     {using type = T;};
+template<typename T> struct is_ptr<T*> :true_t  {using type = T;};
 
-template<typename T> concept nonull  = requires (T p) { {p != nullptr};};
+// template<typename T> concept nonull  = requires (T p) { {p != nullptr};};
 
 struct variantBuffer{char buffer;};
 inline void* operator new (size_t size,variantBuffer* p) {return p;}
@@ -41,8 +41,7 @@ class string {
             const char* efptr = from + *len;
             for (;from < efptr;){
                 *tptr++ = *from++;
-            }
-            *tptr++ = '\0';
+            }*tptr++ = '\0';
             return *this;
         }
         ~small(){}
@@ -81,8 +80,8 @@ class string {
     };
 
     struct variant{
-        template <typename T> static constexpr auto is_large = is_same<T, large>::value ;
-        template <typename T> static constexpr auto is_small = is_same<T, small>::value ;
+        template <typename T> using is_large = is_same<T, large>::value ;
+        template <typename T> using is_small = is_same<T, small>::value ;
 
         alignas(alignof(large) > alignof(small) ? alignof(large) : alignof(small) ) 
         variantBuffer buffer[sizeof(large)>sizeof(small)? sizeof(large) : sizeof(small)] {};
@@ -278,7 +277,7 @@ int main()
         s = "wwwwwwwwwwwwwwwwwwwwww";
         // printf("%s %zu \n",s.data() , s.size());
         s = "aaa";
-        // printf("%s %zu \n", s.data(), s.size());
+        printf("%s %zu \n", s.data(), s.size());
     
     return 0; 
 }
