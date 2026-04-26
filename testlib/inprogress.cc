@@ -13,7 +13,7 @@ struct integral_constant {
 template <bool Val> struct bool_constant {enum{value = Val};};
 using false_t = bool_constant<false>;
 using true_t  = bool_constant<true>;
-template<class T,class U> struct is_same {enum class v{value = false} ;using type = T;};
+template<class T,class U> struct is_same {enum : bool{value = false} ;using type = T;};
 template<class T> struct is_same<T,T>    {enum : bool{value = true} ;using type = T;};
 
 template<typename T> struct is_ptr :false_t     {using type = T;};
@@ -80,8 +80,8 @@ class string {
     };
 
     struct variant{
-        template <typename T> using is_large = is_same<T, large>::value ;
-        template <typename T> using is_small = is_same<T, small>::value ;
+        template <typename T> static constexpr bool is_large = is_same<T, large>::value ;
+        template <typename T> static constexpr bool is_small = is_same<T, small>::value ;
 
         alignas(alignof(large) > alignof(small) ? alignof(large) : alignof(small) ) 
         variantBuffer buffer[sizeof(large)>sizeof(small)? sizeof(large) : sizeof(small)] {};

@@ -584,8 +584,8 @@ class Project
     std::string Compiler        {};
     std::string compileInclude  {};
     
-    constexpr Project& err(bool e = false,std::string_view msg = "",std::string fn = std::source_location::current().function_name()) {
-        if (e) {print << fmt (msg , " at " , __FILE__ , "\n"); std::exit(1);} 
+    constexpr Project& err(bool e = false,std::string_view msg = "",std::string fn = std::source_location::current().file_name()) {
+        if (e) {print << fmt (msg , " at " , fn , "\n"); std::exit(1);} 
         return *this;
     }
     bool recompile;
@@ -601,7 +601,7 @@ class Project
     
     fs::path Path       {};
     std::vector<fs::path> SourcePath     {};
-    std::vector<std::string> IncludePath {};
+    std::vector<fs::path> IncludePath    {};
     std::vector<std::string> ProjectFile {};
     std::vector<std::string> Object      {};
     std::vector<std::string> Include     {};
@@ -616,7 +616,7 @@ class Project
     constexpr Project& setOptions     (std::string_view opt)  {Options = fmt(" ",opt," ").sv(); return *this;}
     constexpr Project& setProjectPath (fs::path in)           {Path = in; return *this;}
     constexpr Project& setSourcePath  (fs::path in)           {SourcePath.emplace_back(in); return *this;}
-    constexpr Project& addIncludePath (fs::path in)           {IncludePath.emplace_back(in.string()); return *this;}
+    constexpr Project& addIncludePath (fs::path in)           {IncludePath.emplace_back(in); return *this;}
     
     constexpr Project& addSource(std::initializer_list<std::string_view> in) {
         ProjectFile.reserve(in.size());
@@ -867,12 +867,12 @@ class Project
         cmd << f_cmd.c_str() >> "linking error"_fmt.color(fmt::Bold_Red);
     }
 
-    Project& addInclude(fs::path inPath) {
-        if (IncludePath.empty())         { err(true,"IncludePath cannot be empty"_fmt.color(fmt::Bold_Red));} 
+    Project& addIncludefile(fs::path inPath) {
+        // if (IncludePath.empty())         { err(true,"IncludePath cannot be empty"_fmt.color(fmt::Bold_Red));} 
 
         if (!fs::exists(inPath)) { err(true,fmt("Include path ",inPath.string(), "does not exist").color(fmt::Bold_Red));}
         
-        IncludePath.push_back(inPath.string());
+        IncludePath.push_back(inPath);
         compileInclude.append(fmt("-I",inPath.string()," "));
         return *this;
     }

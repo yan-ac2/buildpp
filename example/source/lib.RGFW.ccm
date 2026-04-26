@@ -1,6 +1,5 @@
 
 module;
-#define RGFW_OPENGL
 #define RGFW_IMPLEMENTATION
 #include <RGFW.h>
 
@@ -9,7 +8,6 @@ import lib.std;
 import lib.types;
 export 
 {
-	using glHints = RGFW_glHints;
 	using mWindow = RGFW_window;
 	using mEvent = RGFW_event;
 	using mSurface = RGFW_surface;
@@ -40,12 +38,7 @@ export
 	mSurface* createSurface (uint8* buff,int32 w,int32 h,surfaceFlags f) {
 		return RGFW_createSurface(buff,w,h,static_cast<uint8>(f));
 	};
-	
-
-	void(&setGLhints)(glHints*) = RGFW_setGlobalHints_OpenGL; 
-	RGFW_glContext* (&setGLctx)(mWindow*,glHints*) = RGFW_window_createContext_OpenGL;
-	glHints* (&getGLhints)() = RGFW_getGlobalHints_OpenGL;
-	void (&GLSwapBuffer)(mWindow*) = RGFW_window_swapBuffers_OpenGL; 
+	 
 	void BlitSurface (mWindow* win,mSurface* surface) {return RGFW_window_blitSurface(win,surface);};
 	void (&surfaceFree)(mSurface*) = RGFW_surface_free;
 	
