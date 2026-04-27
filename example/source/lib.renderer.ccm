@@ -26,6 +26,7 @@ export
         uint8 col[4];
         RGBA(uint8 r,uint8 g,uint8 b,uint8 a) : col(r,g,b,a) {}
         operator const uint8*() const {return col;}
+        operator uint8*() {return col;}
     };
 
     void clear(uint8* buffer, int32 bufferWidth, int32 w, int32 h, uint8* color) {
@@ -98,11 +99,20 @@ export
     };
     struct fBuffer {
         uint8* buffer;
-        void init(size_ty h,size_ty w) {buffer = new uint8[h*w*4]();}
-        void set(size_ty x,size_ty y,uint8 colors[4]) {
-            copy(&buffer[x+y*4], colors, 4*sizeof(uint8));
+        size_ty width,height;
+        size_ty channel;
+        void init(size_ty h,size_ty w,size_ty colorchannels) {
+            channel = colorchannels;
+            height = h;
+            width = w;
+            buffer = new uint8[height*width*channel];
         }
-        uint8* get() const {return buffer;} 
+        void set(size_ty x,size_ty y,uint8* colors) {
+            uint32 index = ((y * (channel*width))  +  x *channel);
+            copy(buffer + index, colors, channel*sizeof(uint8));
+        }
+        uint8* get() const {return buffer;}
+        uint8* view() const {return buffer;} 
     };
     class sRenderer {
         using enum surfaceFlags;
@@ -110,14 +120,13 @@ export
         mSurface* surface;
         fBuffer buffer; 
         sRenderer& init(mWindow* win) {
-            buffer.init(win->h, win->w);
-            surface = createSurface(buffer.get(),win->w,win->h,formatRGBA8);
+            buffer.init(win->h, win->w,4);
+            surface = createSurface(buffer.view(),win->w,win->h,formatRGBA8);
             return *this;
         }
         sRenderer& update(mWindow* win) {
-
             BlitSurface(win,surface);
-            clear(buffer.buffer,surface->w,surface->w,surface->h,color);
+            //clear(buffer.buffer,surface->w,surface->w,surface->h,color);
             return *this;
         }
         ~sRenderer() {surfaceFree(surface);}
