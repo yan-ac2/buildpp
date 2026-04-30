@@ -1,2 +1,0 @@
-C:\Users\yan\scoop\apps\mingw-mstorsjo-llvm-ucrt\current\bin\llvm-ar.exe qc libbenchmark_main.a CMakeFiles/benchmark_main.dir/benchmark_main.cc.obj
-C:\Users\yan\scoop\apps\mingw-mstorsjo-llvm-ucrt\current\bin\llvm-ranlib.exe libbenchmark_main.a

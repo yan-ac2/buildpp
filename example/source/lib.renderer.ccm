@@ -1,3 +1,4 @@
+
 module;
 export module lib.renderer;
 import lib.RGFW;
@@ -48,17 +49,7 @@ export
     };
     
     
-    void drawRect(uint8* buffer, int32 bufferWidth, int32 x, int32 y, int32 w, int32 h,const uint8 colorin[4]) {
-        int32 x1 = x;
-        int32 y1 = y;
-        for(x=x1; x < w + x1; x++) {
-            for(y=y1; y < h + y1; y++) {
-                uint32 index = ((y * (4*bufferWidth))  +  x *4) ;
-                //std::printf("x: %d y: %d \n",x,y);
-                copy(buffer + index, colorin, 4 * sizeof(uint8));
-            }
-        }
-    };
+    
 
     void drawLine(uint8* buffer,int32 bufferWidth,int32 bufferHeight, int32 x1, int32 y1, int32 y2, int32 x2, uint8 colorin[4]) {
         bool steep = abs(x1-x2) < abs(y1-y2);
@@ -108,26 +99,56 @@ export
             buffer = new uint8[height*width*channel];
         }
         void set(size_ty x,size_ty y,uint8* colors) {
+            if (y > height || x > width) return;
+            y = y > 0 ? y : 0;
+            x = x > 0 ? x : 0;
             uint32 index = ((y * (channel*width))  +  x *channel);
             copy(buffer + index, colors, channel*sizeof(uint8));
         }
         uint8* get() const {return buffer;}
         uint8* view() const {return buffer;} 
     };
+
+    void drawRect(fBuffer* buffer,int32 x,int32 y, int32 w, int32 h,uint8 colorin[4]) {
+    };
+    class Rect {
+        fBuffer* buffer;
+        public:
+        int32 x,y;
+        int32 h,w;
+        void init (fBuffer* buff,int32 ih,int32 iw) {
+            buffer = buff;
+            h = ih;
+            w = iw;
+        }
+        void draw(const int32 ix,const int32 iy,uint8 colorin[4]) {
+            for(int32 x1 = ix; x1 < x+w; x1++) {
+                for(int32 y1 = iy; y1 < y+h; y1++) {
+                    buffer->set(x1, y1, colorin);
+                }
+            }
+            x = ix;
+            y = iy;
+        }
+    };
+
     class sRenderer {
         using enum surfaceFlags;
         public:
         mSurface* surface;
-        fBuffer buffer; 
+        fBuffer buffer;
         sRenderer& init(mWindow* win) {
+            
             buffer.init(win->h, win->w,4);
             surface = createSurface(buffer.view(),win->w,win->h,formatRGBA8);
             return *this;
         }
         sRenderer& update(mWindow* win) {
             BlitSurface(win,surface);
-            //clear(buffer.buffer,surface->w,surface->w,surface->h,color);
+            clear(buffer.buffer,surface->w,surface->w,surface->h,color);
+            
             return *this;
+
         }
         ~sRenderer() {surfaceFree(surface);}
 

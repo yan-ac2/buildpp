@@ -1,2 +1,5 @@
+if:
+    PathExclude:
+        - "_build/.*"
 CompileFlags:
     Add: ["-std=c++23"]
