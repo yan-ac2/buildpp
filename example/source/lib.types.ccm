@@ -1,7 +1,39 @@
 export module lib.types;
 import lib.std;
+
+template <class Ty, Ty Val>
+struct integral_constant {
+    enum : Ty {value = Val};
+    using value_type = Ty;
+    using type       = integral_constant;
+    
+    consteval operator value_type() const noexcept   {return static_cast<value_type>(value);}
+    consteval value_type operator()() const noexcept {return static_cast<value_type>(value);}
+};
+template <bool Val> struct bool_constant : integral_constant<bool,Val> {};
+
 export
 {
+    using false_t = bool_constant<false>;
+    using true_t  = bool_constant<true>;
+    template<class T,class U> struct isSame_t      : false_t{};
+    template<class T>         struct isSame_t<T,T> : true_t {};
+
+    template<typename  T,typename U> struct is_enum : false_t {};
+
+    template<typename T> struct isPtr     : false_t {};
+    template<typename T> struct isPtr<T*> : true_t  {};
+    
+    template<typename T> struct remove_ptr           { using type = T;};
+    template<typename T> struct remove_ptr<T*>       { using type = T;};
+    template<typename T> struct remove_ptr<T* const> { using type = T;};
+
+    template<typename F>                   struct isFn             : false_t {};
+    template<typename F, typename... Args> struct isFn<F(Args...)> : true_t {};
+
+    template<typename F>                   struct isFn_ptr                : false_t {};
+    template<typename F,typename... Args>  struct isFn_ptr<F(*)(Args...)> : true_t {};
+
     using f32       = float;
     using f64       = double;
     using int8      = char;
@@ -10,12 +42,12 @@ export
     using uint32    = std::uint32_t;
     using int64     = std::int64_t;
     using uint64    = std::uint64_t;
-    using size_ty    = __SIZE_TYPE__;
+    using size_ty   = __SIZE_TYPE__;
     using cstr      = const char*;
     struct vec2;
     struct vec3;
 };
-
+static_assert(isFn_ptr<void(*)()>()(), "fn" );
 struct vec2
 {
     f32 x ,y;

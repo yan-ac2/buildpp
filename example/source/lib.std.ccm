@@ -2,17 +2,16 @@ module;
 #include <vector>
 #include <array>
 #include <string>
-#include <variant>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <cmath>
-#include <type_traits>
-#include <functional>
-#include <utility>
+#include <thread>
+#include <chrono>
+
 
 export module lib.std;
+import <chrono>;
 export namespace std
 {
     using std::vector;
@@ -26,19 +25,21 @@ export namespace std
     using std::to_string;
     using std::basic_string;
     using std::char_traits;
-    using std::variant;
-    using std::visit;
-    using std::monostate;
-    using std::bind;  
-    using std::is_same_v;
     using std::exit;    
     using std::printf;
     using std::cosf;
-    using std::memcpy;
-    using std::malloc;
-    using std::memset;
-    using std::is_integral;
-    using std::is_integral_v;
+    using std::jthread;
+    using ms = std::chrono::milliseconds;
+    using ns = std::chrono::nanoseconds;
+    using sec = std::chrono::seconds ;
+    namespace chrono {
+        using std::chrono::time_point;
+        using std::chrono::duration;
+        using std::chrono::high_resolution_clock;
+    }
+    namespace this_thread {
+        using std::this_thread::sleep_for;
+    }
     using std::int8_t;    
     using std::uint8_t;    
     using std::int32_t;    

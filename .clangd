@@ -1,5 +1,5 @@
-if:
+If:
     PathExclude:
-        - "_build/.*"
+        - ".build/.*"
 CompileFlags:
-    Add: ["-std=c++23"]
+    Add: ["-std=c++23","-fprebuilt-module-path=.\\.build\\project\\module\\."]

@@ -8,9 +8,9 @@ import lib.std;
 import lib.types;
 export 
 {
-	using mWindow = RGFW_window;
-	using mEvent = RGFW_event;
-	using mSurface = RGFW_surface;
+	using mWindow 	= RGFW_window;
+	using mEvent 	= RGFW_event;
+	using mSurface 	= RGFW_surface;
 	
 	enum Key : uint8;
 	enum eventType : uint8;

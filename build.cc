@@ -59,7 +59,7 @@ public:
 int test()
 { 
     print << "compile test"_fmt.color(fmt::Bold_Green).endl();
-    const fs::path rootPath = fs::current_path();
+    const fs::path rootPath = ".";
     const fs::path exePath = rootPath / "bin";
 
     outputPath outPath;
@@ -100,7 +100,7 @@ int selfCompile(bool recompile)
 {
     print << "compile self"_fmt.color(fmt::Bold_Green).endl();
 
-    const fs::path rootPath = fs::current_path();
+    const fs::path rootPath = ".";
     outputPath outPath;
     outPath.setRootPath(rootPath)
     .setExePath(rootPath)
@@ -110,7 +110,7 @@ int selfCompile(bool recompile)
     Project rebuild(&outPath,recompile);
 
     #ifdef _WIN32
-    rebuild.setCompiler("clang++").setOptions("-O3 -Wall -std=c++23")
+    rebuild.setCompiler("clang++").setOptions("-Wall -std=c++23")
     #elif __unix__
     rebuild.setCompiler("clang++")
     .setOptions("-O3 -Wall -std=c++23 -stdlib=libc++ ")
@@ -136,7 +136,7 @@ int selfCompile(bool recompile)
 int compileProject(bool recompile)
 {
         ThreadPool pool(std::thread::hardware_concurrency());
-        const fs::path rootPath = fs::current_path();
+        const fs::path rootPath = ".";
         const fs::path exePath = rootPath / "bin";
 
         compileCommand cmdJson;

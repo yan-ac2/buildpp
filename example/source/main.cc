@@ -1,4 +1,3 @@
-
 import lib;
 import lib.renderer;
 
@@ -9,6 +8,9 @@ class App
     sRenderer ren;
     public:
     int i;
+    Rect box;
+    int32 x,y = 0;
+    bool xmax,ymax = true;
     RGBA red = {255,0,0,255};
     App& init()
     {
@@ -20,25 +22,32 @@ class App
     App& reninit()
     {
         ren.init(&win);
+        box.init(&ren.buffer,50,50);
         return *this;
     }
-    void renupdate()
+    inline void renupdate()
     {
         box.draw(x,y,color2);
         if (x == win.w - 50) {xmax = false;}else if (x == 0) {xmax = true;};
         if (y == win.h - 50) {ymax = false;}else if (y == 0) {ymax = true;};
         xmax ? x++ : x--;
         ymax ? y++ : y--;
-        std::printf("%d \n",y);
         ren.update(&this->win);
+    }
+    void renThread()
+    {
+        for (;ShouldClose(&this->win) == 0;) 
+        {
+            auto start = std::chrono::high_resolution_clock::now(); 
+            renupdate();
+            auto end = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<float> d = end - start; 
+            std::printf("%f ms\n",d.count() * 1000);
+            std::this_thread::sleep_for(std::ms(16));
+        }
     }
     App& update()
     {
-        int32 x,y = 0;
-        bool xmax,ymax = true;
-        Rect box;
-        box.init(&ren.buffer,50,50);
-        std::printf("loop \n");
         for (;ShouldClose(&this->win) == 0;) 
         {
             PollEvent(16);
@@ -76,8 +85,8 @@ class App
 int main ()
 {    
     App app;
-    app.init()
-    .reninit()
-    .update();
+    app.init().reninit();
+    std::jthread ren ([&app]{app.renThread();});
+    app.update();
     return 0;
 }

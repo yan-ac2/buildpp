@@ -4,7 +4,7 @@ export module lib.renderer;
 import lib.RGFW;
 import lib.types;
 import lib.std;
-template<typename  T> requires std::is_integral<T>::value
+template<typename  T>
 constexpr T abs(T a) {
     return ((unsigned) a)>> (sizeof(T) - 1);
 }
@@ -32,11 +32,11 @@ export
 
     void clear(uint8* buffer, int32 bufferWidth, int32 w, int32 h, uint8* color) {
     /* if all the values are the same */
-        if (color[0] == color[1] && color[0] == color[2] && color[0] == color[3]) {
-            /* set it all in one function */
-            std::memset(buffer, color[0], (uint32)bufferWidth * (uint32)h * 4 * sizeof(uint8));
-            return;
-        }
+        // if (color[0] == color[1] && color[0] == color[2] && color[0] == color[3]) {
+        //     /* set it all in one function */
+        //     std::memset(buffer, color[0], (uint32)bufferWidth * (uint32)h * 4 * sizeof(uint8));
+        //     return;
+        // }
         uint32 x, y;
         for (y = 0; y < (uint32)h; y++) {
             for (x = 0; x < (uint32)bufferWidth; x++) {

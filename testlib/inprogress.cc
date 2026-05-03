@@ -4,22 +4,25 @@
 
 template <class Ty, Ty Val>
 struct integral_constant {
-    static constexpr Ty value = Val;
+    enum : Ty {value = Val};
     using value_type = Ty;
     using type       = integral_constant;
-    constexpr operator value_type() const noexcept  {return value;}
-    constexpr value_type operator()() const noexcept {return value;}
+    
+    consteval operator value_type() const noexcept   {return static_cast<value_type>(value);}
+    consteval value_type operator()() const noexcept {return static_cast<value_type>(value);}
 };
-template <bool Val> struct bool_constant {enum{value = Val};};
+template <bool Val> struct bool_constant : integral_constant<bool,Val> {};
 using false_t = bool_constant<false>;
 using true_t  = bool_constant<true>;
-template<class T,class U> struct is_same {enum : bool{value = false} ;using type = T;};
-template<class T> struct is_same<T,T>    {enum : bool{value = true} ;using type = T;};
 
-template<typename T> struct is_ptr :false_t     {using type = T;};
-template<typename T> struct is_ptr<T*> :true_t  {using type = T;};
+template<class T,class U> struct is_same : false_t{};
+template<class T> struct is_same<T,T>    : true_t {};
 
-// template<typename T> concept nonull  = requires (T p) { {p != nullptr};};
+template<typename  T,typename U> struct is_enum : false_t {};
+
+
+template<typename T> struct is_ptr     :false_t {};
+template<typename T> struct is_ptr<T*> :true_t  {};
 
 struct variantBuffer{char buffer;};
 inline void* operator new (size_t size,variantBuffer* p) {return p;}
@@ -59,15 +62,14 @@ class string {
             }   *tptr++ = '\0';
             return *this;
         }
-        large& addCap (const size_t* other) {cap += *other;return *this;}
-        large& move (char*& temp) {temp = str;str = nullptr;return *this;}
-        large& newCap (const size_t* in) noexcept {cap = *in; return *this;}
+        large& addCap   (const size_t* other) {cap += *other;return *this;}
+        large& move     (char*& temp)         {temp = str;str = nullptr;return *this;}
+        large& newCap   (const size_t* in)    {cap = *in; return *this;}
         large& deleteStr() noexcept {
             if (str != nullptr) {
                 delete[] str;
                 str = nullptr;
-            }
-            return *this;
+            } return *this;
         };
         large& newStr() noexcept {str = new char[cap + 1]; return *this;}
         large& newStr(const char* other,const size_t* len) noexcept {
@@ -80,8 +82,8 @@ class string {
     };
 
     struct variant{
-        template <typename T> static constexpr bool is_large = is_same<T, large>::value ;
-        template <typename T> static constexpr bool is_small = is_same<T, small>::value ;
+        template <typename T> using is_large = is_same<T, large>;
+        template <typename T> using is_small = is_same<T, small>;
 
         alignas(alignof(large) > alignof(small) ? alignof(large) : alignof(small) ) 
         variantBuffer buffer[sizeof(large)>sizeof(small)? sizeof(large) : sizeof(small)] {};
@@ -96,21 +98,20 @@ class string {
         void destroy_current() noexcept {
             if (type_index == no_type) return;
             if (type_index == l) {reinterpret_cast<large*>(buffer)->~large();}
-            if (type_index == s) {reinterpret_cast<small*>(buffer)->~small();}
             type_index = no_type; 
         }
-        template <typename T> requires (is_large<T> || is_small<T>)
+        template <typename T> requires (is_large<T>()() || is_small<T>()())
         constexpr variant& set(T&& value) noexcept {
             destroy_current();
             new (buffer) T(static_cast<T&&>(value));
-            type_index = is_large<T> ? l : s; 
+            type_index = is_large<T>()() ? l : s; 
             return *this;
         }
 
-        template <typename T> requires (is_large<T> || is_small<T>)
+        template <typename T> requires (is_large<T>()() || is_small<T>()())
         constexpr T& get() noexcept { return *reinterpret_cast<T*>(buffer);}
         
-        template <typename T> requires (is_large<T> || is_small<T>)
+        template <typename T> requires (is_large<T>()() || is_small<T>()())
         const T& get() const noexcept { return *reinterpret_cast<const T*>(buffer);}
         ~variant() { destroy_current();}
     } storage;
@@ -239,7 +240,10 @@ class string {
     }
     constexpr int getindex() const noexcept {return storage.type_index;}
 };
+// template<enum T>
+// class enumv {
 
+// };
 
 int main()
 {
