@@ -4,6 +4,7 @@
 #include <functional>
 #include <mutex>
 #include <condition_variable>
+#include <string_view>
 #include <thread>
 
 
@@ -199,7 +200,8 @@ int compileProject(bool recompile)
         .dumpModule()
         .dumpDependencies()
         .dumpModuleMap()
-        .dumpInclude();
+        .dumpInclude()
+        .dumpSysHeader();
     
         // defer end([&mainProj]{
         //     std::cout << "linking"_fmt.setColor(fmt::Bold_Green) << std::endl;
@@ -209,9 +211,22 @@ int compileProject(bool recompile)
         //     pool.enqueue ([&i,&libGLAD]{libGLAD.compileC(i);});
         // }
         // while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
-        
-        mainProj.compileModule();
-        
+        for (const auto& i : mainProj.SystemHeader) {
+            mainProj.compileModule(i,true);
+        }
+        while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
+        std::queue<std::string> queue;
+        for (const auto& i : mainProj.Modules) {queue.push(i.first);}
+        while(!queue.empty()) {
+            const fs::path modulef = queue.front();
+            queue.pop();
+            const auto moduleReady = mainProj.isModuleExist(modulef.string());
+            if (moduleReady) {
+                mainProj.compileModule(modulef,false);
+            } else {
+                queue.push(modulef.string());
+            }
+        }
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
         
         for (const auto& i : mainProj.ProjectFile) {

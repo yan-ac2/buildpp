@@ -11,7 +11,7 @@ module;
 
 
 export module lib.std;
-import <chrono>;
+export import chrono;
 export namespace std
 {
     using std::vector;
