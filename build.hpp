@@ -1023,7 +1023,7 @@ class Project
                     print << fmt("import module "_fmt.color(fmt::Bold_Blue) , moduleName , " found in " , p).endl();
                     
                     for (const auto& i : SystemHeader) {
-                        print << fmt(moduleName.substr(1,moduleName.find('>')-1)).endl(); 
+                        // print << fmt(moduleName.substr(1,moduleName.find('>')-1)).endl(); 
                         if (moduleName.substr(1,moduleName.find('>')-1) == i)
                         ModuleMap[p].push_back(i);
                     }
