@@ -91,37 +91,54 @@ export
     struct fBuffer {
         uint8* buffer;
         size_ty width,height;
+        size_ty bufferSize;
         size_ty channel;
         void init(size_ty h,size_ty w,size_ty colorchannels) {
             channel = colorchannels;
             height = h;
             width = w;
-            buffer = new uint8[height*width*channel];
+            bufferSize = height*width*channel;
+            buffer = new uint8[bufferSize];
         }
         void set(size_ty x,size_ty y,uint8* colors) {
-            if (y > height || x > width) return;
             y = y > 0 ? y : 0;
             x = x > 0 ? x : 0;
             uint32 index = ((y * (channel*width))  +  x *channel);
+            if (index > bufferSize) return;
             copy(buffer + index, colors, channel*sizeof(uint8));
         }
         uint8* get() const {return buffer;}
         uint8* view() const {return buffer;} 
     };
 
-    void drawRect(fBuffer* buffer,int32 x,int32 y, int32 w, int32 h,uint8 colorin[4]) {
-    };
     class Rect {
         fBuffer* buffer;
         public:
         int32 x,y;
         int32 h,w;
-        void init (fBuffer* buff,int32 ih,int32 iw) {
+        bool ex,ey;
+        Rect() {}
+        Rect(fBuffer* buff,int32 ih,int32 iw,int32 ix,int32 iy) {
             buffer = buff;
             h = ih;
             w = iw;
         }
+        void init (fBuffer* buff,int32 ih,int32 iw,int32 ix,int32 iy) {
+            buffer = buff;
+            h = ih;
+            w = iw;
+            x = ix;
+            y = iy;
+        }
+        inline void clear() {
+            for(int32 x1 = x + 1; x1 < x+w+1; x1++) {
+                for(int32 y1 = y + 1; y1 < y+h+1; y1++) {
+                    buffer->set(x1, y1, color);
+                }
+            }
+        }
         void draw(const int32 ix,const int32 iy,uint8 colorin[4]) {
+            if (x != ix && y != iy) {clear();};
             for(int32 x1 = ix; x1 < x+w; x1++) {
                 for(int32 y1 = iy; y1 < y+h; y1++) {
                     buffer->set(x1, y1, colorin);
@@ -145,7 +162,7 @@ export
         }
         sRenderer& update(mWindow* win) {
             BlitSurface(win,surface);
-            clear(buffer.buffer,surface->w,surface->w,surface->h,color);
+            //clear(buffer.buffer,surface->w,surface->w,surface->h,color);
             
             return *this;
 

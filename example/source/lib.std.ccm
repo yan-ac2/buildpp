@@ -11,7 +11,6 @@ module;
 
 
 export module lib.std;
-export import chrono;
 export namespace std
 {
     using std::vector;
@@ -29,6 +28,7 @@ export namespace std
     using std::printf;
     using std::cosf;
     using std::jthread;
+    using std::ratio;
     using ms = std::chrono::milliseconds;
     using ns = std::chrono::nanoseconds;
     using sec = std::chrono::seconds ;
@@ -36,6 +36,11 @@ export namespace std
         using std::chrono::time_point;
         using std::chrono::duration;
         using std::chrono::high_resolution_clock;
+        using std::chrono::steady_clock;
+        using std::chrono::duration_cast;
+    }
+    inline ns substract(std::chrono::high_resolution_clock::time_point a,std::chrono::high_resolution_clock::time_point b) {
+        return a - b;
     }
     namespace this_thread {
         using std::this_thread::sleep_for;
@@ -47,4 +52,3 @@ export namespace std
     using std::int64_t;
     using std::uint64_t;
 };
-

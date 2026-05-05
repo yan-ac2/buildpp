@@ -44,52 +44,66 @@ export
     using uint64    = std::uint64_t;
     using size_ty   = __SIZE_TYPE__;
     using cstr      = const char*;
-    struct vec2;
-    struct vec3;
+    
+    class timeutl {
+        using clock = std::chrono::high_resolution_clock;
+        clock::time_point start;
+        clock::time_point end;
+        public:
+        void tstart() {start = clock::now();}
+        void tend() {end = clock::now();}
+        void sleep(int target) {
+            auto d = std::chrono::duration_cast<std::ms>(std::substract(end , start));
+            int count = d.count() > target ? 0 : target - d.count();
+            std::this_thread::sleep_for(std::ms(count));
+        }
+    };
+    struct vec2
+    {
+        f32 x ,y;
+        vec2(f32 a,f32 b) : x(a),y(b) {}
+        std::string str() const {
+            std::string local;
+            local += "["; 
+            local += std::to_string(this->x);
+            local += " , "; 
+            local += std::to_string(this->y);
+            local += "]\n";
+            return local; 
+        };
+        void update(f32&& a,f32&& b)
+        {
+            this->x += a;
+            this->y += b;
+        }
+    };
+    
+    struct vec3
+    {
+        f32 x,y,z;
+    
+        vec3(f32 a,f32 b,f32 c) : x(a),y(b),z(c) {};
+    
+        void update(f32&& a,f32&& b,f32&& c)
+        {
+            this->x += a;
+            this->y += b;
+            this->z += c;
+        }
+    
+        std::string str() const {
+            std::string local;
+            local.append("[ ")
+            .append(std::to_string(this->x))
+            .append(" , ")
+            .append(std::to_string(this->y))
+            .append(" , ")
+            .append(std::to_string(this->z))
+            .append(" ]\n");
+            return local; 
+        };
+    };
 };
 static_assert(isFn_ptr<void(*)()>()(), "fn" );
-struct vec2
-{
-    f32 x ,y;
-    vec2(f32 a,f32 b) : x(a),y(b) {}
-    std::string str() const {
-        std::string local;
-        local += "["; 
-        local += std::to_string(this->x);
-        local += " , "; 
-        local += std::to_string(this->y);
-        local += "]\n";
-        return local; 
-    };
-    void update(f32&& a,f32&& b)
-    {
-        this->x += a;
-        this->y += b;
-    }
-};
 
-struct vec3
-{
-    f32 x,y,z;
 
-    vec3(f32 a,f32 b,f32 c) : x(a),y(b),z(c) {};
-
-    void update(f32&& a,f32&& b,f32&& c)
-    {
-        this->x += a;
-        this->y += b;
-        this->z += c;
-    }
-
-    std::string str() const {
-        std::string local;
-        local.append("[ ")
-        .append(std::to_string(this->x))
-        .append(" , ")
-        .append(std::to_string(this->y))
-        .append(" , ")
-        .append(std::to_string(this->z))
-        .append(" ]\n");
-        return local; 
-    };
-};

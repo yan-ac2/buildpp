@@ -259,195 +259,7 @@ struct fileExtension
         ".H", 
         ".h++"
     };
-    static constexpr std::string_view systemHeaderA[]
-    {
-        "algorithm",
-        "any",
-        "array",
-        "atomic",
-    };
-    static constexpr std::string_view systemHeaderB[]
-    {
-        "barrier",
-        "bit",
-        "bitset",
-    };
-    static constexpr std::string_view systemHeaderC[]
-    {
-
-        "cassert",
-        "cctype",
-        "cerrno",
-        "cfenv",
-        "cfloat",
-        "charconv",
-        "chrono",
-        "cinttypes",
-        "climits",
-        "clocale",
-        "cmath",
-        "codecvt",
-        "compare",
-        "complex",
-        "concepts",
-        "condition_variable",
-        "coroutine",
-        "csetjmp",
-        "csignal",
-        "cstdarg",
-        "cstddef",
-        "cstdint",
-        "cstdio",
-        "cstdlib",
-        "cstring",
-        "ctime",
-        "cuchar",
-        "cwchar",
-        "cwctype",
-    };
-    static constexpr std::string_view systemHeaderD[]
-    {
-        "deque",
-    };
-    static constexpr std::string_view systemHeaderE[] 
-    {
-        "exception",
-        "execution",
-        "expected",
-    };
-    static constexpr std::string_view systemHeaderF[]
-    {
-        "filesystem",
-        "flat_map",
-        "flat_set",
-        "format",
-        "forward_list",
-        "fstream",
-        "functional",
-        "future",
-    };
-    static constexpr std::string_view systemHeaderG[]
-    {
-        "generator",
-    };
-    static constexpr std::string_view systemHeaderI[]
-    {
-        "initializer_list",
-        "iomanip",
-        "ios",
-        "iosfwd",
-        "iostream",
-        "istream",
-        "iterator",
-    };
-    static constexpr std::string_view systemHeaderL[]
-    {
-        "latch",
-        "limits",
-        "list",
-        "locale",
-    };
-    static constexpr std::string_view systemHeaderM[]
-    {
-        "map",
-        "mdspan",
-        "memory_resource",
-        "memory",
-        "mutex",
-    };
-    static constexpr std::string_view systemHeaderN[]
-    {
-        "new",
-        "numbers",
-        "numeric",
-    };
-    static constexpr std::string_view systemHeaderO[]
-    {
-        "optional",
-        "ostream",
-    };
-    static constexpr std::string_view systemHeaderP[]
-    {
-        "print",
-    };
-    static constexpr std::string_view systemHeaderQ[]
-    {
-        "queue",
-    };
-    static constexpr std::string_view systemHeaderR[]
-    {
-        "random",
-        "ranges",
-        "ratio",
-        "regex",
-    };
-    static constexpr std::string_view systemHeaderS[]
-    {
-        "scoped_allocator",
-        "semaphore",
-        "set",
-        "shared_mutex",
-        "source_location",
-        "span",
-        "spanstream",
-        "sstream",
-        "stack",
-        "stacktrace",
-        "stdexcept",
-        "stdfloat",
-        "stop_token",
-        "streambuf",
-        "string_view",
-        "string",
-        "strstream",
-        "syncstream",
-        "system_error",
-    };
-    static constexpr std::string_view systemHeaderT[]
-    {
-        "thread",
-        "tuple",
-        "type_traits",
-        "typeindex",
-        "typeinfo",
-    };
-    static constexpr std::string_view systemHeaderU[]
-    {
-        "unordered_map",
-        "unordered_set",
-        "utility",
-    };
-    static constexpr std::string_view systemHeaderV[]
-    {
-        "valarray",
-        "variant",
-        "vector",
-        "version",
-    };
-
-    static constexpr std::pair<std::string_view,const std::string_view*> sysHeader[] =
-    {
-        {"a",systemHeaderA},
-        {"b",systemHeaderB},
-        {"c",systemHeaderC},
-        {"d",systemHeaderD},
-        {"e",systemHeaderE},
-        {"f",systemHeaderF},
-        {"g",systemHeaderG},
-        {"i",systemHeaderI},
-        {"l",systemHeaderL},
-        {"m",systemHeaderM},
-        {"n",systemHeaderN},
-        {"o",systemHeaderO},
-        {"p",systemHeaderP},
-        {"q",systemHeaderQ},
-        {"r",systemHeaderR},
-        {"s",systemHeaderS},
-        {"t",systemHeaderT},
-        {"u",systemHeaderU},
-        {"v",systemHeaderV},
-    };
-    static_assert(sysHeader[0].second[0] == "algorithm", "algorithm not found" );
+    
     static constexpr std::string_view objFile      {".o"};
     static constexpr std::string_view libFile      {".a"};
     static constexpr std::string_view soFile       {".so"};
@@ -481,20 +293,20 @@ struct fileExtension
         }
         return false;
     }
-    static constexpr bool isSystemHeader(std::string_view file) {
-        for(const auto& i : sysHeader) {
-            if (i.first.front() == file.front()) {
-                for (auto fl : *i.second) {
-                    const std::string_view f = *i.second;
-                    if (file.compare(f)) {
-                        return true;
-                    }
-                }
-                break;
-            }
-        }
-        return false;
-    }
+    // static constexpr bool isSystemHeader(std::string_view file) {
+    //     for(const auto& i : sysHeader) {
+    //         if (i.first.front() == file.front()) {
+    //             for (auto fl : *i.second) {
+    //                 const std::string_view f = *i.second;
+    //                 if (file.compare(f)) {
+    //                     return true;
+    //                 }
+    //             }
+    //             break;
+    //         }
+    //     }
+    //     return false;
+    // }
 };
 
 class compileCommand {
@@ -816,7 +628,7 @@ class Project
     std::vector<std::string> ProjectFile {};
     std::vector<std::string> Object      {};
     std::vector<std::string> Include     {};
-    std::vector<std::string> SystemHeader{};
+    //std::vector<std::string> SystemHeader{};
     std::vector<std::pair<std::string, std::string>> Dependency {};
     std::vector<std::pair<std::string, std::string>> Modules    {};
     std::unordered_map<std::string_view,std::vector<std::string_view>>   IncludeMap {};
@@ -916,6 +728,10 @@ class Project
     }
 
     void getCppFile() {
+        if (recompile) {
+            for(const auto& d : fs::directory_iterator(OutPath->modulePath))
+            fs::remove_all(d.path());
+        }
         for (const auto& p : SourcePath)
         {
             if (!fs::exists(p) || !fs::is_directory(p)) {err (true, fmt("Directory does not exist. "_fmt.color(fmt::Bold_Red),p.string()));}
@@ -985,10 +801,10 @@ class Project
                     includeFound = {fs::path{line.substr(pos + file.includeToken.length())}.filename().string()};
                     std::erase_if(includeFound, [](char c) { return c == '"' || c == '<' || c == '>' || c == ' '; });
 
-                    if (file.isSystemHeader(includeFound)) {
-                        SystemHeader.push_back(includeFound);
-                        Modules.push_back ({includeFound,includeFound});
-                    }
+                    // if (file.isSystemHeader(includeFound)) {
+                    //     SystemHeader.push_back(includeFound);
+                    //     Modules.push_back ({includeFound,includeFound});
+                    // }
                     
                     for (const auto& map : Include) {
                         if (map == includeFound) {
@@ -1022,11 +838,11 @@ class Project
                     moduleName.erase(moduleName.find(';'));
                     print << fmt("import module "_fmt.color(fmt::Bold_Blue) , moduleName , " found in " , p).endl();
                     
-                    for (const auto& i : SystemHeader) {
-                        // print << fmt(moduleName.substr(1,moduleName.find('>')-1)).endl(); 
-                        if (moduleName.substr(1,moduleName.find('>')-1) == i)
-                        ModuleMap[p].push_back(i);
-                    }
+                    // for (const auto& i : SystemHeader) {
+                    //     // print << fmt(moduleName.substr(1,moduleName.find('>')-1)).endl(); 
+                    //     if (moduleName.substr(1,moduleName.find('>')-1) == i)
+                    //     ModuleMap[p].push_back(i);
+                    // }
 
                     for (const auto& i : Modules)
                     {
@@ -1048,13 +864,14 @@ class Project
         const auto& mPath = OutPath->modulePath;
         const fs::path f_path {infile};
         bool exist = [&mPath,&infile,&f_path,this] -> bool{
+            
             const auto modMap = ModuleMap.find(infile)->second;
             if (!ModuleMap.empty())
             {
                 for (const auto& m : modMap)
                 {
-                    print << fmt("check module "_fmt.color(fmt::Bold_Green) , f_path.string() , " is exist "_fmt.color(fmt::Blue) , fmt((mPath / fs::path(m).stem()).string(), file.pcmModule) 
-                    ).endl().cstr(); 
+                    // print << fmt("check module "_fmt.color(fmt::Bold_Green) , f_path.string() , " is exist "_fmt.color(fmt::Blue) , fmt((mPath / fs::path(m).stem()).string(), file.pcmModule) 
+                    //).endl().cstr(); 
                     if (!fs::exists(fmt((mPath / m).string(), file.pcmModule).sv())) {
                         return false;
                     }
@@ -1076,7 +893,7 @@ class Project
         // const bool f_found = std::find_if(_includeMap.begin(), _includeMap.end(), [&f_path](const auto& p) 
         // {return p.second[0] == f_path.string();}) != _includeMap.end();
         const auto& mPath = OutPath->modulePath;
-        print << fmt("is system header ",f_path.string()).color(fmt::Blue).endl();
+        // print << fmt("is system header ",f_path.string()).color(fmt::Blue).endl();
         const bool f_found = [this,&f_path,&areSystemHeader](){
             if(areSystemHeader) {return false;}
             for (const auto& i : IncludeMap)
@@ -1088,13 +905,13 @@ class Project
             return false;
         }();
         const std::string f_module {fmt((mPath / f_path.stem()).string(), file.pcmModule)};
-        std::string f_moduleOutput {fmt("-o ", f_module)};
+        std::string f_moduleOutput {fmt(" -o ", f_module)};
         std::string f_srcInput     {};
         if (areSystemHeader)
         {
             f_srcInput = fmt("-Wno-user-defined-literals -Wno-pragma-system-header-outside-header -fmodule-header=system -x c++-system-header ",f_path.string()," --precompile ");
         } else {
-            f_srcInput = fmt("-x c++-module ",f_path.string()," -fprebuilt-module-path=",(mPath / ".").string()," --precompile ");
+            f_srcInput = fmt(f_path.string()," --precompile "," -fprebuilt-module-path=",(mPath / ". ").string());
             
             for (const auto& [mod , dep] : ModuleMap)
             {
@@ -1107,7 +924,7 @@ class Project
             }
         }
 
-        const std::string f_cmd {fmt(Compiler, Options , f_found ? compileInclude : "",ModuleDeps[f_path.filename().string()] ,f_srcInput , f_moduleOutput).clean()};
+        const std::string f_cmd {fmt(Compiler, Options ,f_srcInput ,f_found ? compileInclude : "",ModuleDeps[f_path.filename().string()] , f_moduleOutput).clean()};
         
         if (recompile) {
             print << fmt("recompiling "_fmt.color(fmt::Green) , f_cmd , "\n");
@@ -1128,7 +945,8 @@ class Project
         const fs::path    f_path = inPath;
         const std::string f_objOutput {fmt((OutPath->objPath / f_path.filename().stem()).string(), file.objFile)};
         const bool f_isModule = file.isModule(f_path.extension().string());
-        print << fmt("is module " ,f_isModule ? "true ": "false ",f_path.extension().string()).color(fmt::Bold_Red).endl();
+        const std::string f_filein    {f_isModule ? fmt((OutPath->modulePath / f_path.filename().stem()).string(),file.pcmModule ) : f_path.string()};
+        // print << fmt("is module " ,f_isModule ? "true ": "false ",f_path.extension().string()).color(fmt::Bold_Red).endl();
         const bool f_includefound = std::find_if(IncludeMap.begin(), IncludeMap.end(), [&f_path](const auto& p) 
         {return p.second[0] == f_path.string();}) != IncludeMap.end();
         
@@ -1147,10 +965,10 @@ class Project
             return false;
         }();
             
-        const std::string f_cppOutput {fmt(f_isModule ?"-x c++-module -c ":"-c ",f_path.string(), Modules.empty() ? "" : 
+        const std::string f_cppOutput {fmt(f_isModule ?"":"-c ",f_filein, Modules.empty() ? "" : 
             fmt(" -fprebuilt-module-path=", (OutPath->modulePath / ".").string()," "))};
             
-        const std::string f_cmd {fmt(Compiler, Options ,f_cppOutput,f_includefound ? compileInclude : "",f_inModuledep ? ModuleDeps[f_path.filename().string()] : ""," -o ", f_objOutput).clean()};
+        const std::string f_cmd {fmt(Compiler, Options ,f_cppOutput,f_includefound ? compileInclude : "",f_inModuledep ? ModuleDeps[f_path.filename().string()] : "",f_isModule?" -c -o ":" -o ", f_objOutput).clean()};
         
         if(cmdJson != nullptr) { cmdJson->addCompilecmd(f_path.parent_path().string(),f_cmd,f_path.string().c_str(),f_objOutput);}
         // if(cmdJson != nullptr) { cmdJson->addCompilecmd(f_cmd);}
@@ -1273,13 +1091,13 @@ class Project
         }
         return *this;
     }
-    Project& dumpSysHeader() {
-        print << "dump SysHeader"_fmt.color(fmt::Yellow).endl();
-        for (const auto& p : SystemHeader) {
-            print << p << "\n";
-        }
-        return *this;
-    }
+    // Project& dumpSysHeader() {
+    //     print << "dump SysHeader"_fmt.color(fmt::Yellow).endl();
+    //     for (const auto& p : SystemHeader) {
+    //         print << p << "\n";
+    //     }
+    //     return *this;
+    // }
     
 };
 

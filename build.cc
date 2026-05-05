@@ -172,7 +172,7 @@ int compileProject(bool recompile)
     
         #ifdef _WIN32
         mainProj.setCompiler("clang++")
-        .setOptions("-O0 -std=c++23")
+        .setOptions("-O3 -std=c++23")
         #elif __unix__
         mainProj.setCompiler("clang++")
         .setOptions("-O3 -fno-exceptions -stdlib=libc++ -std=c++23")
@@ -200,8 +200,7 @@ int compileProject(bool recompile)
         .dumpModule()
         .dumpDependencies()
         .dumpModuleMap()
-        .dumpInclude()
-        .dumpSysHeader();
+        .dumpInclude();
     
         // defer end([&mainProj]{
         //     std::cout << "linking"_fmt.setColor(fmt::Bold_Green) << std::endl;
@@ -211,9 +210,9 @@ int compileProject(bool recompile)
         //     pool.enqueue ([&i,&libGLAD]{libGLAD.compileC(i);});
         // }
         // while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
-        for (const auto& i : mainProj.SystemHeader) {
-            mainProj.compileModule(i,true);
-        }
+        // for (const auto& i : mainProj.SystemHeader) {
+        //     mainProj.compileModule(i,true);
+        // }
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
         std::queue<std::string> queue;
         for (const auto& i : mainProj.Modules) {queue.push(i.first);}
