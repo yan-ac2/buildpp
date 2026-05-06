@@ -30,9 +30,9 @@ export
         operator uint8*() {return col;}
     };
 
-    void clear(uint8* buffer, int32 bufferWidth, int32 w, int32 h, uint8* color) {
+    void clear(uint8* buffer, int32 bufferWidth, int32 w, int32 h, RGBA color) {
     /* if all the values are the same */
-        // if (color[0] == color[1] && color[0] == color[2] && color[0] == color[3]) {
+    // if (color[0] == color[1] && color[0] == color[2] && color[0] == color[3]) {
         //     /* set it all in one function */
         //     std::memset(buffer, color[0], (uint32)bufferWidth * (uint32)h * 4 * sizeof(uint8));
         //     return;
@@ -41,12 +41,13 @@ export
         for (y = 0; y < (uint32)h; y++) {
             for (x = 0; x < (uint32)bufferWidth; x++) {
                 uint32 index = (y * 4 * (uint32)bufferWidth) + x * 4;
-
+                
                 /* copy the color to that pixel */
                 copy(&buffer[index], color, 4 * sizeof(uint8));
             }
         }
     };
+    
     
     
     
@@ -88,24 +89,78 @@ export
         f32 pos[3];
 
     };
+    inline double signed_triangle_area(int ax, int ay, int bx, int by, int cx, int cy) {
+                return .5*((by-ay)*(bx+ax) + (cy-by)*(cx+bx) + (ay-cy)*(ax+cx));
+            }
     struct fBuffer {
+        int channel;
         uint8* buffer;
         size_ty width,height;
         size_ty bufferSize;
-        size_ty channel;
-        void init(size_ty h,size_ty w,size_ty colorchannels) {
+        void init(size_ty ih,size_ty iw,size_ty colorchannels) {
             channel = colorchannels;
-            height = h;
-            width = w;
+            height = ih;
+            width = iw;
             bufferSize = height*width*channel;
             buffer = new uint8[bufferSize];
         }
-        void set(size_ty x,size_ty y,uint8* colors) {
-            y = y > 0 ? y : 0;
-            x = x > 0 ? x : 0;
-            uint32 index = ((y * (channel*width))  +  x *channel);
+        void clear() {
+            const RGBA cl {0,0,0,0};
+            for (int w = 0;w <= width ; w++) {
+                for (int h = 0;h <= height ; h++) {
+                    set(w, h, cl);
+                }
+            }
+            // triangle(0, 0, 0, height, width, height, cl);
+            // triangle(0, 0, width, 0, width, height, cl);
+        }
+        void set(size_ty ix,size_ty iy,const uint8* colors) {
+            iy = iy > 0 ? iy : 0;
+            ix = ix > 0 ? ix : 0;
+            uint32 index = ((iy * (channel*width))  +  ix *channel);
             if (index > bufferSize) return;
             copy(buffer + index, colors, channel*sizeof(uint8));
+        }
+        void line(int32 aix,int32 aiy,int32 bix,int32 biy,RGBA col) {
+            const bool steep = mabs(aix - bix) < mabs(aiy - biy);
+            if (steep) {
+                swap(&aix, &aiy);
+                swap(&bix, &biy);
+            }
+            if (aix > bix) {
+                swap(&aix, &bix);
+                swap(&biy, &biy);
+            }
+            int y = aiy;
+            int ierror = 0;
+            for (int x = aix; x <= bix;x++) {
+                if (steep) set(y,x,col);
+                else       set(x,y,col);
+                ierror += 2 * mabs(biy - aiy);
+                if (ierror > bix - aix) {
+                    y += biy > aiy ? 1 : -1;
+                    ierror -= 2 * (bix - aix);
+                }
+            }
+        }
+        void triangle (int32 aix,int32 aiy,int32 bix,int32 biy,int32 cix,int32 ciy,RGBA col)
+        {
+            int32 bbminx = min(min(aix,bix),cix); 
+            int32 bbmaxx = max(max(aix,bix),cix); 
+            int32 bbminy = min(min(aiy,biy),ciy); 
+            int32 bbmaxy = max(max(aiy,biy),ciy);
+            double total_area = signed_triangle_area(aix, aiy, bix, biy, cix, ciy);
+            
+            for (int x = bbminx; x <= bbmaxx; x++) {
+                for (int y = bbminy; y <= bbmaxy; y++)
+                {
+                    double alpha = signed_triangle_area(x, y, bix, biy, cix, ciy) / total_area;
+                    double beta = signed_triangle_area(x, y, cix, ciy, aix, aiy) / total_area;
+                    double gamma = signed_triangle_area(x, y, aix, aiy, bix, biy) / total_area;
+                    if (alpha < 0 || beta < 0 || gamma < 0) continue;
+                    set(x, y, col);
+                }
+            } 
         }
         uint8* get() const {return buffer;}
         uint8* view() const {return buffer;} 
@@ -130,22 +185,17 @@ export
             x = ix;
             y = iy;
         }
-        inline void clear() {
-            for(int32 x1 = x + 1; x1 < x+w+1; x1++) {
-                for(int32 y1 = y + 1; y1 < y+h+1; y1++) {
-                    buffer->set(x1, y1, color);
-                }
-            }
-        }
-        void draw(const int32 ix,const int32 iy,uint8 colorin[4]) {
-            if (x != ix && y != iy) {clear();};
-            for(int32 x1 = ix; x1 < x+w; x1++) {
-                for(int32 y1 = iy; y1 < y+h; y1++) {
-                    buffer->set(x1, y1, colorin);
-                }
-            }
+        // inline Rect& clear() {
+        //     buffer->triangle(x, y, x, h+y, w+x+1, h+y+1, cl);
+        //     buffer->triangle(x, y, h+x, y, w+x+1, h+y+1, cl);    
+        //     return *this;
+        // }
+        inline Rect& draw(const int32 ix,const int32 iy,RGBA colorin) {
             x = ix;
             y = iy;
+            buffer->triangle(x, y, x, h+y, w+x, h+y, colorin);
+            buffer->triangle(x, y, h+x, y, w+x, h+y, colorin);
+            return *this;
         }
     };
 
@@ -162,8 +212,8 @@ export
         }
         sRenderer& update(mWindow* win) {
             BlitSurface(win,surface);
-            //clear(buffer.buffer,surface->w,surface->w,surface->h,color);
             
+            buffer.clear();
             return *this;
 
         }

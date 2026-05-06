@@ -1,3 +1,6 @@
+module;
+
+#include <istream>
 export module lib.types;
 import lib.std;
 
@@ -45,6 +48,16 @@ export
     using size_ty   = __SIZE_TYPE__;
     using cstr      = const char*;
     
+    
+    template<typename T>
+    constexpr T mabs(T a) {return T(a < 0 ? -a : a);}
+    template<typename T>
+    constexpr void swap(T* a,T* b) {T temp = *b; *b = *a; *a=temp;}
+    template<typename T>
+    constexpr T max(T a,T b) {return a > b ? a : b;}
+    template<typename T>
+    constexpr T min(T a,T b) {return a < b ? a : b;}
+
     class timeutl {
         using clock = std::chrono::high_resolution_clock;
         clock::time_point start;
@@ -58,51 +71,31 @@ export
             std::this_thread::sleep_for(std::ms(count));
         }
     };
-    struct vec2
-    {
-        f32 x ,y;
-        vec2(f32 a,f32 b) : x(a),y(b) {}
-        std::string str() const {
-            std::string local;
-            local += "["; 
-            local += std::to_string(this->x);
-            local += " , "; 
-            local += std::to_string(this->y);
-            local += "]\n";
-            return local; 
-        };
-        void update(f32&& a,f32&& b)
-        {
-            this->x += a;
-            this->y += b;
-        }
+    
+    template<int n> struct vec {
+    double data[n] = {0};
+    double& operator[](const int i)       { return data[i]; }
+    double  operator[](const int i) const { return data[i]; }
     };
-    
-    struct vec3
-    {
-        f32 x,y,z;
-    
-        vec3(f32 a,f32 b,f32 c) : x(a),y(b),z(c) {};
-    
-        void update(f32&& a,f32&& b,f32&& c)
-        {
-            this->x += a;
-            this->y += b;
-            this->z += c;
-        }
-    
-        std::string str() const {
-            std::string local;
-            local.append("[ ")
-            .append(std::to_string(this->x))
-            .append(" , ")
-            .append(std::to_string(this->y))
-            .append(" , ")
-            .append(std::to_string(this->z))
-            .append(" ]\n");
-            return local; 
-        };
+
+    template<int n> std::ostream& operator<<(std::ostream& out, const vec<n>& v) {
+        for (int i=0; i<n; i++) out << v[i] << " ";
+        return out;
+    }
+
+    template<> struct vec<3> {
+        double x = 0, y = 0, z = 0;
+        double& operator[](const int i)       { return i ? (1==i ? y : z) : x; }
+        double  operator[](const int i) const { return i ? (1==i ? y : z) : x; }
     };
+    template<> struct vec<2> {
+        double x = 0, y = 0;
+        double& operator[](const int i)       { return 1==i ? y : x; }
+        double  operator[](const int i) const { return 1==i ? y : x; }
+    };
+
+    using vec3 = vec<3> ;
+    using vec2 = vec<2> ;
 };
 static_assert(isFn_ptr<void(*)()>()(), "fn" );
 

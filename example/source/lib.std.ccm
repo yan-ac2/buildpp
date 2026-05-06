@@ -2,8 +2,10 @@ module;
 #include <vector>
 #include <array>
 #include <string>
+#include <iostream>
 #include <cstdint>
 #include <cstdio>
+#include <cassert>
 #include <cstdlib>
 #include <cmath>
 #include <thread>
@@ -29,6 +31,8 @@ export namespace std
     using std::cosf;
     using std::jthread;
     using std::ratio;
+    using std::cerr;
+    using std::tuple;
     using ms = std::chrono::milliseconds;
     using ns = std::chrono::nanoseconds;
     using sec = std::chrono::seconds ;
