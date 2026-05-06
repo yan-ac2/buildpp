@@ -25,10 +25,16 @@ export
     
     struct RGBA {
         uint8 col[4];
-        RGBA(uint8 r,uint8 g,uint8 b,uint8 a) : col(r,g,b,a) {}
+        constexpr RGBA() {}
+        constexpr RGBA(uint8 r,uint8 g,uint8 b,uint8 a) : col(r,g,b,a) {}
+        void operator =(RGBA c) {
+            copy(col, c.col, 4 * sizeof(uint8));
+        }
         operator const uint8*() const {return col;}
         operator uint8*() {return col;}
+        
     };
+    constexpr RGBA cl {0,0,0,0};
 
     void clear(uint8* buffer, int32 bufferWidth, int32 w, int32 h, RGBA color) {
     /* if all the values are the same */
@@ -105,7 +111,13 @@ export
             buffer = new uint8[bufferSize];
         }
         void clear() {
-            const RGBA cl {0,0,0,0};
+            // for (int i = 0;i < bufferSize ; i += 4) {
+            //     uint8* ptr[4] = {buffer + i,buffer+1 + i,buffer+2+i,buffer+3+i};
+            //     *ptr[0] = 0;
+            //     *ptr[1] = 0;
+            //     *ptr[2] = 0;
+            //     *ptr[3] = 0;
+            // }
             for (int w = 0;w <= width ; w++) {
                 for (int h = 0;h <= height ; h++) {
                     set(w, h, cl);
@@ -118,8 +130,10 @@ export
             iy = iy > 0 ? iy : 0;
             ix = ix > 0 ? ix : 0;
             uint32 index = ((iy * (channel*width))  +  ix *channel);
+            uint8* ptr = buffer + index;
             if (index > bufferSize) return;
-            copy(buffer + index, colors, channel*sizeof(uint8));
+            if (ptr[0] == colors[0] && ptr[1] == colors[1] && ptr[2] == colors[2] && ptr[3] == colors[3]) return;
+            copy(ptr, colors, channel*sizeof(uint8));
         }
         void line(int32 aix,int32 aiy,int32 bix,int32 biy,RGBA col) {
             const bool steep = mabs(aix - bix) < mabs(aiy - biy);
@@ -171,30 +185,26 @@ export
         public:
         int32 x,y;
         int32 h,w;
+        RGBA color;
         bool ex,ey;
         Rect() {}
-        Rect(fBuffer* buff,int32 ih,int32 iw,int32 ix,int32 iy) {
-            buffer = buff;
-            h = ih;
-            w = iw;
+        Rect(fBuffer* buff,int32 ih,int32 iw,int32 ix,int32 iy,RGBA colorin) {
+            init(buff,ih,iw,ix,iy,colorin);
         }
-        void init (fBuffer* buff,int32 ih,int32 iw,int32 ix,int32 iy) {
+        void init (fBuffer* buff,int32 ih,int32 iw,int32 ix,int32 iy,RGBA colorin) {
             buffer = buff;
             h = ih;
             w = iw;
             x = ix;
             y = iy;
+            color = colorin;
         }
-        // inline Rect& clear() {
-        //     buffer->triangle(x, y, x, h+y, w+x+1, h+y+1, cl);
-        //     buffer->triangle(x, y, h+x, y, w+x+1, h+y+1, cl);    
-        //     return *this;
-        // }
-        inline Rect& draw(const int32 ix,const int32 iy,RGBA colorin) {
+        inline Rect& setColor(RGBA colorin) {color = colorin;return *this;}
+        inline Rect& draw(const int32 ix,const int32 iy) {
             x = ix;
             y = iy;
-            buffer->triangle(x, y, x, h+y, w+x, h+y, colorin);
-            buffer->triangle(x, y, h+x, y, w+x, h+y, colorin);
+            buffer->triangle(x, y, x, h+y, w+x, h+y, color);
+            buffer->triangle(x, y, h+x, y, w+x, h+y, color);
             return *this;
         }
     };

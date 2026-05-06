@@ -2,8 +2,33 @@
 
 #include <sstream>
 #include <fstream>
+#include <random>
 import lib;
 import lib.renderer;
+
+class FastBoolGenerator {
+public:
+    FastBoolGenerator() : m_rand(0), m_counter(0) {}
+
+    bool next() {
+        if (m_counter == 0) {
+            // Fetch a new 64-bit random number
+            m_rand = std::uniform_int_distribution<uint64_t>{}(m_gen);
+            m_counter = 64;
+        }
+        // Extract the least significant bit
+        bool result = (m_rand & 1);
+        m_rand >>= 1; // Shift right for next call
+        --m_counter;
+        return result;
+    }
+
+private:
+    std::mt19937 m_gen{std::random_device{}()};
+    uint64_t m_rand;
+    int m_counter;
+};
+
 
 class Model {
     std::vector<vec3> verts = {};    // array of vertices
@@ -85,6 +110,7 @@ class App
     mWindow  win;
     mEvent   ev;
     sRenderer ren;
+    FastBoolGenerator gen;
     public:
     int i;
     Rect box[500];
@@ -101,7 +127,7 @@ class App
         ren.init(&win);
         floor.init(".\\floor.obj");
         for (int i = 0 ; i < 500 ; i++) {
-            box[i].init(&ren.buffer,50,50,10 , 10);
+            box[i].init(&ren.buffer,50,50,100 , 100,red);
         }
         return *this;
     }
@@ -126,12 +152,16 @@ class App
         // bot.init(&ren.buffer,100,100,50,50);
         // bot.clear().draw(20,20,red);
         // ren.buffer.triangle(100,100,100,200,300,200,red);
-        for (auto i = 0;i < 500;i++) {
-            
-            if (box[i].x == win.w - 50) {if(i % 4 == 1){box[i].ey = true;} box[i].ex = false;}else if (box[i].x == 0) {if(i % 3 == 1){box[i].ey = false;} box[i].ex = true;};
-            if (box[i].y == win.h - 50) {if(i % 5 == 1){box[i].ey = false;} box[i].ey = false;}else if (box[i].y == 0) {if(i % 2 == 1){box[i].ex = true;} box[i].ey = true;};
-            
-            box[i].draw(box[i].ex ? box[i].x + 1 : box[i].x - 1, box[i].ey ? box[i].y + 1 : box[i].y - 1,red);
+        for (int i = 0;i < 500;i += 10) {
+            Rect* b = box + i;
+            for (int j = 0;j < 10;j++) {
+                if (b[j].x == win.w - 50) { if(gen.next()){b[j].ey = true;} b[j].ex = false;}
+                else if (b[j].x <= 0) { if(gen.next()){b[j].ey = false;} b[j].ex = true;};
+                if (b[j].y == win.h - 50) { if(gen.next()){b[j].ey = true;} b[j].ey = false;}
+                else if (b[j].y <= 0) { if(gen.next()){b[j].ex = false;} b[j].ey = true;};
+                
+                b[j].draw(b[j].ex ? b[j].x + 1 : b[j].x - 1, b[j].ey ? b[j].y + 1 : b[j].y - 1);
+            }
         }
         // for (int i = 0; i <= 100; i++) {
         //     line(&ren.buffer, 10, 0, i, 100, red);
