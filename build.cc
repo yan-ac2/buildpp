@@ -137,7 +137,7 @@ int selfCompile(bool recompile)
 int compileProject(bool recompile)
 {
         ThreadPool pool(std::thread::hardware_concurrency());
-        const fs::path rootPath = ".";
+        const fs::path rootPath = fs::current_path();
         const fs::path exePath = rootPath / "bin";
 
         compileCommand cmdJson;
@@ -172,7 +172,7 @@ int compileProject(bool recompile)
     
         #ifdef _WIN32
         mainProj.setCompiler("clang++")
-        .setOptions("-O3 -std=c++23 -fopenmp=libomp")
+        .setOptions("-O3 -std=c++23")
         #elif __unix__
         mainProj.setCompiler("clang++")
         .setOptions("-O3 -fno-exceptions -stdlib=libc++ -std=c++23")
@@ -181,8 +181,6 @@ int compileProject(bool recompile)
         .setProjectPath((rootPath / "example"))
         .addSourcePath(mainProj.Path)
         .setMain("main.cc")
-        
-        //mainProj.addInclude(rootPath / "usr" / "include" / "X11" );
         .addIncludefile(mainProj.SourcePath[0]/ "lib" / "RGFW")
         .addIncludefile(mainProj.SourcePath[0]/ "lib" / "glad" / "include")
         .getLib(&libGLAD)
@@ -191,7 +189,6 @@ int compileProject(bool recompile)
         mainProj.scanHeader().scanModule()
         #ifdef _WIN32
         .addDependency("lib.RGFW.ccm",{"gdi32","opengl32"})
-        .addDependency("lib.renderer.ccm",{"omp"})
         #elif __unix__
         .addDependency("lib.RGFW.ccm",{"X11", "Xrandr"})
         .addDependency("lib.std.ccm",{"c++","c++abi"})
@@ -203,20 +200,10 @@ int compileProject(bool recompile)
         .dumpModuleMap()
         .dumpInclude();
     
-        // defer end([&mainProj]{
-        //     std::cout << "linking"_fmt.setColor(fmt::Bold_Green) << std::endl;
-        //     mainProj.link("main");
-        // });
-        // for (const auto& i : libGLAD.project) {
-        //     pool.enqueue ([&i,&libGLAD]{libGLAD.compileC(i);});
-        // }
-        // while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
-        // for (const auto& i : mainProj.SystemHeader) {
-        //     mainProj.compileModule(i,true);
-        // }
         for (const auto& f : libGLAD.project) {
             libGLAD.compileC(f);
         }
+
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
         std::queue<std::string> queue;
         for (const auto& i : mainProj.Modules) {queue.push(i.first);}
@@ -225,11 +212,13 @@ int compileProject(bool recompile)
             queue.pop();
             const auto moduleReady = mainProj.isModuleExist(modulef.string());
             if (moduleReady) {
-                mainProj.compileModule(modulef);
+            //    pool.enqueue([&modulef,&mainProj] {mainProj.compileModule(modulef);}); 
+               mainProj.compileModule(modulef);
             } else {
                 queue.push(modulef.string());
             }
         }
+        
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
         
         for (const auto& i : mainProj.ProjectFile) {

@@ -628,7 +628,6 @@ class Project
     std::vector<std::string> ProjectFile {};
     std::vector<std::string> Object      {};
     std::vector<std::string> Include     {};
-    //std::vector<std::string> SystemHeader{};
     std::vector<std::pair<std::string, std::string>> Dependency {};
     std::vector<std::pair<std::string, std::string>> Modules    {};
     std::unordered_map<std::string_view,std::vector<std::string_view>>   IncludeMap {};
@@ -895,6 +894,9 @@ class Project
         const auto* mPath = &OutPath->modulePath;
         const auto* oPath = &OutPath->objPath;
         // print << fmt("is system header ",f_path.string()).color(fmt::Blue).endl();
+        const std::string f_module {fmt((*mPath / f_path.stem()).string(), file.pcmModule)};
+        const std::string f_objOutput {fmt((*oPath / f_path.stem()).string(), file.objFile)};
+        
         const bool f_found = [this,&f_path](){
             for (const auto& i : IncludeMap)
             {
@@ -904,9 +906,15 @@ class Project
             }
             return false;
         }();
-        const std::string f_module {fmt((*mPath / f_path.stem()).string(), file.pcmModule)};
-        const std::string f_objOutput {fmt((*oPath / f_path.stem()).string(), file.objFile)};
-        std::string f_moduleOutput {fmt(" -o ", f_objOutput)};
+        const bool f_inObject = [&f_objOutput,this]() {
+            for (const auto& obj : Object) {
+                if (obj == f_objOutput) {
+                    return true;
+                    break;
+                }
+            } return false;
+        }();
+        // std::string f_moduleOutput {fmt(" -o ", f_objOutput)};
         std::string f_srcInput     {fmt(f_path.string()," -c -fmodule-output=",f_module," -fmodules-reduced-bmi -fprebuilt-module-path=",(*mPath / ". ").string())};
         
         for (const auto& [mod , dep] : ModuleMap)
@@ -919,8 +927,12 @@ class Project
             }
         }
         
-
-        const std::string f_cmd {fmt(Compiler, Options ,f_srcInput ,f_found ? compileInclude : "",ModuleDeps[f_path.filename().string()] , f_moduleOutput).clean()};
+        if (!f_inObject)
+        {
+            Object.emplace_back(f_objOutput);
+        } 
+        const std::string f_cmd {fmt(Compiler, Options ,f_srcInput ,f_found ? compileInclude : "",ModuleDeps[f_path.filename().string()]," -o ",f_objOutput).clean()};
+        if(cmdJson != nullptr) { cmdJson->addCompilecmd(f_path.parent_path().string(),f_cmd,f_path.string().c_str(),f_objOutput);}
         
         if (recompile) {
             print << fmt("recompiling "_fmt.color(fmt::Green) , f_cmd , "\n");
@@ -938,11 +950,13 @@ class Project
 
     void compileCpp(std::string_view inPath)
     {
+        const auto* oPath = &OutPath->objPath;
+        const auto* mPath = &OutPath->modulePath;
         const fs::path    f_path = inPath;
-        const std::string f_objOutput {fmt((OutPath->objPath / f_path.filename().stem()).string(), file.objFile)};
+        const std::string f_objOutput {fmt((*oPath / f_path.filename().stem()).string(), file.objFile)};
         const bool f_isModule = file.isModule(f_path.extension().string());
         if (f_isModule) return;
-        const std::string f_filein    {f_isModule ? fmt((OutPath->modulePath / f_path.filename().stem()).string(),file.pcmModule ) : f_path.string()};
+        const std::string f_filein    {f_isModule ? fmt((*mPath / f_path.filename().stem()).string(),file.pcmModule ) : f_path.string()};
         // print << fmt("is module " ,f_isModule ? "true ": "false ",f_path.extension().string()).color(fmt::Bold_Red).endl();
         const bool f_includefound = std::find_if(IncludeMap.begin(), IncludeMap.end(), [&f_path](const auto& p) 
         {return p.second[0] == f_path.string();}) != IncludeMap.end();
@@ -955,19 +969,27 @@ class Project
                 }
             } return false;
         }();
-        const bool f_inModuledep = [&f_path,this](){
-            for (const auto& m : ModuleDeps) {
-                if (f_path.filename().string() == m.first) { return true; }
+        const bool f_inModuledep = [&f_isModule,&f_path,&mPath,this](){
+            if (f_isModule) return true;
+            for (const auto& [mod , dep] : ModuleMap) {
+                    if (fs::path(mod).filename().string() == f_path.filename().string()) {
+                        for(const auto& d : dep)
+                        {
+                            ModuleDeps[f_path.filename().string()].append(fmt(" -fmodule-file=",d,"=",(*mPath / d).string(),file.pcmModule," "));
+                        }
+                        return true;
+                    }
+                // print << fmt("have modules ",f_path.filename().string(),m.first).endl(); 
             }
             return false;
         }();
             
         const std::string f_cppOutput {fmt(f_isModule ?"":"-c ",f_filein, Modules.empty() ? "" : 
-            fmt(" -fprebuilt-module-path=", (OutPath->modulePath / ".").string()," "))};
+            fmt(" -fprebuilt-module-path=", (*mPath / ".").string()," "))};
             
-        const std::string f_cmd {fmt(Compiler, Options ,f_cppOutput,(f_includefound && !f_isModule) ? compileInclude : "",f_inModuledep ? ModuleDeps[f_path.filename().string()] : "",f_isModule?" -c -o ":" -o ", f_objOutput).clean()};
+        const std::string f_cmd {fmt(Compiler, Options ,f_cppOutput,f_includefound ? compileInclude : "",f_inModuledep ? ModuleDeps[f_path.filename().string()] : "",f_isModule?" -c -o ":" -o ", f_objOutput).clean()};
         
-        if(cmdJson != nullptr) { cmdJson->addCompilecmd(f_path.parent_path().string(),f_cmd,f_path.string().c_str(),f_objOutput);}
+        if(cmdJson != nullptr && !f_isModule) { cmdJson->addCompilecmd(f_path.parent_path().string(),f_cmd,f_path.string().c_str(),f_objOutput);}
         // if(cmdJson != nullptr) { cmdJson->addCompilecmd(f_cmd);}
         
         if (!f_inObject)

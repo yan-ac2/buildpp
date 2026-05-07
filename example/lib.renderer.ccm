@@ -1,7 +1,6 @@
 
 module;
 #include <cstring>
-#include <omp.h>
 
 export module lib.renderer;
 import lib.RGFW;
@@ -31,6 +30,14 @@ export
     //     }
     // };
     class GlRenderer {
+        mGlHints* hints;
+        public:
+        GlRenderer(int major, int minor) {
+            hints->major = major;
+            hints->minor = minor;
+            setglHints(hints);
+        }
+
 
     };
     
@@ -52,7 +59,7 @@ export
         }
         void clear() {
             thread_local uint8* buffview;
-            #pragma omp for
+            
             for (int i = 0;i < bufferSize ; i++) {
                 buffview = buffer + i;
                 *buffview = 0;
@@ -94,7 +101,7 @@ export
             int32 bbminy = min(min(aiy,biy),ciy); 
             int32 bbmaxy = max(max(aiy,biy),ciy);
             double total_area = signed_triangle_area(aix, aiy, bix, biy, cix, ciy);
-            #pragma omp for
+            
             for (int x = bbminx; x <= bbmaxx; x++) {
                 for (int y = bbminy; y <= bbmaxy; y++)
                 {

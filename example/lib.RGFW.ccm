@@ -33,7 +33,7 @@ export
 
 	void BlitSurface (mWindow* win,mSurface* surface) {return RGFW_window_blitSurface(win,surface);};
 	void (&surfaceFree)(mSurface*) = RGFW_surface_free;
-	
+	auto& setglHints = RGFW_setGlobalHints_OpenGL; 
 	auto& PollEvent = RGFW_waitForEvent; 
 	
 	inline int32 getKey(const mEvent* ev) {

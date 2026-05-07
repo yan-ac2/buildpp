@@ -2,10 +2,7 @@
 
 #include <sstream>
 #include <fstream>
-#include <omp.h>
 import lib;
-import lib.RGFW;
-import lib.renderer;
 
 class Model {
     std::vector<vec3> verts = {};    // array of vertices
@@ -90,7 +87,7 @@ class App
     FastBoolGenerator gen;
     public:
     int i;
-    Rect box[1000];
+    Rect box[500];
     Model floor;
     RGBA red = {255,0,0,255};
     App& init()
@@ -104,7 +101,7 @@ class App
         ren.init(&win);
         floor.init(".\\floor.obj");
         bool b1,b2,b3;
-        for (int i = 0 ; i < 1000 ; i++) {
+        for (int i = 0 ; i < 500 ; i++) {
             box[i].init(50,50, 10 , 10,RGBA{
                 static_cast<uint8>(i == 0 ? box[i].color.col[0] = 1 : box[i].color.col[0] = box[i-1].color.col[0] + (b1 ? 3 : -3)),
                 static_cast<uint8>(i == 0 ? box[i].color.col[0] = 1 : box[i].color.col[0] = box[i-1].color.col[1] + (b2 ? 2 : -2)),
@@ -139,7 +136,7 @@ class App
         // ren.buffer.triangle(100,100,100,200,300,200,red);
         
         #pragma omp for
-        for (int i = 0;i < 1000;i += 10) {
+        for (int i = 0;i < 500;i += 10) {
             thread_local Rect* b = box + i;
             for (int j = 0;j < 10;j++) {
                 if (b[j].x >= win.w - 50) {if(gen.next()){b[j].ey = true;} b[j].ex = false;}
