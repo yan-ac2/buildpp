@@ -915,7 +915,7 @@ class Project
             } return false;
         }();
         // std::string f_moduleOutput {fmt(" -o ", f_objOutput)};
-        std::string f_srcInput     {fmt(f_path.string()," -c -fmodule-output=",f_module," -fmodules-reduced-bmi -fprebuilt-module-path=",(*mPath / ". ").string())};
+        std::string f_srcInput     {fmt("-c ",f_path.string()," -fmodule-output=",f_module," -fmodules-reduced-bmi -fprebuilt-module-path=",(*mPath / ". ").string())};
         
         for (const auto& [mod , dep] : ModuleMap)
         {
