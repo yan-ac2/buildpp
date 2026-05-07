@@ -1,6 +1,9 @@
 module;
 
+#include <cstdint>
 #include <istream>
+#include <chrono>
+#include <random>
 export module lib.types;
 import lib.std;
 
@@ -45,9 +48,43 @@ export
     using uint32    = std::uint32_t;
     using int64     = std::int64_t;
     using uint64    = std::uint64_t;
-    using size_ty   = __SIZE_TYPE__;
+    using size_t   = std::size_t;
     using cstr      = const char*;
     
+    struct RGBA {
+        uint8 col[4];
+        constexpr RGBA() {}
+        constexpr RGBA(uint8 r,uint8 g,uint8 b,uint8 a) : col(r,g,b,a) {}
+        // void operator =(RGBA c) {
+        //     copy(col, c.col, 4 * sizeof(uint8));
+        // }
+        operator const uint8*() const {return col;}
+        operator uint8*() {return col;}
+        
+    };
+
+    class FastBoolGenerator {
+    public:
+        FastBoolGenerator() : m_rand(0), m_counter(0) {}
+
+        bool next() {
+            if (m_counter == 0) {
+                // Fetch a new 64-bit random number
+                m_rand = std::uniform_int_distribution<uint64_t>{}(m_gen);
+                m_counter = 64;
+            }
+            // Extract the least significant bit
+            bool result = (m_rand & 1);
+            m_rand >>= 1; // Shift right for next call
+            --m_counter;
+            return result;
+        }
+
+    private:
+        std::mt19937 m_gen{std::random_device{}()};
+        uint64_t m_rand;
+        int m_counter;
+    };
     
     template<typename T>
     constexpr T mabs(T a) {return T(a < 0 ? -a : a);}
@@ -60,15 +97,18 @@ export
 
     class timeutl {
         using clock = std::chrono::high_resolution_clock;
+        using ms = std::chrono::milliseconds;
         clock::time_point start;
         clock::time_point end;
+        int before {0};
         public:
         void tstart() {start = clock::now();}
         void tend() {end = clock::now();}
         void sleep(int target) {
-            auto d = std::chrono::duration_cast<std::ms>(std::substract(end , start));
-            int count = d.count() > target ? 0 : target - d.count();
-            std::this_thread::sleep_for(std::ms(count));
+            auto d = std::chrono::duration_cast<ms>(end - start);
+            int count = d.count() > target ? before? before : 0 : target - d.count();
+            before = count;
+            std::this_thread::sleep_for(ms(count));
         }
     };
     
@@ -93,7 +133,7 @@ export
         double& operator[](const int i)       { return 1==i ? y : x; }
         double  operator[](const int i) const { return 1==i ? y : x; }
     };
-
+    
     using vec3 = vec<3> ;
     using vec2 = vec<2> ;
 };

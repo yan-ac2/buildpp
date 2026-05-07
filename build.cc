@@ -78,7 +78,7 @@ int test()
     .setOptions("-O0 -std=c++23 -nostdlib ")
     #endif
     .setProjectPath(rootPath)
-    .setSourcePath("testlib")
+    .addSourcePath("testlib")
     .setMain((test.SourcePath[0] / "inprogress.cc").string())
     .addSource({(test.SourcePath[0] / "inprogress.cc").string()})
     .getCppFile();
@@ -117,7 +117,7 @@ int selfCompile(bool recompile)
     .setOptions("-O3 -Wall -std=c++23 -stdlib=libc++ ")
     #endif
     .setProjectPath(rootPath)
-    .setSourcePath(rootPath)
+    .addSourcePath(rootPath)
     .setMain((rebuild.Path / "build.cc").string())
     .addSource({"build.cc"})
     .getCppFile();
@@ -148,54 +148,55 @@ int compileProject(bool recompile)
         .setOutpath(rootPath / ".build" / "project");
 
     
-        // cProject libGLAD(&outPath, cProject::staticLib,recompile);
-        // #ifdef _WIN32
-        // libGLAD.setCompiler("clang")
-        // #elif __unix__
-        // libGLAD.setCompiler("clang")
-        // #endif
-        // .addCompileCommand(&cmdJson)
-        // .setOptions("-O0")
-        // .setProjectPath(rootPath / "example" / "source" / "lib" / "glad")
-        // .setSourcePath("src")
-        // .setMain((libGLAD.sourcePath / "glad.c").string())
-        // .addInclude(libGLAD.path / "include")
-        // .getCFile()
-        // .scanInclude();
-        // // #ifdef _WIN32
-        // // .addDependency("glad.c", {"opengl32"});
-        // #elif __unix__
-        // // .addDependency("glad.c", {"GL"});
-        // #endif
+        cProject libGLAD(&outPath, cProject::staticLib,recompile);
+        #ifdef _WIN32
+        libGLAD.setCompiler("clang")
+        #elif __unix__
+        libGLAD.setCompiler("clang")
+        #endif
+        .addCompileCommand(&cmdJson)
+        .setOptions("-O0")
+        .setProjectPath(rootPath / "example"/ "lib" / "glad")
+        .setSourcePath("src")
+        .setMain((libGLAD.sourcePath / "glad.c").string())
+        .addInclude(libGLAD.path / "include")
+        .getCFile()
+        .scanInclude()
+        #ifdef _WIN32
+        .addDependency("glad.c", {"opengl32"});
+        #elif __unix__
+        .addDependency("glad.c", {"GL"});
+        #endif
     
         Project mainProj(&outPath,recompile);
     
         #ifdef _WIN32
         mainProj.setCompiler("clang++")
-        .setOptions("-O3 -std=c++23")
+        .setOptions("-O3 -std=c++23 -fopenmp=libomp")
         #elif __unix__
         mainProj.setCompiler("clang++")
         .setOptions("-O3 -fno-exceptions -stdlib=libc++ -std=c++23")
         #endif
         .addCompileCommand(&cmdJson)
         .setProjectPath((rootPath / "example"))
-        .setSourcePath(mainProj.Path / "source")
+        .addSourcePath(mainProj.Path)
         .setMain("main.cc")
-        // .addIncludePath((libGLAD.path / "include" / "glad"))
         
         //mainProj.addInclude(rootPath / "usr" / "include" / "X11" );
-        .addIncludefile(rootPath/"example"/"source"/ "lib" / "RGFW")
-        // .addInclude(rootPath/"example"/"source"/ "lib" / "glad" / "include")
+        .addIncludefile(mainProj.SourcePath[0]/ "lib" / "RGFW")
+        .addIncludefile(mainProj.SourcePath[0]/ "lib" / "glad" / "include")
+        .getLib(&libGLAD)
         .getCppFile();
     
         mainProj.scanHeader().scanModule()
         #ifdef _WIN32
         .addDependency("lib.RGFW.ccm",{"gdi32","opengl32"})
+        .addDependency("lib.renderer.ccm",{"omp"})
         #elif __unix__
         .addDependency("lib.RGFW.ccm",{"X11", "Xrandr"})
         .addDependency("lib.std.ccm",{"c++","c++abi"})
         #endif
-        // mainProj.dumpProject();
+        .dumpProject()
         .dumpIncludeMap()
         .dumpModule()
         .dumpDependencies()
@@ -213,6 +214,9 @@ int compileProject(bool recompile)
         // for (const auto& i : mainProj.SystemHeader) {
         //     mainProj.compileModule(i,true);
         // }
+        for (const auto& f : libGLAD.project) {
+            libGLAD.compileC(f);
+        }
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
         std::queue<std::string> queue;
         for (const auto& i : mainProj.Modules) {queue.push(i.first);}
@@ -221,7 +225,7 @@ int compileProject(bool recompile)
             queue.pop();
             const auto moduleReady = mainProj.isModuleExist(modulef.string());
             if (moduleReady) {
-                mainProj.compileModule(modulef,false);
+                mainProj.compileModule(modulef);
             } else {
                 queue.push(modulef.string());
             }

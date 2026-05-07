@@ -3,13 +3,11 @@ module;
 #include <array>
 #include <string>
 #include <iostream>
-#include <cstdint>
 #include <cstdio>
 #include <cassert>
 #include <cstdlib>
 #include <cmath>
 #include <thread>
-#include <chrono>
 
 
 export module lib.std;
@@ -33,26 +31,7 @@ export namespace std
     using std::ratio;
     using std::cerr;
     using std::tuple;
-    using ms = std::chrono::milliseconds;
-    using ns = std::chrono::nanoseconds;
-    using sec = std::chrono::seconds ;
-    namespace chrono {
-        using std::chrono::time_point;
-        using std::chrono::duration;
-        using std::chrono::high_resolution_clock;
-        using std::chrono::steady_clock;
-        using std::chrono::duration_cast;
-    }
-    inline ns substract(std::chrono::high_resolution_clock::time_point a,std::chrono::high_resolution_clock::time_point b) {
-        return a - b;
-    }
     namespace this_thread {
         using std::this_thread::sleep_for;
     }
-    using std::int8_t;    
-    using std::uint8_t;    
-    using std::int32_t;    
-    using std::uint32_t;    
-    using std::int64_t;
-    using std::uint64_t;
 };

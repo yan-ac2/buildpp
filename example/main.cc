@@ -2,33 +2,10 @@
 
 #include <sstream>
 #include <fstream>
-#include <random>
+#include <omp.h>
 import lib;
+import lib.RGFW;
 import lib.renderer;
-
-class FastBoolGenerator {
-public:
-    FastBoolGenerator() : m_rand(0), m_counter(0) {}
-
-    bool next() {
-        if (m_counter == 0) {
-            // Fetch a new 64-bit random number
-            m_rand = std::uniform_int_distribution<uint64_t>{}(m_gen);
-            m_counter = 64;
-        }
-        // Extract the least significant bit
-        bool result = (m_rand & 1);
-        m_rand >>= 1; // Shift right for next call
-        --m_counter;
-        return result;
-    }
-
-private:
-    std::mt19937 m_gen{std::random_device{}()};
-    uint64_t m_rand;
-    int m_counter;
-};
-
 
 class Model {
     std::vector<vec3> verts = {};    // array of vertices
@@ -113,12 +90,12 @@ class App
     FastBoolGenerator gen;
     public:
     int i;
-    Rect box[500];
+    Rect box[1000];
     Model floor;
     RGBA red = {255,0,0,255};
     App& init()
     {
-        initWindow(&this->win,"win test", 800, 600, Flags::WinCenter);
+        initWindow("win test", 800, 600, Flags::WinCenter,&this->win);
         return *this;
     }
     
@@ -126,8 +103,16 @@ class App
     {
         ren.init(&win);
         floor.init(".\\floor.obj");
-        for (int i = 0 ; i < 500 ; i++) {
-            box[i].init(&ren.buffer,50,50,100 , 100,red);
+        bool b1,b2,b3;
+        for (int i = 0 ; i < 1000 ; i++) {
+            box[i].init(50,50, 10 , 10,RGBA{
+                static_cast<uint8>(i == 0 ? box[i].color.col[0] = 1 : box[i].color.col[0] = box[i-1].color.col[0] + (b1 ? 3 : -3)),
+                static_cast<uint8>(i == 0 ? box[i].color.col[0] = 1 : box[i].color.col[0] = box[i-1].color.col[1] + (b2 ? 2 : -2)),
+                static_cast<uint8>(i == 0 ? box[i].color.col[0] = 1 : box[i].color.col[0] = box[i-1].color.col[2] + (b3 ? 3 : -3)),
+                255});
+            b1 = i % 128 == 0 ? true : false; 
+            b2 = i % 255 == 0 ? true : false; 
+            b3 = i % 128 == 0 ? true : false; 
         }
         return *this;
     }
@@ -149,22 +134,42 @@ class App
         //     ren.buffer.set(x,y,RGBA{0,0,255,0});
         // // }
         // Rect bot;
-        // bot.init(&ren.buffer,100,100,50,50);
-        // bot.clear().draw(20,20,red);
+        // bot.init(&ren.buffer,100,100,50,50,red);
+        // bot.draw(20,20);
         // ren.buffer.triangle(100,100,100,200,300,200,red);
-        for (int i = 0;i < 500;i += 10) {
-            Rect* b = box + i;
+        
+        #pragma omp for
+        for (int i = 0;i < 1000;i += 10) {
+            thread_local Rect* b = box + i;
             for (int j = 0;j < 10;j++) {
-                if (b[j].x == win.w - 50) { if(gen.next()){b[j].ey = true;} b[j].ex = false;}
-                else if (b[j].x <= 0) { if(gen.next()){b[j].ey = false;} b[j].ex = true;};
-                if (b[j].y == win.h - 50) { if(gen.next()){b[j].ey = true;} b[j].ey = false;}
-                else if (b[j].y <= 0) { if(gen.next()){b[j].ex = false;} b[j].ey = true;};
+                if (b[j].x >= win.w - 50) {if(gen.next()){b[j].ey = true;} b[j].ex = false;}
+                else if (b[j].x <= 0) {if(gen.next()){b[j].ey = true;} b[j].ex = true;};
+                if (b[j].y >= win.h - 50) {if(gen.next()){b[j].ex = true;} b[j].ey = false;}
+                else if (b[j].y <= 0) {if(gen.next()){b[j].ex = true;} b[j].ey = true;};
                 
-                b[j].draw(b[j].ex ? b[j].x + 1 : b[j].x - 1, b[j].ey ? b[j].y + 1 : b[j].y - 1);
+                b[j].draw(&ren.buffer,b[j].ex ? b[j].x + 1 : b[j].x - 1, b[j].ey ? b[j].y + 1 : b[j].y - 1);
             }
         }
-        // for (int i = 0; i <= 100; i++) {
-        //     line(&ren.buffer, 10, 0, i, 100, red);
+        // int32 aix = 0;
+        // int32 aiy = 0;
+        // int32 bix = 100;
+        // int32 biy = 100; 
+        // int32 cix = 100;
+        // int32 ciy = 200;
+        // int32 bbminx = min(min(aix,bix),cix); 
+        // int32 bbminy = min(min(aiy,biy),ciy); 
+        // int32 bbmaxx = max(max(aix,bix),cix); 
+        // int32 bbmaxy = max(max(aiy,biy),ciy);
+        // int32 bbmidx = (aix+bix+cix) - bbmaxx - bbminx;
+        // int32 bbmidy = (aiy+biy+ciy) - bbmaxy - bbminy;
+        // for (int32 x = bbminx; x <= bbmaxx;x++) {
+        //     for (int32 y = bbminy; y <= bbmaxy;y++) {
+        //         // std::printf("min: %d %d max: %d %d mid: %d %d \n",x,y,bbmaxx,bbmaxy,bbmidx,bbmidy);
+        //         ren.buffer.line(x,y,bbmidx,bbmidy,red);
+        //     }
+        // }
+        // for (int i = 10; i <= 100; i++) {
+        //     line(&ren.buffer, 50, 10, i, 200+i, red);
         // }
         ren.update(&this->win);
     }
@@ -198,7 +203,7 @@ class App
                             case Key::key_c: { 
                                 for (int i = 0; i  <win.w + 10; i++) {
                                     for(int y=0; y <100;y++)
-                                    ren.buffer.set(0 + i,0 + y, color2);
+                                    ren.buffer.set(0 + i,0 + y, red);
                                 }  
                                 break;
                             }

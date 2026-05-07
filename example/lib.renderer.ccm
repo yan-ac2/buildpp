@@ -1,0 +1,164 @@
+
+module;
+#include <cstring>
+#include <omp.h>
+
+export module lib.renderer;
+import lib.RGFW;
+import lib.types;
+import lib.std;
+
+export
+{
+    
+    constexpr RGBA cl {0,0,0,0};
+
+    // void clear(uint8* buffer, int32 bufferWidth, int32 w, int32 h, RGBA color) {
+    // /* if all the values are the same */
+    // // if (color[0] == color[1] && color[0] == color[2] && color[0] == color[3]) {
+    //     //     /* set it all in one function */
+    //     //     std::memset(buffer, color[0], (uint32)bufferWidth * (uint32)h * 4 * sizeof(uint8));
+    //     //     return;
+    //     // }
+    //     uint32 x, y;
+    //     for (y = 0; y < (uint32)h; y++) {
+    //         for (x = 0; x < (uint32)bufferWidth; x++) {
+    //             uint32 index = (y * 4 * (uint32)bufferWidth) + x * 4;
+                
+    //             /* copy the color to that pixel */
+    //             copy(&buffer[index], color, 4 * sizeof(uint8));
+    //         }
+    //     }
+    // };
+    class GlRenderer {
+
+    };
+    
+    inline double signed_triangle_area(int ax, int ay, int bx, int by, int cx, int cy) {
+        return .5*((by-ay)*(bx+ax) + (cy-by)*(cx+bx) + (ay-cy)*(ax+cx));
+    }
+
+    struct fBuffer {
+        int channel;
+        uint8* buffer;
+        size_t width,height;
+        size_t bufferSize;
+        void init(size_t ih,size_t iw,size_t colorchannels) {
+            channel = colorchannels;
+            height = ih;
+            width = iw;
+            bufferSize = height*width*channel;
+            buffer = new uint8[bufferSize];
+        }
+        void clear() {
+            thread_local uint8* buffview;
+            #pragma omp for
+            for (int i = 0;i < bufferSize ; i++) {
+                buffview = buffer + i;
+                *buffview = 0;
+            }
+        }
+        void set(size_t ix,size_t iy,const uint8* colors) {
+            thread_local uint8* buffview;
+            uint32 index = ((iy * (channel*width))  +  ix *channel);
+            if (index > bufferSize || index < 0) return;
+            buffview = buffer + index;
+            memcpy(buffview, colors, channel*sizeof(uint8));
+        }
+        void line(int32 aix,int32 aiy,int32 bix,int32 biy,RGBA col) {
+            const bool steep = mabs(aix - bix) < mabs(aiy - biy);
+            if (steep) {
+                swap(&aix, &aiy);
+                swap(&bix, &biy);
+            }
+            if (aix > bix) {
+                swap(&aix, &bix);
+                swap(&biy, &biy);
+            }
+            int y = aiy;
+            int ierror = 0;
+            for (int x = aix; x <= bix;x++) {
+                if (steep) set(y,x,col);
+                else       set(x,y,col);
+                ierror += 2 * mabs(biy - aiy);
+                if (ierror > bix - aix) {
+                    y += biy > aiy ? 1 : -1;
+                    ierror -= 2 * (bix - aix);
+                }
+            }
+        }
+        void triangle (int32 aix,int32 aiy,int32 bix,int32 biy,int32 cix,int32 ciy,RGBA col)
+        {
+            int32 bbminx = min(min(aix,bix),cix); 
+            int32 bbmaxx = max(max(aix,bix),cix); 
+            int32 bbminy = min(min(aiy,biy),ciy); 
+            int32 bbmaxy = max(max(aiy,biy),ciy);
+            double total_area = signed_triangle_area(aix, aiy, bix, biy, cix, ciy);
+            #pragma omp for
+            for (int x = bbminx; x <= bbmaxx; x++) {
+                for (int y = bbminy; y <= bbmaxy; y++)
+                {
+                    double alpha = signed_triangle_area(x, y, bix, biy, cix, ciy) / total_area;
+                    double beta = signed_triangle_area(x, y, cix, ciy, aix, aiy) / total_area;
+                    double gamma = signed_triangle_area(x, y, aix, aiy, bix, biy) / total_area;
+                    if (alpha < 0 || beta < 0 || gamma < 0) continue;
+                    set(x, y, col);
+                }
+            } 
+        }
+        uint8* get() const {return buffer;}
+        uint8* view() const {return buffer;} 
+    };
+
+    class Rect {
+        public:
+        int32 x,y;
+        int32 h,w;
+        RGBA color;
+        bool ex,ey;
+        Rect() {}
+        // Rect(fBuffer* buff,int32 ih,int32 iw,int32 ix,int32 iy,RGBA colorin) {
+        //     init(buff,ih,iw,ix,iy,colorin);
+        // }
+        void init (int32 ih,int32 iw,int32 ix,int32 iy,RGBA colorin) {
+            h = ih;
+            w = iw;
+            x = ix;
+            y = iy;
+            setColor(colorin);
+        }
+        inline Rect& setColor(RGBA colorin) {
+            memcpy(this->color.col, colorin.col, 4*sizeof(uint8));
+            return *this;
+        }
+        inline Rect& draw(fBuffer* buff,const int32 ix,const int32 iy) {
+            x = ix;
+            y = iy;
+            buff->triangle(x, y, x, h+y, w+x, h+y, color);
+            buff->triangle(x, y, h+x, y, w+x, h+y, color);
+            return *this;
+        }
+    };
+
+    class sRenderer {
+        using enum surfaceFlags;
+        public:
+        mSurface* surface;
+        fBuffer buffer;
+        sRenderer& init(mWindow* win) {
+            
+            buffer.init(win->h, win->w,4);
+            surface = createSurface(buffer.view(),win->w,win->h,formatRGBA8);
+            return *this;
+        }
+        sRenderer& update(mWindow* win) {
+            BlitSurface(win,surface);
+            
+            buffer.clear();
+            return *this;
+
+        }
+        ~sRenderer() {surfaceFree(surface);}
+
+    };
+};

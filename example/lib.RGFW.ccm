@@ -1,6 +1,7 @@
 
 module;
 #define RGFW_IMPLEMENTATION
+#define RGFW_OPENGL
 #include <RGFW.h>
 
 export module lib.RGFW;
@@ -11,63 +12,39 @@ export
 	using mWindow 	= RGFW_window;
 	using mEvent 	= RGFW_event;
 	using mSurface 	= RGFW_surface;
-	
+	using mGlHints  = RGFW_glHints;
 	enum Key : uint8;
 	enum eventType : uint8;
-	enum Flags : uint32;
-	enum surfaceFlags : uint8
-	{
-		formatRGB8 = 0,    /*!< 8-bit RGB (3 channels) */
-		formatBGR8,    /*!< 8-bit BGR (3 channels) */
-		formatRGBA8,   /*!< 8-bit RGBA (4 channels) */
-		formatARGB8,   /*!< 8-bit RGBA (4 channels) */
-		formatBGRA8,   /*!< 8-bit BGRA (4 channels) */
-		formatABGR8,   /*!< 8-bit BGRA (4 channels) */
-		formatCount
-	};
+	enum Flags : uint32 ;
+	enum surfaceFlags : uint8;
 
-	void initWindow(mWindow*,cstr,int32,int32,uint32);
-	void set_Quitkey(mWindow* ,uint8);
-	void CloseWindow(mWindow*);
-	void FreeWindow(mWindow*);
-	int32 ShouldClose(mWindow*);
-
+	void initWindow(cstr name,int32 w,int32 h, uint32 f,mWindow* win) {RGFW_createWindowPtr(name, 0, 0, w, h, static_cast<uint32>(f),win);}
+	int32 ShouldClose(mWindow* win) {return win->internal.shouldClose;}
+	void CloseWindow (mWindow* win) {win->internal.shouldClose = true;}
+	void set_Quitkey(mWindow* win ,uint8 key) {win->internal.exitKey = key;}
+	
 	uint8 (&CheckEvent)(mWindow*,mEvent*) = RGFW_window_checkEvent;
 	int32 getKey(const mEvent*);
-
+	
 	mSurface* createSurface (uint8* buff,int32 w,int32 h,surfaceFlags f) {
 		return RGFW_createSurface(buff,w,h,static_cast<uint8>(f));
 	};
-	 
+	
+
 	void BlitSurface (mWindow* win,mSurface* surface) {return RGFW_window_blitSurface(win,surface);};
 	void (&surfaceFree)(mSurface*) = RGFW_surface_free;
 	
 	auto& PollEvent = RGFW_waitForEvent; 
 	
-}
-
-
-void initWindow(mWindow* win,cstr name,int32 w,int32 h, uint32 f)
-{
-	RGFW_createWindowPtr(name, 0, 0, w, h, static_cast<uint32>(f),win);
-}
-int32 ShouldClose(mWindow* win) {
-	return win->internal.shouldClose;
-}
-void CloseWindow (mWindow* win) {
-	win->internal.shouldClose = true;
-}
-void set_Quitkey(mWindow* win ,uint8 key) {
-	win->internal.exitKey = key;
-}
-
-inline int32 getKey(const mEvent* ev) {
+	inline int32 getKey(const mEvent* ev) {
 	return ev->key.value;
+	}
 }
 
 
-enum Key : uint8
-{
+
+
+enum Key : uint8 {
 	keyNULL = 0,
 	key_escape = '\033',
 	key_backtick = '`',
@@ -194,33 +171,31 @@ enum Key : uint8
     key_world2,
     key_keyLast = 255 /* padding for alignment ~(175 by default) */
 };
-enum Flags : uint32
-{
-    NoBorder = RGFW_windowNoBorder, /*!< the window doesn't have a border */
-    NoResize = RGFW_windowNoResize, /*!< the window cannot be resized by the user */
-    AllowDND = RGFW_windowAllowDND, /*!< the window supports drag and drop */
-    HideMouse = RGFW_windowHideMouse, /*! the window should hide the mouse (can be toggled later on using `RGFW_window_showMouse`) */
-    Fullscreen = RGFW_windowFullscreen, /*!< the window is fullscreen by default */
-    Trensparent = RGFW_windowTransparent, /*!< the window is transparent (only properly works on X11 and MacOS, although it's meant for for windows) */
-    WinCenter = RGFW_windowCenter, /*! center the window on the screen */
-    RawMouse = RGFW_windowRawMouse, /*!< use raw mouse mouse on window creation */
-    ScaleToMonitor = RGFW_windowScaleToMonitor, /*! scale the window to the screen */
-    Hide = RGFW_windowHide, /*! the window is hidden */
-    Maximize = RGFW_windowMaximize, /*!< maximize the window on creation */
-    CenterCursor = RGFW_windowCenterCursor, /*!< center the cursor to the window on creation */
-    Floating = RGFW_windowFloating, /*!< create a floating window */
-    FocusOnShow = RGFW_windowFocusOnShow, /*!< focus the window when it's shown */
-    Minimize = RGFW_windowMinimize, /*!< focus the window when it's shown */
-    Focus = RGFW_windowFocus, /*!< if the window is in focus */
-    CaptureMouse = RGFW_windowCaptureMouse, /*!< capture the mouse mouse mouse on window creation */
-    WinOGL = RGFW_windowOpenGL, /*!< create an OpenGL context (you can also do this manually with RGFW_window_createContext_OpenGL) */
-    WinEGL = RGFW_windowEGL, /*!< create an EGL context (you can also do this manually with RGFW_window_createContext_EGL) */
-    WindowedFullscreen = RGFW_windowedFullscreen,
-    CaptureRawMouse = RGFW_windowCaptureRawMouse
+enum Flags : uint32 {
+	NoBorder = RGFW_windowNoBorder, /*!< the window doesn't have a border */
+	NoResize = RGFW_windowNoResize, /*!< the window cannot be resized by the user */
+	AllowDND = RGFW_windowAllowDND, /*!< the window supports drag and drop */
+	HideMouse = RGFW_windowHideMouse, /*! the window should hide the mouse (can be toggled later on using `RGFW_window_showMouse`) */
+	Fullscreen = RGFW_windowFullscreen, /*!< the window is fullscreen by default */
+	Transparent = RGFW_windowTransparent, /*!< the window is transparent (only properly works on X11 and MacOS, although it's meant for for windows) */
+	WinCenter = RGFW_windowCenter, /*! center the window on the screen */
+	RawMouse = RGFW_windowRawMouse, /*!< use raw mouse mouse on window creation */
+	ScaleToMonitor = RGFW_windowScaleToMonitor, /*! scale the window to the screen */
+	Hide = RGFW_windowHide, /*! the window is hidden */
+	Maximize = RGFW_windowMaximize, /*!< maximize the window on creation */
+	CenterCursor = RGFW_windowCenterCursor, /*!< center the cursor to the window on creation */
+	Floating = RGFW_windowFloating, /*!< create a floating window */
+	FocusOnShow = RGFW_windowFocusOnShow, /*!< focus the window when it's shown */
+	Minimize = RGFW_windowMinimize, /*!< focus the window when it's shown */
+	Focus = RGFW_windowFocus, /*!< if the window is in focus */
+	CaptureMouse = RGFW_windowCaptureMouse, /*!< capture the mouse mouse mouse on window creation */
+	WinOGL = RGFW_windowOpenGL, /*!< create an OpenGL context (you can also do this manually with RGFW_window_createContext_OpenGL) */
+	WinEGL = RGFW_windowEGL, /*!< create an EGL context (you can also do this manually with RGFW_window_createContext_EGL) */
+	WindowedFullscreen = RGFW_windowedFullscreen,
+	CaptureRawMouse = RGFW_windowCaptureRawMouse
 };
 
-enum eventType : uint8 
-{
+enum eventType : uint8 {
 		eventNone = 0, /*!< no event has been sent */
 		keyPressed, /*!< a key has been pressed */
 		keyReleased, /*!< a key has been released */
@@ -273,4 +248,14 @@ enum eventType : uint8
 		scaleUpdated, /*!< content scale factor changed */
 		monitorConnected, /*!< a monitor has been connected */
 		monitorDisconnected /*!< a monitor has been disconnected */
+};
+
+enum surfaceFlags : uint8 {
+	formatRGB8 = 0,    /*!< 8-bit RGB (3 channels) */
+	formatBGR8,    /*!< 8-bit BGR (3 channels) */
+	formatRGBA8,   /*!< 8-bit RGBA (4 channels) */
+	formatARGB8,   /*!< 8-bit RGBA (4 channels) */
+	formatBGRA8,   /*!< 8-bit BGRA (4 channels) */
+	formatABGR8,   /*!< 8-bit BGRA (4 channels) */
+	formatCount
 };
