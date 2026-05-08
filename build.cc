@@ -167,6 +167,9 @@ int compileProject(bool recompile)
         #elif __unix__
         .addDependency("glad.c", {"GL"});
         #endif
+        for (const auto& f : libGLAD.project) {
+            libGLAD.compileC(f);
+        }
     
         Project mainProj(&outPath,recompile);
     
@@ -200,10 +203,6 @@ int compileProject(bool recompile)
         .dumpModuleMap()
         .dumpInclude();
     
-        for (const auto& f : libGLAD.project) {
-            libGLAD.compileC(f);
-        }
-
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
         std::queue<std::string> queue;
         for (const auto& i : mainProj.Modules) {queue.push(i.first);}

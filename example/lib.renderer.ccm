@@ -1,7 +1,7 @@
 
 module;
+#include <glad/glad.h>
 #include <cstring>
-
 export module lib.renderer;
 import lib.RGFW;
 import lib.types;
@@ -9,6 +9,8 @@ import lib.std;
 
 export
 {
+    template<StaticString str>
+    class Renderer {static_assert(str.getSize() != 0, "Please enter renderer type");};
     
     constexpr RGBA cl {0,0,0,0};
 
@@ -29,15 +31,28 @@ export
     //         }
     //     }
     // };
-    class GlRenderer {
-        mGlHints* hints;
+    template<>
+    class Renderer<"GL"> {
+        mWindow* window;
+        mGlHints hints;
         public:
-        GlRenderer(int major, int minor) {
-            hints->major = major;
-            hints->minor = minor;
-            setglHints(hints);
+        Renderer() {}
+        Renderer(int major, int minor,mWindow* win) {
+            init(major,minor,window);
         }
-
+        constexpr void init(int major, int minor,mWindow* win) {
+            // hints = getglHints();
+            hints.major = major;
+            hints.minor = minor;
+            window = win;
+            setglHints(&hints);
+            makeCtxOpengl(window,&hints);
+            gladLoadGLLoader(((GLADloadproc)glGetProcAddr));
+        }
+        inline void update() {
+            
+            swapBuffer(window);
+        }
 
     };
     
@@ -146,26 +161,26 @@ export
             return *this;
         }
     };
-
-    class sRenderer {
+    template<>
+    class Renderer<"software"> {
         using enum surfaceFlags;
         public:
         mSurface* surface;
         fBuffer buffer;
-        sRenderer& init(mWindow* win) {
+        Renderer& init(mWindow* win) {
             
             buffer.init(win->h, win->w,4);
             surface = createSurface(buffer.view(),win->w,win->h,formatRGBA8);
             return *this;
         }
-        sRenderer& update(mWindow* win) {
+        Renderer& update(mWindow* win) {
             BlitSurface(win,surface);
             
             buffer.clear();
             return *this;
 
         }
-        ~sRenderer() {surfaceFree(surface);}
+        ~Renderer() {surfaceFree(surface);}
 
     };
 };

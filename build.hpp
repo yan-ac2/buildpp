@@ -681,6 +681,9 @@ class Project
             for (const auto& dep : cProj->dependency) {
                 this->Dependency.emplace_back(dep);
             }
+            for (const auto& includep : cProj->includePath) {
+                this->IncludePath.emplace_back(includep);
+            }
         }
         return *this;
     }
@@ -751,7 +754,7 @@ class Project
                 // }
             }
             for (const auto& includeScan : IncludePath) {
-                fs::directory_iterator iterator2(includeScan);
+                fs::recursive_directory_iterator iterator2(includeScan);
                 for (const auto& entry : iterator2) {
                     if (entry.is_regular_file() && file.isCppHeader(entry.path().extension().string()) ) {
     
@@ -807,8 +810,8 @@ class Project
                     
                     for (const auto& map : Include) {
                         if (map == includeFound) {
-                            print << fmt("include found "_fmt.color(fmt::Blue) , map , " in " , p);
-                            IncludeMap[map] = {p};
+                            print << fmt("include found "_fmt.color(fmt::Blue), includeFound, " " , map , " in " , p).endl();
+                            IncludeMap[map].push_back(p);
                         }
                     }
                 }
@@ -958,8 +961,17 @@ class Project
         if (f_isModule) return;
         const std::string f_filein    {f_isModule ? fmt((*mPath / f_path.filename().stem()).string(),file.pcmModule ) : f_path.string()};
         // print << fmt("is module " ,f_isModule ? "true ": "false ",f_path.extension().string()).color(fmt::Bold_Red).endl();
-        const bool f_includefound = std::find_if(IncludeMap.begin(), IncludeMap.end(), [&f_path](const auto& p) 
-        {return p.second[0] == f_path.string();}) != IncludeMap.end();
+        // const bool f_includefound = std::find_if(IncludeMap.begin(), IncludeMap.end(), [&f_path](const auto& p) {
+        //     print << fmt("include found ",f_path.string()," name ",p.second).color(fmt::Red).endl();
+        //     return p.second[0] == f_path.string();
+        // }) != IncludeMap.end();
+        const bool f_includefound = [&f_path,this]() {
+            for (const auto& [key,val] : IncludeMap) {
+                for (const auto& i : val) {
+                    if (i == f_path.string()) return true;
+                }
+            } return false;
+        }();
         
         const bool f_inObject = [&f_objOutput,this]() {
             for (const auto& obj : Object) {
