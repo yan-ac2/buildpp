@@ -34,22 +34,22 @@ export
     template<>
     class Renderer<"GL"> {
         mWindow* window;
-        mGlHints hints;
+        mGlHints* hints;
         public:
         Renderer() {}
         Renderer(int major, int minor,mWindow* win) {
             init(major,minor,window);
         }
-        constexpr void init(int major, int minor,mWindow* win) {
-            // hints = getglHints();
-            hints.major = major;
-            hints.minor = minor;
+        void init(int major, int minor,mWindow* win) {
+            hints = getglHints();
+            hints->major = major;
+            hints->minor = minor;
             window = win;
-            setglHints(&hints);
-            makeCtxOpengl(window,&hints);
+            setglHints(hints);
+            makeCtxOpengl(window,hints);
             gladLoadGLLoader(((GLADloadproc)glGetProcAddr));
         }
-        inline void update() {
+        void update() {
             
             swapBuffer(window);
         }

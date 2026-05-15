@@ -240,10 +240,23 @@ class string {
     }
     constexpr int getindex() const noexcept {return storage.type_index;}
 };
-// template<enum T>
-// class enumv {
 
-// };
+template <size_t N>
+struct StaticString
+{
+    char data[N] {};
+
+    constexpr StaticString(const char (&input)[N + 1])
+    {
+        for(size_t i {0};input[i] != '\0';i++) {
+            data[i] = input[i];
+        }
+    }
+    constexpr const size_t getSize() const {return N;}
+    constexpr const char* getData () {return data;}
+    constexpr operator char*() const {return data;}
+};
+template <size_t N> StaticString(const char(&)[N]) -> StaticString<N - 1>;
 
 int main()
 {
