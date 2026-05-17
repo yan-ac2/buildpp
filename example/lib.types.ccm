@@ -1,14 +1,15 @@
 module;
 
 #include <cstdint>
-#include <istream>
-#include <iostream>
 #include <chrono>
 #include <random>
-#include <algorithm>
-#include <array>
+#include <istream>
+#include <iostream>
+#include <fstream>
+#include <filesystem>
+#include <string>
+#include <thread>
 export module lib.types;
-import lib.std;
 
 template <class Ty, Ty Val>
 struct integral_constant {
@@ -20,7 +21,7 @@ struct integral_constant {
     consteval value_type operator()() const noexcept {return static_cast<value_type>(value);}
 };
 template <bool Val> struct bool_constant : integral_constant<bool,Val> {};
-
+namespace fs = std::filesystem;
 export
 {
     using false_t = bool_constant<false>;
@@ -51,10 +52,86 @@ export
     using uint32    = std::uint32_t;
     using int64     = std::int64_t;
     using uint64    = std::uint64_t;
-    using size_t   = std::size_t;
+    using size_t    = std::size_t;
     using cstr      = const char*;
     
+    struct RGBA {
+        uint8 col[4];
+        constexpr RGBA() {}
+        constexpr RGBA(uint8 r,uint8 g,uint8 b,uint8 a) : col(r,g,b,a) {}
+        // void operator =(RGBA c) {
+        //     copy(col, c.col, 4 * sizeof(uint8));
+        // }
+        operator const uint8*() const {return col;}
+        operator uint8*() {return col;}
+        
+    };
 
+    template<typename T,size_t n> 
+    struct vec {
+        T data[n] = {0};
+        T& operator[](const int i)       { return data[i]; }
+        T  operator[](const int i) const { return data[i]; }
+        operator T*() {return data;}
+        operator const T*() {return data;}
+    };
+    template<> struct vec<double,3> {
+        double x = 0, y = 0, z = 0;
+        double& operator[](const int i)       { return i ? (1==i ? y : z) : x; }
+        double  operator[](const int i) const { return i ? (1==i ? y : z) : x; }
+    };
+
+    template<typename T> using vec3 = vec<T,3> ;
+    template<typename T> using vec2 = vec<T,2> ;
+
+    class model {
+        std::vector<vec3<double>> verts = {};
+        std::vector<int> faces = {};
+        public: 
+        model(const fs::path file) {
+            static const char* vert = "v ";
+            static const char* face = "f ";
+            static const fs::path path = fs::current_path();
+            std::ifstream in; in.open( path / file);
+            if (!in) {std::cerr << "failed " << path / file <<"\n"; return;}
+            std::string line;
+            while(!in.eof()) {
+                std::getline(in,line);
+                std::istringstream iss(line.c_str());
+                char trash;
+                if (!line.compare(0,2,vert)) {
+                    iss >> trash;
+                    vec3<double> v;
+                    for(int i :{0,1,2}) iss >> v[i];
+                    verts.push_back(v);
+                } else if (!line.compare(0,2,face)) {
+                    int f,t,n, cnt = 0;
+                    iss >> trash;
+                    while (iss >> f >> trash >> t >> trash >> n) {
+                        faces.push_back(--f);
+                        cnt++;
+                    } 
+                    if (3 != cnt) {
+                        std::cerr <<  "Error: the obj file is supposed to be triangulated \n"; 
+                        return;
+                    }
+                }
+            }
+            std::cerr << "# v# " << nverts() << " f# "  << nfaces() << std::endl;
+        }
+        int nverts() const {return verts.size();}
+        int nfaces() const {return faces.size()/3;}
+        vec3<double> vert(const int i) const {return verts[i];}
+        vec3<double> vert(const int iface,const int nthvert) const {return verts[faces[iface*3+nthvert]];}
+    };
+    
+    constexpr decltype(auto) inv = []<typename T,typename... Args>(T&& fn,Args&&... args) {
+        return fn(args...);
+    };
+    constexpr int add(int a,int b) {
+        return a + b;
+    }
+    static_assert(inv(add,1,2) == 3,"stuff");
     template <size_t N>
     struct StaticString
     {
@@ -72,17 +149,7 @@ export
     template <size_t N>
     StaticString(const char(&)[N]) -> StaticString<N - 1>;
     
-    struct RGBA {
-        uint8 col[4];
-        constexpr RGBA() {}
-        constexpr RGBA(uint8 r,uint8 g,uint8 b,uint8 a) : col(r,g,b,a) {}
-        // void operator =(RGBA c) {
-        //     copy(col, c.col, 4 * sizeof(uint8));
-        // }
-        operator const uint8*() const {return col;}
-        operator uint8*() {return col;}
-        
-    };
+    
 
     class FastBoolGenerator {
     public:
@@ -132,31 +199,8 @@ export
             std::this_thread::sleep_for(ms(count));
         }
     };
-    
-    template<int n> struct vec {
-    double data[n] = {0};
-    double& operator[](const int i)       { return data[i]; }
-    double  operator[](const int i) const { return data[i]; }
-    };
 
-    template<int n> std::ostream& operator<<(std::ostream& out, const vec<n>& v) {
-        for (int i=0; i<n; i++) out << v[i] << " ";
-        return out;
-    }
-
-    template<> struct vec<3> {
-        double x = 0, y = 0, z = 0;
-        double& operator[](const int i)       { return i ? (1==i ? y : z) : x; }
-        double  operator[](const int i) const { return i ? (1==i ? y : z) : x; }
-    };
-    template<> struct vec<2> {
-        double x = 0, y = 0;
-        double& operator[](const int i)       { return 1==i ? y : x; }
-        double  operator[](const int i) const { return 1==i ? y : x; }
-    };
     
-    using vec3 = vec<3> ;
-    using vec2 = vec<2> ;
 };
 static_assert(isFn_ptr<void(*)()>()(), "fn" );
 

@@ -2,6 +2,7 @@
 module;
 #include <glad/glad.h>
 #include <cstring>
+#include <tuple>
 export module lib.renderer;
 import lib.RGFW;
 import lib.types;
@@ -49,37 +50,41 @@ export
             makeCtxOpengl(window,hints);
             gladLoadGLLoader(((GLADloadproc)glGetProcAddr));
         }
-        void update() {
+        void swapbuffer() {
             
             swapBuffer(window);
         }
 
     };
     
-    inline double signed_triangle_area(int ax, int ay, int bx, int by, int cx, int cy) {
-        return .5*((by-ay)*(bx+ax) + (cy-by)*(cx+bx) + (ay-cy)*(ax+cx));
-    }
-
-    struct fBuffer {
+    
+    template<>
+    class Renderer<"software"> {
+        using enum surfaceFlags;
+        public:
         int channel;
+        bool done = false;
+        mWindow* window;
+        mSurface* surface;
         uint8* buffer;
         size_t width,height;
         size_t bufferSize;
-        void init(size_t ih,size_t iw,size_t colorchannels) {
+
+        void initBuffer(size_t ih,size_t iw,size_t colorchannels) {
             channel = colorchannels;
             height = ih;
             width = iw;
             bufferSize = height*width*channel;
             buffer = new uint8[bufferSize];
         }
+
         void clear() {
-            thread_local uint8* buffview;
-            
+            thread_local uint8* buffview = buffer;
             for (int i = 0;i < bufferSize ; i++) {
-                buffview = buffer + i;
-                *buffview = 0;
+                *(buffview + i) = 0;
             }
         }
+
         void set(size_t ix,size_t iy,const uint8* colors) {
             thread_local uint8* buffview;
             uint32 index = ((iy * (channel*width))  +  ix *channel);
@@ -87,6 +92,7 @@ export
             buffview = buffer + index;
             memcpy(buffview, colors, channel*sizeof(uint8));
         }
+
         void line(int32 aix,int32 aiy,int32 bix,int32 biy,RGBA col) {
             const bool steep = mabs(aix - bix) < mabs(aiy - biy);
             if (steep) {
@@ -109,12 +115,16 @@ export
                 }
             }
         }
+
         void triangle (int32 aix,int32 aiy,int32 bix,int32 biy,int32 cix,int32 ciy,RGBA col)
         {
-            int32 bbminx = min(min(aix,bix),cix); 
-            int32 bbmaxx = max(max(aix,bix),cix); 
-            int32 bbminy = min(min(aiy,biy),ciy); 
-            int32 bbmaxy = max(max(aiy,biy),ciy);
+            auto signed_triangle_area = [](int ax, int ay, int bx, int by, int cx, int cy) -> double {
+                return .5*((by-ay)*(bx+ax) + (cy-by)*(cx+bx) + (ay-cy)*(ax+cx));
+            };
+            int32 bbminx = min(min(aix,bix),cix) 
+            , bbmaxx = max(max(aix,bix),cix)
+            , bbminy = min(min(aiy,biy),ciy) 
+            , bbmaxy = max(max(aiy,biy),ciy);
             double total_area = signed_triangle_area(aix, aiy, bix, biy, cix, ciy);
             
             for (int x = bbminx; x <= bbmaxx; x++) {
@@ -128,8 +138,36 @@ export
                 }
             } 
         }
+        
+        std::tuple<int,int> projection(vec3<double> v) {
+            return {
+                (v.x + 1.) * width,
+                (v.y + 1.) * height
+            };
+        }
         uint8* get() const {return buffer;}
         uint8* view() const {return buffer;} 
+
+        Renderer& init(mWindow* win) {
+            
+            window = win;
+            initBuffer(win->h, win->w,4);
+            surface = createSurface(buffer,win->w,win->h,formatRGBA8);
+            return *this;
+        }
+        Renderer& end() {
+            BlitSurface(window,surface);
+            clear();
+            return *this;
+        }
+        Renderer& swapbuffer() {
+            // thread_local bool* isDone = &done;
+            // end();
+            return *this;
+
+        }
+        ~Renderer() {surfaceFree(surface);}
+
     };
 
     class Rect {
@@ -139,9 +177,9 @@ export
         RGBA color;
         bool ex,ey;
         Rect() {}
-        // Rect(fBuffer* buff,int32 ih,int32 iw,int32 ix,int32 iy,RGBA colorin) {
-        //     init(buff,ih,iw,ix,iy,colorin);
-        // }
+        Rect(int32 ih,int32 iw,int32 ix,int32 iy,RGBA colorin) {
+            init(ih,iw,ix,iy,colorin);
+        }
         void init (int32 ih,int32 iw,int32 ix,int32 iy,RGBA colorin) {
             h = ih;
             w = iw;
@@ -153,34 +191,12 @@ export
             memcpy(this->color.col, colorin.col, 4*sizeof(uint8));
             return *this;
         }
-        inline Rect& draw(fBuffer* buff,const int32 ix,const int32 iy) {
-            x = ix;
-            y = iy;
+        inline Rect& draw(Renderer<"software">* buff,const int32 ix,const int32 iy) {
+            x += ix;
+            y += iy;
             buff->triangle(x, y, x, h+y, w+x, h+y, color);
             buff->triangle(x, y, h+x, y, w+x, h+y, color);
             return *this;
         }
-    };
-    template<>
-    class Renderer<"software"> {
-        using enum surfaceFlags;
-        public:
-        mSurface* surface;
-        fBuffer buffer;
-        Renderer& init(mWindow* win) {
-            
-            buffer.init(win->h, win->w,4);
-            surface = createSurface(buffer.view(),win->w,win->h,formatRGBA8);
-            return *this;
-        }
-        Renderer& update(mWindow* win) {
-            BlitSurface(win,surface);
-            
-            buffer.clear();
-            return *this;
-
-        }
-        ~Renderer() {surfaceFree(surface);}
-
     };
 };

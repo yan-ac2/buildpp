@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <string_view>
 #include <thread>
+#include <queue>
 
 
 class ThreadPool {
@@ -69,7 +70,7 @@ int test()
     .setOutfolder(rootPath / ".build")
     .setOutpath(rootPath / ".build" / "test");
 
-    Project test(&outPath,true,Project::exe);
+    Project test("test",&outPath,true,Project::exe);
 
     #ifdef _WIN32
     test.setCompiler("clang++").setOptions("-O3 -Wall -std=c++23")
@@ -108,7 +109,7 @@ int selfCompile(bool recompile)
     .setOutfolder(rootPath / ".build")
     .setOutpath(rootPath/".build" / "self");
 
-    Project rebuild(&outPath,recompile);
+    Project rebuild("build",&outPath,recompile,Project::exe);
 
     #ifdef _WIN32
     rebuild.setCompiler("clang++").setOptions("-Wall -std=c++23")
@@ -171,7 +172,23 @@ int compileProject(bool recompile)
             libGLAD.compileC(f);
         }
     
-        Project mainProj(&outPath,recompile);
+        Project meshoptimizer("meshoptimizer",&outPath,false,Project::staticLib);
+        meshoptimizer.setCompiler("clang++")
+        .setOptions("-O3 -std=c++23")
+        .setProjectPath(rootPath/"example"/"lib"/"meshoptimizer")
+        .addSourcePath(meshoptimizer.Path/"src")
+        .addIncludefile(meshoptimizer.Path/"src")
+        .addIncludefile(meshoptimizer.Path/"extern")
+        .addIncludefile(meshoptimizer.Path/"gltf")
+        .getCppFile();
+        thread_local auto* pp = &meshoptimizer.ProjectFile;
+        for(const auto& i : *pp) {
+            meshoptimizer.compileCpp(i);
+        }
+        while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));}
+        meshoptimizer.link("meshoptimizer");
+
+        Project mainProj("main",&outPath,recompile);
     
         #ifdef _WIN32
         mainProj.setCompiler("clang++")
@@ -184,9 +201,10 @@ int compileProject(bool recompile)
         .setProjectPath((rootPath / "example"))
         .addSourcePath(mainProj.Path)
         .setMain("main.cc")
+        .getLib(&meshoptimizer)
+        .getLib(&libGLAD)
         .addIncludefile(mainProj.SourcePath[0]/ "lib" / "RGFW")
         .addIncludefile(mainProj.SourcePath[0]/ "lib" / "glad" / "include")
-        .getLib(&libGLAD)
         .getCppFile();
     
         mainProj.scanHeader().scanModule()
