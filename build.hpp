@@ -674,7 +674,7 @@ class Project
         return *this;
     }
 
-    constexpr Project(const char* name,outputPath* path,bool recomp = false, projectType exe = Project::exe) {
+    constexpr Project(const char* name,outputPath* path,projectType exe,bool recomp = false) {
         ProjectName = name,
         OutPath = path,
         outFile = exe,
@@ -1089,9 +1089,9 @@ class Project
             outputName = f_targetOut;
         } else if (outFile == Project::exe) {
             f_Object = fmt(Modules.empty() ? "" : fmt(" -fprebuilt-module-path=", (OutPath->modulePath / ".").string()));
-            if (fs::exists(fmt(f_targetOut, file.platform).sv())) {
+            if (fs::exists(fmt(f_targetOut, file.executable).sv())) {
                 print << f_targetOut << "\n";
-                fs::rename(fmt(f_targetOut, file.platform).str, fmt(f_targetOut, file.platform, ".old").str);
+                fs::rename(fmt(f_targetOut, file.executable).str, fmt(f_targetOut, file.executable, ".old").str);
             }
         }
         for (const auto& p : Object) {
@@ -1106,7 +1106,7 @@ class Project
             f_Object.append(fmt(" ",p).sv());
         }
 
-        const std::string f_cmd {fmt(outFile == Project::staticLib ? fmt(file.libTool," /out:") : fmt(Compiler),f_Output,StaticLib,f_Object).clean()};
+        const std::string f_cmd {fmt(outFile == Project::staticLib ? fmt(file.libTool," /out:") : fmt(Compiler,Options),f_Output,StaticLib,f_Object).clean()};
         print << f_cmd << "\n";
 
         

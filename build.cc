@@ -70,7 +70,7 @@ int test()
     .setOutfolder(rootPath / ".build")
     .setOutpath(rootPath / ".build" / "test");
 
-    Project test("test",&outPath,true,Project::exe);
+    Project test("test",&outPath,Project::exe,true);
 
     #ifdef _WIN32
     test.setCompiler("clang++").setOptions("-O3 -Wall -std=c++23")
@@ -109,10 +109,10 @@ int selfCompile(bool recompile)
     .setOutfolder(rootPath / ".build")
     .setOutpath(rootPath/".build" / "self");
 
-    Project rebuild("build",&outPath,recompile,Project::exe);
+    Project rebuild("build",&outPath,Project::exe,recompile);
 
     #ifdef _WIN32
-    rebuild.setCompiler("clang++").setOptions("-Wall -std=c++23")
+    rebuild.setCompiler("clang++").setOptions("-fuse-ld=lld -Wall -std=c++23")
     #elif __unix__
     rebuild.setCompiler("clang++")
     .setOptions("-O3 -Wall -std=c++23 -stdlib=libc++ ")
@@ -172,27 +172,27 @@ int compileProject(bool recompile)
             libGLAD.compileC(f);
         }
     
-        Project meshoptimizer("meshoptimizer",&outPath,false,Project::staticLib);
-        meshoptimizer.setCompiler("clang++")
-        .setOptions("-O3 -std=c++23")
-        .setProjectPath(rootPath/"example"/"lib"/"meshoptimizer")
-        .addSourcePath(meshoptimizer.Path/"src")
-        .addIncludefile(meshoptimizer.Path/"src")
-        .addIncludefile(meshoptimizer.Path/"extern")
-        .addIncludefile(meshoptimizer.Path/"gltf")
-        .getCppFile();
-        thread_local auto* pp = &meshoptimizer.ProjectFile;
-        for(const auto& i : *pp) {
-            meshoptimizer.compileCpp(i);
-        }
-        while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));}
-        meshoptimizer.link("meshoptimizer");
+        // Project meshoptimizer("meshoptimizer",&outPath,Project::staticLib,false);
+        // meshoptimizer.setCompiler("clang++")
+        // .setOptions("-O3 -std=c++23")
+        // .setProjectPath(rootPath/"example"/"lib"/"meshoptimizer")
+        // .addSourcePath(meshoptimizer.Path/"src")
+        // .addIncludefile(meshoptimizer.Path/"src")
+        // .addIncludefile(meshoptimizer.Path/"extern")
+        // .addIncludefile(meshoptimizer.Path/"gltf")
+        // .getCppFile();
+        // thread_local auto* pp = &meshoptimizer.ProjectFile;
+        // for(const auto& i : *pp) {
+        //     meshoptimizer.compileCpp(i);
+        // }
+        // while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));}
+        // meshoptimizer.link("meshoptimizer");
 
-        Project mainProj("main",&outPath,recompile);
+        Project mainProj("main",&outPath,Project::exe,recompile);
     
         #ifdef _WIN32
         mainProj.setCompiler("clang++")
-        .setOptions("-O3 -std=c++23")
+        .setOptions("-O3 -fuse-ld=lld -fopenmp=libomp -std=c++23")
         #elif __unix__
         mainProj.setCompiler("clang++")
         .setOptions("-O3 -fno-exceptions -stdlib=libc++ -std=c++23")
@@ -201,7 +201,7 @@ int compileProject(bool recompile)
         .setProjectPath((rootPath / "example"))
         .addSourcePath(mainProj.Path)
         .setMain("main.cc")
-        .getLib(&meshoptimizer)
+        // .getLib(&meshoptimizer)
         .getLib(&libGLAD)
         .addIncludefile(mainProj.SourcePath[0]/ "lib" / "RGFW")
         .addIncludefile(mainProj.SourcePath[0]/ "lib" / "glad" / "include")
@@ -210,6 +210,7 @@ int compileProject(bool recompile)
         mainProj.scanHeader().scanModule()
         #ifdef _WIN32
         .addDependency("lib.RGFW.ccm",{"gdi32","opengl32"})
+        .addDependency("lib.renderer.ccm",{"libomp"})
         #elif __unix__
         .addDependency("lib.RGFW.ccm",{"X11", "Xrandr"})
         .addDependency("lib.std.ccm",{"c++","c++abi"})

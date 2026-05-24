@@ -3,7 +3,6 @@
 #include <iostream>
 #include <filesystem>
 #include <glad/glad.h>
-#include <meshoptimizer.h>
 import lib;
 
 struct buffer {char buff;};
@@ -35,7 +34,7 @@ class App
 };
 
 inline void inputUpdate(void* ptr) {
-    thread_local App* app = static_cast<App*>(ptr);
+    App* app = static_cast<App*>(ptr);
     PollEvent(16);
     for (;CheckEvent(&app->win,&app->ev);) {
         switch (app->ev.type)
@@ -59,13 +58,13 @@ inline void inputUpdate(void* ptr) {
 }
 
 inline void renderUpdate(void* ptr) {
-    thread_local App* app = static_cast<App*>(ptr);
+    App* app = static_cast<App*>(ptr);
     glClearColor(1.f,0.f,0.f,1.f);
     glClear(GL_COLOR_BUFFER_BIT);
     
 }
 inline void srenderUpdate(void* ptr) {
-    thread_local App* app = static_cast<App*>(ptr);
+    App* app = static_cast<App*>(ptr);
     RGBA red(255,0,0,255);
     
     Rect box[13] {
@@ -85,16 +84,13 @@ inline void srenderUpdate(void* ptr) {
     };
     int x[12] {0} , y[12] {0};
     timeutl times;
-    thread_local Rect* pbox = box;
-    thread_local int *px = x;
-    thread_local int *py = y;
     while(ShouldClose(&app->win) == 0) {
         times.tstart();
         for (int i = 0; i < 12 ;i++) {
-            pbox[i].draw(&app->ren,x[i],y[i]);
-            if (pbox[i].x == 500 || pbox[i].x == 0) {pbox[i].ex = pbox[i].x==500 ? false : pbox[i].x == 0 ? true : false;}
-            if (pbox[i].y == 500 || pbox[i].y == 0) {pbox[i].ey = pbox[i].y==500 ? false : pbox[i].y == 0 ? true : false;}
-            px[i] = pbox[i].ex ? 10 : -10, py[i] = pbox[i].ey ? 10 : -10;
+            box[i].draw(&app->ren,x[i],y[i]);
+            if (box[i].x == 500 || box[i].x == 0) {box[i].ex = box[i].x==500 ? false : box[i].x == 0 ? true : false;}
+            if (box[i].y == 500 || box[i].y == 0) {box[i].ey = box[i].y==500 ? false : box[i].y == 0 ? true : false;}
+            x[i] = box[i].ex ? 10 : -10, y[i] = box[i].ey ? 10 : -10;
         }
         // for (int i = 0; i < floor.faces.size(); i++) {
 

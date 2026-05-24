@@ -3,6 +3,7 @@ module;
 #include <glad/glad.h>
 #include <cstring>
 #include <tuple>
+#include <omp.h>
 export module lib.renderer;
 import lib.RGFW;
 import lib.types;
@@ -79,18 +80,22 @@ export
         }
 
         void clear() {
-            thread_local uint8* buffview = buffer;
-            for (int i = 0;i < bufferSize ; i++) {
-                *(buffview + i) = 0;
+            for (int i = 0;i <= bufferSize; i+=100) {
+                uint8* buffview = buffer + i;
+                for(int n = 0; ;++n) {
+                    *(buffview + n) = 0;
+                    if (n >= 100 || n + i >= bufferSize) break;
+                }
             }
         }
 
         void set(size_t ix,size_t iy,const uint8* colors) {
-            thread_local uint8* buffview;
             uint32 index = ((iy * (channel*width))  +  ix *channel);
             if (index > bufferSize || index < 0) return;
-            buffview = buffer + index;
-            memcpy(buffview, colors, channel*sizeof(uint8));
+            for (int i = 0; i <= channel ;++i)
+            {
+                buffer[index + i] = colors[i];
+            }
         }
 
         void line(int32 aix,int32 aiy,int32 bix,int32 biy,RGBA col) {
@@ -118,21 +123,21 @@ export
 
         void triangle (int32 aix,int32 aiy,int32 bix,int32 biy,int32 cix,int32 ciy,RGBA col)
         {
-            auto signed_triangle_area = [](int ax, int ay, int bx, int by, int cx, int cy) -> double {
+            const auto signed_triangle_area = [](int ax, int ay, int bx, int by, int cx, int cy) -> double {
                 return .5*((by-ay)*(bx+ax) + (cy-by)*(cx+bx) + (ay-cy)*(ax+cx));
             };
-            int32 bbminx = min(min(aix,bix),cix) 
+            const int32 bbminx = min(min(aix,bix),cix) 
             , bbmaxx = max(max(aix,bix),cix)
             , bbminy = min(min(aiy,biy),ciy) 
             , bbmaxy = max(max(aiy,biy),ciy);
-            double total_area = signed_triangle_area(aix, aiy, bix, biy, cix, ciy);
+            const double total_area = 1 / signed_triangle_area(aix, aiy, bix, biy, cix, ciy);
             
             for (int x = bbminx; x <= bbmaxx; x++) {
                 for (int y = bbminy; y <= bbmaxy; y++)
                 {
-                    double alpha = signed_triangle_area(x, y, bix, biy, cix, ciy) / total_area;
-                    double beta = signed_triangle_area(x, y, cix, ciy, aix, aiy) / total_area;
-                    double gamma = signed_triangle_area(x, y, aix, aiy, bix, biy) / total_area;
+                    double alpha = signed_triangle_area(x, y, bix, biy, cix, ciy) * total_area;
+                    double beta = signed_triangle_area(x, y, cix, ciy, aix, aiy) * total_area;
+                    double gamma = signed_triangle_area(x, y, aix, aiy, bix, biy) * total_area;
                     if (alpha < 0 || beta < 0 || gamma < 0) continue;
                     set(x, y, col);
                 }
