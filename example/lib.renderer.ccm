@@ -79,22 +79,23 @@ export
             buffer = new uint8[bufferSize];
         }
 
-        void clear() {
-            for (int i = 0;i <= bufferSize; i+=100) {
+        inline void clear() {
+            for (int i = 0;; i+=100) {
                 uint8* buffview = buffer + i;
-                for(int n = 0; ;++n) {
+                for(int n = 0; n <= (i >= bufferSize ? mabs(bufferSize - i) : 100) ;++n) {
                     *(buffview + n) = 0;
-                    if (n >= 100 || n + i >= bufferSize) break;
                 }
+                if(i >= bufferSize) break;
             }
         }
 
-        void set(size_t ix,size_t iy,const uint8* colors) {
-            uint32 index = ((iy * (channel*width))  +  ix *channel);
-            if (index > bufferSize || index < 0) return;
-            for (int i = 0; i <= channel ;++i)
+        inline void set(size_t ix,size_t iy,const uint8* colors) {
+            uint8* index = buffer + ((iy * (channel*width))  +  ix *channel);
+            if (index >= buffer + bufferSize || index <= buffer) return;
+            for (int i = 0;;++i)
             {
-                buffer[index + i] = colors[i];
+                *(index + i) = *(colors + i);
+                if(i >= channel) break;
             }
         }
 
@@ -131,7 +132,7 @@ export
             , bbminy = min(min(aiy,biy),ciy) 
             , bbmaxy = max(max(aiy,biy),ciy);
             const double total_area = 1 / signed_triangle_area(aix, aiy, bix, biy, cix, ciy);
-            
+            #pragma omp parallel for
             for (int x = bbminx; x <= bbmaxx; x++) {
                 for (int y = bbminy; y <= bbmaxy; y++)
                 {
