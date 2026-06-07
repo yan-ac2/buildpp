@@ -192,7 +192,7 @@ int compileProject(bool recompile)
     
         #ifdef _WIN32
         mainProj.setCompiler("clang++")
-        .setOptions("-O3 -fuse-ld=lld -fopenmp=libomp -std=c++23")
+        .setOptions("-O3 -fuse-ld=lld -std=c++23")
         #elif __unix__
         mainProj.setCompiler("clang++")
         .setOptions("-O3 -fno-exceptions -stdlib=libc++ -std=c++23")
@@ -210,7 +210,6 @@ int compileProject(bool recompile)
         mainProj.scanHeader().scanModule()
         #ifdef _WIN32
         .addDependency("lib.RGFW.ccm",{"gdi32","opengl32"})
-        .addDependency("lib.renderer.ccm",{"libomp"})
         #elif __unix__
         .addDependency("lib.RGFW.ccm",{"X11", "Xrandr"})
         .addDependency("lib.std.ccm",{"c++","c++abi"})

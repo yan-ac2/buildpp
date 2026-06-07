@@ -13,21 +13,22 @@ class App
     public:
     mEvent   ev;
     mWindow  win;
-    Renderer<"software"> ren;
+    Renderer<"GL"> ren;
     App& init()
     {
         std::cout << "current location" << std::filesystem::current_path() << "\n"; 
         createWindow("win test",100,100,800,600, Flags::WinCenter ,&win);
-        ren.init(&win);
+        ren.init(4,6,&win);
         return *this;
     }
+    
     template<auto... callback>
     App& update()
     {
         for (;ShouldClose(&this->win) == 0;) 
         {
-            (callback(this),...);
             ren.swapbuffer();
+            (callback(this),...);
         }   
         return *this;
     }
@@ -59,61 +60,81 @@ inline void inputUpdate(void* ptr) {
 
 inline void renderUpdate(void* ptr) {
     App* app = static_cast<App*>(ptr);
-    glClearColor(1.f,0.f,0.f,1.f);
-    glClear(GL_COLOR_BUFFER_BIT);
-    
-}
-inline void srenderUpdate(void* ptr) {
-    App* app = static_cast<App*>(ptr);
-    RGBA red(255,0,0,255);
-    
-    Rect box[13] {
-        {100,100,200,100,red},
-        {100,100,300,100,{100,100,0,255}},
-        {100,100,400,100,{50,10,80,255}},
-        {100,100,500,100,{50,0,150,255}},
-        {100,100,500,100,{50,0,150,255}},
-        {100,100,500,100,{50,0,150,255}},
-        {100,100,500,100,{50,0,150,255}},
-        {100,100,500,100,{50,0,150,255}},
-        {100,100,500,100,{50,0,150,255}},
-        {100,100,500,100,{50,0,150,255}},
-        {100,100,500,100,{50,0,150,255}},
-        {100,100,500,100,{50,0,150,255}},
-        {100,100,500,100,{50,0,150,255}},
-    };
-    int x[12] {0} , y[12] {0};
-    timeutl times;
-    while(ShouldClose(&app->win) == 0) {
-        times.tstart();
-        for (int i = 0; i < 12 ;i++) {
-            box[i].draw(&app->ren,x[i],y[i]);
-            if (box[i].x == 500 || box[i].x == 0) {box[i].ex = box[i].x==500 ? false : box[i].x == 0 ? true : false;}
-            if (box[i].y == 500 || box[i].y == 0) {box[i].ey = box[i].y==500 ? false : box[i].y == 0 ? true : false;}
-            x[i] = box[i].ex ? 10 : -10, y[i] = box[i].ey ? 10 : -10;
-        }
-        // for (int i = 0; i < floor.faces.size(); i++) {
-
-            // auto [ax,ay] = app->ren.projection(floor.vert(1,0))verts[faces[iface*3+nthvert]];
-            // auto [bx,by] = app->ren.projection(floor.vert(i,1));
-            // auto [cx,cy] = app->ren.projection(floor.vert(i,2));
-            // app->ren.triangle(ax,ay,bx,by,cx,cy,red);
-        // }
-        app->ren.end();
-        times.tend();
-        times.sleep(16);
-    }
     
 }
 
 int main ()
 {
     App app;
+    auto* ren = &app.ren;
     app.init();
-    std::jthread ren(srenderUpdate,&app);
+
+    float vertices[] {
+        -0.5f,-0.5f,0.0f,
+        0.5f,-0.5f,0.0f,
+        0.0f,0.5f, 0.0f,
+    };
+
+    float box[] {
+        0.5f, 0.5f,0.0f,
+        0.5f, -0.5f,0.0f,
+        -0.5f,-0.5f,0.0f,
+        -0.5f,0.5f,0.0f,
+    };
+
+    unsigned int boxIndices[] = {
+        0,1,3,
+        1,2,3
+    };
+    
+    const char *vertexShaderSource = 
+        R"(
+        #version 460 core
+
+        layout (location = 0) in vec3 aPos;
+
+        out vec4 vertexColor;
+        void main()
+        {
+            gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);
+            vertexColor = vec4(0.5,0.0,0.0,1.0);
+        })"
+    ;
+
+    const char *fragmentShaderSource = 
+        R"(
+        #version 460 core
+        out vec4 FragColor;
+
+        in vec4 vertexColor;
+        void main()
+        {
+            FragColor = vertexColor;
+        })"
+    ;
+    
+    
+    
+    ren->BufferObj(3,12, box,boxIndices,6),
+    ren->VertexShader(vertexShaderSource),
+    ren->FragmentShader(fragmentShaderSource),
+    ren->CompileShader();
+
+    auto renderUpd = [](App* ptr){
+        auto* ren = &ptr->ren;
+        glClearColor(0.0f,0.2f,0.2f,1.f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        
+        glBindVertexArray(ren->VAO);
+        glUseProgram(ren->shaderProgram);
+
+        // glDrawArrays(GL_TRIANGLES,0,12);
+        glDrawElements(GL_TRIANGLES,6,GL_UNSIGNED_INT,0);
+    };
+
     app.update<
-    inputUpdate
+    inputUpdate,
+    renderUpd
     >();
-    ren.join();
     return 0;
 }
