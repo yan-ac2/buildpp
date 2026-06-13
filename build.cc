@@ -192,7 +192,7 @@ int compileProject(bool recompile)
     
         #ifdef _WIN32
         mainProj.setCompiler("clang++")
-        .setOptions("-O3 -fuse-ld=lld -std=c++23")
+        .setOptions("-O3 -fuse-ld=lld -std=c++26")
         #elif __unix__
         mainProj.setCompiler("clang++")
         .setOptions("-O3 -fno-exceptions -stdlib=libc++ -std=c++23")
