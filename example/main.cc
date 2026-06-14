@@ -2,7 +2,7 @@
 #include <cstddef>
 #include <iostream>
 #include <filesystem>
-#include <functional>
+#include <chrono>
 #include <type_traits>
 #include <glad/glad.h>
 import lib;
@@ -21,9 +21,9 @@ class App
     mEvent   ev;
     mWindow  win;
     Renderer<"GL"> ren;
+    
     App& init()
     {
-        std::cout << "current location" << std::filesystem::current_path() << "\n"; 
         createWindow("win test",100,100,800,600, Flags::WinCenter ,&win);
         ren.init(4,6,&win);
         return *this;
@@ -59,46 +59,23 @@ class App
     }
 };
 
-inline void inputUpdate(App* app,int) {
-    PollEvent(16);
-    for (;CheckEvent(&app->win,&app->ev);) {
-        switch (app->ev.type)
-        {
-            case eventType::keyPressed:
-            {
-                std::printf("%i \n",getKey(&app->ev));
-                switch(getKey(&app->ev))
-                {
-                    case Key::key_escape: {CloseWindow(&app->win); break;}
-                    case Key::key_a: { break;}
-                    case Key::key_b: { break;}
-                    case Key::key_c: { break;}
-                    case Key::key_d: { break;}
-                    default: break;
-                }
-            }
-            default: break;
-        }
-    }
-}
-
-
-
 int main ()
 {
     App app;
     auto* ren = &app.ren;
+    auto start = std::chrono::high_resolution_clock::now();
+    Shader shader;
     app.init();
 
     float vertices[] {
-        -0.95f,-0.6f,0.0f,
-        -0.5f,0.6f,0.0f,
-        -0.1f,-0.6f, 0.0f,
+        -0.95f,-0.6f,0.0f,1.0f,0.0f,0.0f,
+        -0.5f,0.6f,0.0f,0.0f,1.0f,0.0f,
+        -0.1f,-0.6f, 0.0f,0.0f,0.0f,1.0f,
     };
     float vertices2[] {
-        0.95f,0.6f,0.0f,
-        0.5f,-0.6f,0.0f,
-        0.1f,0.6f, 0.0f,
+        0.95f,-0.6f,0.0f,0.0f,1.0f,0.0f,
+        0.5f,0.6f,0.0f,1.0f,0.0f,0.0f,
+        0.1f,-0.6f, 0.0f,0.0f,0.0f,1.0f,
     };
 
 
@@ -115,56 +92,93 @@ int main ()
     };
     
     const char *vertexShaderSource = 
-        R"(
-        #version 460 core
+        R"(#version 430 core
 
         layout (location = 0) in vec3 aPos;
+        layout (location = 1) in vec3 aColor;
 
-        out vec4 vertexColor;
+        out vec3 outColor;
+
         void main()
         {
-            gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);
-            vertexColor = vec4(0.5,0.0,0.0,1.0);
-            })"
-            ;
+            gl_Position = vec4(aPos, 1.0);
+            outColor = aColor;
+        }
+        )";
 
     const char *fragmentShaderSource = 
-        R"(
-        #version 460 core
+        R"(#version 430 core
         out vec4 FragColor;
 
-        in vec4 vertexColor;
+        in vec3 outColor;
+
         void main()
         {
-            FragColor = vertexColor;
-        })"
-    ;
+            FragColor = vec4(outColor, 1.0);
+        }
+        )";
     
     
     
     // ren->BufferObj(3,12, box,boxIndices,6),
-    ren->initBuffer(3,64),
-    ren->pushVertices(vertices,9),
-    ren->pushVertices(vertices2,9),
-    ren->VertexShader(vertexShaderSource),
-    ren->FragmentShader(fragmentShaderSource),
-    ren->CompileShader();
+    ren->initBuffer<2>(3,64),
+    ren->pushVertices(vertices,18),
+    ren->pushVertices(vertices2,18),
+    shader.VertexShader(vertexShaderSource),
+    shader.FragmentShader(fragmentShaderSource),
+    shader.CompileShader();
     
-    auto renderUpd = [](App* ptr,int){
+    auto inputUpdate = [](App* app,int) {
+        PollEvent(16);
+        for (;CheckEvent(&app->win,&app->ev);) {
+            switch (app->ev.type)
+            {
+                case eventType::keyPressed:
+                {
+                    std::printf("%i \n",getKey(&app->ev));
+                    switch(getKey(&app->ev))
+                    {
+                        case Key::key_escape: {CloseWindow(&app->win); break;}
+                        case Key::key_a: { break;}
+                        case Key::key_b: { break;}
+                        case Key::key_c: { break;}
+                        case Key::key_d: { break;}
+                        default: break;
+                    }
+                }
+                default: break;
+            }
+        }
+    };
+    
+    auto renderUpd = [](App* ptr,
+        std::chrono::time_point<std::chrono::high_resolution_clock>* start,
+        Shader* shader
+    ){
         auto* ren = &ptr->ren;
+        
+        // auto end = std::chrono::high_resolution_clock::now();
+        // std::chrono::duration<float> duration = end - *start;
+        // float second = (std::sin(duration.count()) * 0.5f) + 0.5f;
+
+        // int vertexColorLocation = glGetUniformLocation(ren->shaderProgram,"outColor");
+        // glUniform4f(vertexColorLocation,0.f,second,0.0f,1.0f);
+
         glClearColor(0.0f,0.2f,0.2f,1.f);
         glClear(GL_COLOR_BUFFER_BIT);
         
         glBindVertexArray(ren->VAO);
-        glUseProgram(ren->shaderProgram);
+        glUseProgram(shader->shaderProgram);
     
         glDrawArrays(GL_TRIANGLES,0,18);
         // glDrawElements(GL_TRIANGLES,6,GL_UNSIGNED_INT,0);
 
     };
+
     app.update<inputUpdate,renderUpd> (
         1,
-        1
+        std::make_tuple(&start,&shader)
     );
+    
     return 0;
 }

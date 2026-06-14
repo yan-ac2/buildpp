@@ -771,10 +771,7 @@ class Project
     }
 
     void getCppFile() {
-        if (recompile) {
-            for(const auto& d : fs::directory_iterator(OutPath->modulePath))
-            fs::remove_all(d.path());
-        }
+       
         for (const auto& p : SourcePath)
         {
             if (!fs::exists(p) || !fs::is_directory(p)) {err (true, fmt("Directory does not exist. "_fmt.color(fmt::Bold_Red),p.string()));}
@@ -984,6 +981,9 @@ class Project
         
         if (recompile) {
             print << fmt("recompiling "_fmt.color(fmt::Green) , f_cmd , "\n");
+            if(fs::exists(f_module)) {
+                fs::rename(f_module,fmt(f_module,".old").str);
+            }
             return cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
         } else if (!fs::exists(f_module))
         {
@@ -992,6 +992,7 @@ class Project
         } else if (fs::last_write_time(f_path) > fs::last_write_time(f_module))
         {
             print << fmt("updated "_fmt.color(fmt::Green) , f_cmd , "\n");
+            fs::rename(f_module,fmt(f_module,".old").str);
             return cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
         }
         return 0;

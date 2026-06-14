@@ -18,7 +18,7 @@ export
 	enum eventType : uint8;
 	enum Flags : uint32 ;
 	enum surfaceFlags : uint8;
-
+	
 	auto& createWindow = RGFW_createWindowPtr;
 	void initWindow(cstr name,int32 w,int32 h, uint32 f,mWindow* win) {RGFW_createWindowPtr(name, 0, 0, w, h, static_cast<uint32>(f),win);}
 	int32 ShouldClose(mWindow* win) {return win->internal.shouldClose;}

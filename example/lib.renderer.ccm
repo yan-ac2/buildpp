@@ -18,15 +18,12 @@ export
 
     template<>
     class Renderer<"GL"> {
-        mWindow* window;
-        mGlHints* hints;
+        mWindow* window = nullptr;
+        mGlHints* hints = nullptr;
         public:
 
-        unsigned int 
-        VBO,VAO,EBO,
-        vertexShader,fragmentShader,
-        shaderProgram,
-        VBOoffset,EBOoffset = 0;
+        unsigned int VBO = 0, VAO = 0, EBO = 0;
+        unsigned int VBOoffset = 0, EBOoffset = 0;
 
         Renderer() {}
         Renderer(int major, int minor,mWindow* win) {
@@ -45,8 +42,8 @@ export
         void swapbuffer() {
             swapBuffer(window);
         }
-        
-        void initBuffer(int component,std::size_t maxVert,std::size_t maxIndices = 0) {
+        template<int Attrib>
+        void initBuffer(int component,std::size_t maxVert,bool color = false,std::size_t maxIndices = 0) {
             glGenVertexArrays(1,&VAO);
             glBindVertexArray(VAO);
             
@@ -55,11 +52,14 @@ export
             glBindBuffer(GL_ARRAY_BUFFER,VBO);
             glBufferData(GL_ARRAY_BUFFER, maxVert * sizeof(float),nullptr,GL_DYNAMIC_DRAW);
 
-            glVertexAttribPointer(
-                0, component,GL_FLOAT,GL_FALSE, 
-                component * sizeof(float),nullptr
-            );
-            glEnableVertexAttribArray(0);
+            for (int i {0}; i <= Attrib - 1; i++) {
+                glVertexAttribPointer(
+                    i, component,GL_FLOAT,GL_FALSE, 
+                    (component * Attrib) * sizeof(float), i < 1 ? 0 : 
+                    ((void*)((component * i)*sizeof(float)))
+                );
+                glEnableVertexAttribArray(i);
+            }
 
             if (maxIndices > 0) {
                 glGenBuffers(1,&EBO);
@@ -89,31 +89,58 @@ export
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
         }
 
-        void VertexShader(const char* source) {
+    };
+    
+    class Shader 
+    {
+        Shader& err(const char* message,unsigned int* shader_T){
             int success;
+            glGetShaderiv(*shader_T,GL_COMPILE_STATUS,&success);
+            if(!success) {
+                char infoLog[512];
+                glGetShaderInfoLog(*shader_T,512,NULL,infoLog);
+                std::cout << message << "\n" <<
+                infoLog << "\n";
+            }
+            return *this;
+        }
+        public:
+        unsigned int ID;
+        
+        unsigned int vertexShader = 0, fragmentShader = 0, shaderProgram = 0;
+
+        // Shader(const char* vertexPath, const char* fragmentPath) 
+        // {
+
+        // }
+        // void use() {
+
+        // }
+
+        void setBool(const std::string& name,bool value) const {
+            
+        }
+        void setInt(const std::string& name,int value) const {
+
+        }
+        void setFloat(const std::string& name,float value) const {
+
+        }
+        void VertexShader(const char* source) {
             vertexShader = glCreateShader(GL_VERTEX_SHADER);
             glShaderSource(vertexShader,1,&source,NULL);
             glCompileShader(vertexShader);
-            glGetShaderiv(vertexShader,GL_COMPILE_STATUS,&success);
-            if(!success) {
-                char infoLog[512];
-                glGetShaderInfoLog(vertexShader,512,NULL,infoLog);
-                std::cout << "ERROR: vertex shader compilation error \n" <<
-                          infoLog << "\n";
-            }
+            err("ERROR: compilation error", &vertexShader);
         }
+        
         void FragmentShader(const char* source) {
             int success;
             fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
             glShaderSource(fragmentShader,1,&source,NULL);
             glCompileShader(fragmentShader);
             glGetShaderiv(fragmentShader,GL_COMPILE_STATUS,&success);
-            if(!success) {
-                char infoLog[512];
-                glGetShaderInfoLog(fragmentShader,512,NULL,infoLog);
-                std::cout << "ERROR: fragment shader compilation error \n" <<
-                infoLog << "\n";
-            }
+            err("ERROR: compilation error", &fragmentShader);
+            
         }
         void CompileShader() {
             int success {};
@@ -131,9 +158,10 @@ export
             glDeleteShader(vertexShader);
             glDeleteShader(fragmentShader);
         }
-
+        unsigned int* use(){
+            return &shaderProgram;
+        }
     };
-    
     
     template<>
     class Renderer<"software"> {

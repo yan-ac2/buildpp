@@ -67,6 +67,8 @@ export
         
     };
 
+    
+
     template<typename T,size_t n> 
     struct vec {
         T data[n] = {0};
