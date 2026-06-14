@@ -26,7 +26,7 @@ export
         VBO,VAO,EBO,
         vertexShader,fragmentShader,
         shaderProgram,
-        offsetBytes;
+        VBOoffset,EBOoffset = 0;
 
         Renderer() {}
         Renderer(int major, int minor,mWindow* win) {
@@ -46,32 +46,26 @@ export
             swapBuffer(window);
         }
         
-        void BufferEBO(int component,std::size_t maxLen) {
-            glBindVertexArray(VAO);
-
-            glBindBuffer(GL_ARRAY_BUFFER,VBO);
-
-            glGenBuffers(1,&EBO);
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,EBO);
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, maxLen * sizeof(float),nullptr,GL_STATIC_DRAW);
-        
-            glBindVertexArray(0);
-            glBindBuffer(GL_ARRAY_BUFFER,0);
-        }
-        void BufferObj(int component,std::size_t maxLen) {
+        void initBuffer(int component,std::size_t maxVert,std::size_t maxIndices = 0) {
             glGenVertexArrays(1,&VAO);
-            glGenBuffers(1,&VBO);
-            
             glBindVertexArray(VAO);
-
+            
+            
+            glGenBuffers(1,&VBO);
             glBindBuffer(GL_ARRAY_BUFFER,VBO);
-            glBufferData(GL_ARRAY_BUFFER, maxLen * sizeof(float),nullptr,GL_STATIC_DRAW);
+            glBufferData(GL_ARRAY_BUFFER, maxVert * sizeof(float),nullptr,GL_DYNAMIC_DRAW);
 
             glVertexAttribPointer(
                 0, component,GL_FLOAT,GL_FALSE, 
                 component * sizeof(float),nullptr
             );
             glEnableVertexAttribArray(0);
+
+            if (maxIndices > 0) {
+                glGenBuffers(1,&EBO);
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,EBO);
+                glBufferData(GL_ELEMENT_ARRAY_BUFFER, maxIndices * sizeof(float),nullptr,GL_DYNAMIC_DRAW);
+            }
 
             glBindVertexArray(0);
             glBindBuffer(GL_ARRAY_BUFFER,0);
@@ -81,10 +75,18 @@ export
             count = count * sizeof(float);
 
             glBindBuffer(GL_ARRAY_BUFFER, VBO);
-            glBufferSubData(GL_ARRAY_BUFFER, offsetBytes,count,vertices);
-            offsetBytes += count;
+            glBufferSubData(GL_ARRAY_BUFFER, VBOoffset,count,vertices);
+            VBOoffset += count;
 
             glBindBuffer(GL_ARRAY_BUFFER,0);
+        }
+
+        void pushIndices(unsigned int* indices,std::size_t count) {
+            if (EBO == 0) return;
+            count = count * sizeof(unsigned int);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+            glBufferSubData(GL_ELEMENT_ARRAY_BUFFER,EBOoffset,count,indices);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
         }
 
         void VertexShader(const char* source) {

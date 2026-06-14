@@ -143,8 +143,9 @@ int main ()
     
     
     // ren->BufferObj(3,12, box,boxIndices,6),
-    ren->BufferObj(3,9, vertices),
-    ren->BufferObj(3,18, vertices2),
+    ren->initBuffer(3,64),
+    ren->pushVertices(vertices,9),
+    ren->pushVertices(vertices2,9),
     ren->VertexShader(vertexShaderSource),
     ren->FragmentShader(fragmentShaderSource),
     ren->CompileShader();
