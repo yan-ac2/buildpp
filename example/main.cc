@@ -65,6 +65,9 @@ int main ()
     auto* ren = &app.ren;
     auto start = std::chrono::high_resolution_clock::now();
     Shader shader("res");
+    
+    float x = 0,y = 0;
+
     app.init();
 
     float vertices[] {
@@ -98,7 +101,9 @@ int main ()
     shader.CompileShader();
     shader.CompileProgram();
     
-    auto inputUpdate = [](App* app,Shader* shader) {
+    auto inputUpdate = [](App* app,
+        Shader* shader,
+        float* x,float* y) {
         PollEvent(16);
         for (;CheckEvent(&app->win,&app->ev);) {
             switch (app->ev.type)
@@ -112,7 +117,10 @@ int main ()
                         case Key::key_a: { shader->CompileShader(),shader->CompileProgram(); break;}
                         case Key::key_b: { break;}
                         case Key::key_c: { break;}
-                        case Key::key_d: { break;}
+                        case Key::key_k: {*x+=0.01f, shader->setFloat("x", x); break;}
+                        case Key::key_h: {*x-=0.01f, shader->setFloat("x", x); break;}
+                        case Key::key_u: {*y+=0.01f, shader->setFloat("y", y); break;}
+                        case Key::key_j: {*y-=0.01f, shader->setFloat("y", y); break;}
                         default: break;
                     }
                 }
@@ -146,8 +154,8 @@ int main ()
     };
 
     app.update<inputUpdate,renderUpd> (
-        &shader,
-        std::make_tuple(&start,&shader)
+        std::tuple(&shader,&x,&y),
+        std::tuple(&start,&shader)
     );
     
     return 0;

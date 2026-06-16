@@ -10,7 +10,6 @@ module;
 #include <string_view>
 #include <chrono>
 #include <tuple>
-#include <iterator>
 #include <unordered_map>
 export module lib.renderer;
 import lib.RGFW;
@@ -131,14 +130,14 @@ export
                 glDeleteProgram(ID);
             }
         }
-        void setBool(const str& name,bool value) const {
-            glUniform1i(glGetUniformLocation(ID, name.data()), (int)value);
+        void setBool(const str& name,bool* value) const {
+            glUniform1i(glGetUniformLocation(ID, name.data()), (int)*value);
         }
-        void setInt(const str& name,int value) const {
-            glUniform1i(glGetUniformLocation(ID, name.data()), value);
+        void setInt(const str& name,int* value) const {
+            glUniform1i(glGetUniformLocation(ID, name.data()), *value);
         }
-        void setFloat(const str& name,float value) const {
-            glUniform1f(glGetUniformLocation(ID, name.data()), value);
+        void setFloat(const str& name,float* value) const {
+            glUniform1f(glGetUniformLocation(ID, name.data()), *value);
         }
 
         void scanShader() {
