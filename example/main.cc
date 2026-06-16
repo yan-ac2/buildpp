@@ -98,7 +98,6 @@ int main ()
         layout (location = 1) in vec3 aColor;
 
         out vec3 outColor;
-
         void main()
         {
             gl_Position = vec4(aPos, 1.0);
@@ -111,10 +110,10 @@ int main ()
         out vec4 FragColor;
 
         in vec3 outColor;
-
+        uniform float second;
         void main()
         {
-            FragColor = vec4(outColor, 1.0);
+            FragColor = vec4(outColor, second);
         }
         )";
     
@@ -126,7 +125,7 @@ int main ()
     ren->pushVertices(vertices2,18),
     shader.VertexShader(vertexShaderSource),
     shader.FragmentShader(fragmentShaderSource),
-    shader.CompileShader();
+    shader.CompileProgram();
     
     auto inputUpdate = [](App* app,int) {
         PollEvent(16);
@@ -157,20 +156,20 @@ int main ()
     ){
         auto* ren = &ptr->ren;
         
-        // auto end = std::chrono::high_resolution_clock::now();
-        // std::chrono::duration<float> duration = end - *start;
-        // float second = (std::sin(duration.count()) * 0.5f) + 0.5f;
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<float> duration = end - *start;
+        float second = (std::sin(duration.count()) * 0.5f) + 0.5f;
 
-        // int vertexColorLocation = glGetUniformLocation(ren->shaderProgram,"outColor");
-        // glUniform4f(vertexColorLocation,0.f,second,0.0f,1.0f);
+        int vertexColorLocation = glGetUniformLocation(shader->ID,"second");
+        glUniform1f(vertexColorLocation,second);
 
         glClearColor(0.0f,0.2f,0.2f,1.f);
         glClear(GL_COLOR_BUFFER_BIT);
         
         glBindVertexArray(ren->VAO);
-        glUseProgram(shader->shaderProgram);
+        shader->use();
     
-        glDrawArrays(GL_TRIANGLES,0,18);
+        glDrawArrays(GL_TRIANGLES,0,64);
         // glDrawElements(GL_TRIANGLES,6,GL_UNSIGNED_INT,0);
 
     };

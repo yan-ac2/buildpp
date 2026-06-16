@@ -1,14 +1,16 @@
 
 module;
 #include <glad/glad.h>
-#include <cstring>
+#include <cstring> 
+#include <filesystem> 
 #include <iostream>
 #include <tuple>
+#include <unordered_set>
 export module lib.renderer;
 import lib.RGFW;
 import lib.types;
 import lib.std;
-
+namespace fs = std::filesystem;
 export
 {
     template<StaticString str>
@@ -51,12 +53,14 @@ export
             glGenBuffers(1,&VBO);
             glBindBuffer(GL_ARRAY_BUFFER,VBO);
             glBufferData(GL_ARRAY_BUFFER, maxVert * sizeof(float),nullptr,GL_DYNAMIC_DRAW);
-
-            for (int i {0}; i <= Attrib - 1; i++) {
+            
+            GLsizei stride = Attrib * component * sizeof(float);
+            for (int i = 0; i < Attrib; ++i) {
+                void* offset = (void*)(i * component * sizeof(float));
                 glVertexAttribPointer(
                     i, component,GL_FLOAT,GL_FALSE, 
-                    (component * Attrib) * sizeof(float), i < 1 ? 0 : 
-                    ((void*)((component * i)*sizeof(float)))
+                    stride, 
+                    offset
                 );
                 glEnableVertexAttribArray(i);
             }
@@ -93,73 +97,86 @@ export
     
     class Shader 
     {
-        Shader& err(const char* message,unsigned int* shader_T){
-            int success;
-            glGetShaderiv(*shader_T,GL_COMPILE_STATUS,&success);
-            if(!success) {
-                char infoLog[512];
-                glGetShaderInfoLog(*shader_T,512,NULL,infoLog);
-                std::cout << message << "\n" <<
-                infoLog << "\n";
-            }
-            return *this;
-        }
+        std::unordered_set<std::string> fileSet;
+
         public:
         unsigned int ID;
+        std::string shaderPath;
+        std::chrono::time_point<fs::file_time_type> lastWrite = {};
+        unsigned int vertexShader = 0, fragmentShader = 0;
         
-        unsigned int vertexShader = 0, fragmentShader = 0, shaderProgram = 0;
+        enum shaderType {
+            vertex,
+            fragment,
+            program
+        };
+        Shader(const char* path) : shaderPath(path) {
+            for(const auto& f : fs::directory_iterator(shaderPath)) {
 
-        // Shader(const char* vertexPath, const char* fragmentPath) 
-        // {
-
-        // }
-        // void use() {
-
-        // }
+            }
+        }
 
         void setBool(const std::string& name,bool value) const {
-            
+            glUniform1i(glGetUniformLocation(ID, name.c_str()), (int)value);
         }
         void setInt(const std::string& name,int value) const {
-
+            glUniform1i(glGetUniformLocation(ID, name.c_str()), value);
         }
         void setFloat(const std::string& name,float value) const {
-
+            glUniform1f(glGetUniformLocation(ID, name.c_str()), value);
         }
+
         void VertexShader(const char* source) {
             vertexShader = glCreateShader(GL_VERTEX_SHADER);
             glShaderSource(vertexShader,1,&source,NULL);
             glCompileShader(vertexShader);
-            err("ERROR: compilation error", &vertexShader);
+            err("ERROR: vertex shader compilation error",vertex, vertexShader);
         }
         
         void FragmentShader(const char* source) {
-            int success;
             fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
             glShaderSource(fragmentShader,1,&source,NULL);
             glCompileShader(fragmentShader);
-            glGetShaderiv(fragmentShader,GL_COMPILE_STATUS,&success);
-            err("ERROR: compilation error", &fragmentShader);
+            err("ERROR: fragment shader compilation error",fragment, fragmentShader);
             
         }
         void CompileShader() {
+            lastWrite = fs::last_write_time(shaderPath);
+        }
+        void CompileProgram() {
             int success {};
-            shaderProgram = glCreateProgram();
-            glAttachShader(shaderProgram, vertexShader);
-            glAttachShader(shaderProgram, fragmentShader);
-            glLinkProgram(shaderProgram);
-            glGetProgramiv(shaderProgram,GL_LINK_STATUS,&success);
-            if(!success) {
-                char infoLog[512] {};
-                glGetProgramInfoLog(shaderProgram,512,NULL,infoLog);
-                std::cout << "ERROR: shader program compilation error \n" <<
-                infoLog << "\n";
-            }
+            ID = glCreateProgram();
+            glAttachShader(ID, vertexShader);
+            glAttachShader(ID, fragmentShader);
+            glLinkProgram(ID);
+            
+            err("ERROR: shader program compilation error",program,ID);
+            
             glDeleteShader(vertexShader);
             glDeleteShader(fragmentShader);
         }
-        unsigned int* use(){
-            return &shaderProgram;
+        inline void use() const {
+            glUseProgram(ID);
+        }
+
+        private:
+        void err(const char* message,Shader::shaderType type,unsigned int objectID){
+            int success;
+            char infoLog[512];
+
+            if (type == program) {
+                glGetProgramiv(objectID, GL_LINK_STATUS, &success);
+                if (!success) {
+                    glGetProgramInfoLog(objectID, 512, NULL, infoLog);
+                    std::cout << message << "\n" << infoLog << "\n";
+                }
+            } else {
+                glGetShaderiv(objectID, GL_COMPILE_STATUS, &success);
+                if (!success) {
+                    glGetShaderInfoLog(objectID, 512, NULL, infoLog);
+                    std::cout << message << "\n" << infoLog << "\n";
+                }
+            }
         }
     };
     
