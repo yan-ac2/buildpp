@@ -4,8 +4,14 @@ module;
 #include <cstring> 
 #include <filesystem> 
 #include <iostream>
+#include <sstream>
+#include <fstream>
+#include <string>
+#include <string_view>
+#include <chrono>
 #include <tuple>
-#include <unordered_set>
+#include <iterator>
+#include <unordered_map>
 export module lib.renderer;
 import lib.RGFW;
 import lib.types;
@@ -97,70 +103,110 @@ export
     
     class Shader 
     {
-        std::unordered_set<std::string> fileSet;
-
-        public:
-        unsigned int ID;
-        std::string shaderPath;
-        std::chrono::time_point<fs::file_time_type> lastWrite = {};
-        unsigned int vertexShader = 0, fragmentShader = 0;
-        
         enum shaderType {
-            vertex,
-            fragment,
-            program
+            vertex = GL_VERTEX_SHADER,
+            fragment = GL_FRAGMENT_SHADER,
+            program = GL_PROGRAM
         };
-        Shader(const char* path) : shaderPath(path) {
+        using shaderPair = std::pair<shaderType,unsigned int>;
+        using shaderMap = std::unordered_map<std::string,shaderPair>;
+        using fileTime = std::chrono::time_point<std::chrono::file_clock>;
+        using strStream = std::ostringstream;
+        using str = std::string;
+        using strView = std::string_view;
+        
+        shaderMap fileMap;
+        
+        public:
+        
+        unsigned int ID; 
+        fileTime lastWrite = {};
+        str shaderPath;
+        
+        Shader(const str& path) : shaderPath((fs::current_path()/path).string()) {
+            scanShader();
+        }
+        ~Shader() {
+            if(ID != 0) {
+                glDeleteProgram(ID);
+            }
+        }
+        void setBool(const str& name,bool value) const {
+            glUniform1i(glGetUniformLocation(ID, name.data()), (int)value);
+        }
+        void setInt(const str& name,int value) const {
+            glUniform1i(glGetUniformLocation(ID, name.data()), value);
+        }
+        void setFloat(const str& name,float value) const {
+            glUniform1f(glGetUniformLocation(ID, name.data()), value);
+        }
+
+        void scanShader() {
+            str base = fs::current_path().string();
             for(const auto& f : fs::directory_iterator(shaderPath)) {
+                const auto& file = f.path();
+                std::cout << file.lexically_relative(base) << " test\n";
+                fileMap[file.lexically_relative(base).string()] = {file.extension().string() == ".fs" ?
+                fragment : vertex,0};
+
+                if (f.last_write_time() > lastWrite) lastWrite = f.last_write_time();
+            }
+        }
+
+        void CompileShader() {
+            auto cmpShader = [this](const char* source,shaderPair* spair) {
+                spair->second = glCreateShader(spair->first);
+                glShaderSource(spair->second,1,&source,NULL);
+                glCompileShader(spair->second);
+                err("ERROR: shader compilation error",spair->first, spair->second);
+            };
+            
+            for(auto& [key,value] : fileMap) {
+                std::ifstream file(key,std::ios::in | std::ios::binary);
+                if(file){
+                    std::ostringstream contents;
+                    contents << file.rdbuf();
+                    str sourceCode = contents.str();
+                    
+                    file.close();
+                    std::cout << "file " << key << "\n" << sourceCode << "\n";
+                    
+                    cmpShader(sourceCode.c_str(), &value);
+                    
+                    if (fs::last_write_time(key) > lastWrite) {
+                    lastWrite = fs::last_write_time(key);}
+
+                } else std::cout << key << " ERROR: cant open file \n";
 
             }
         }
 
-        void setBool(const std::string& name,bool value) const {
-            glUniform1i(glGetUniformLocation(ID, name.c_str()), (int)value);
-        }
-        void setInt(const std::string& name,int value) const {
-            glUniform1i(glGetUniformLocation(ID, name.c_str()), value);
-        }
-        void setFloat(const std::string& name,float value) const {
-            glUniform1f(glGetUniformLocation(ID, name.c_str()), value);
-        }
-
-        void VertexShader(const char* source) {
-            vertexShader = glCreateShader(GL_VERTEX_SHADER);
-            glShaderSource(vertexShader,1,&source,NULL);
-            glCompileShader(vertexShader);
-            err("ERROR: vertex shader compilation error",vertex, vertexShader);
-        }
-        
-        void FragmentShader(const char* source) {
-            fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-            glShaderSource(fragmentShader,1,&source,NULL);
-            glCompileShader(fragmentShader);
-            err("ERROR: fragment shader compilation error",fragment, fragmentShader);
-            
-        }
-        void CompileShader() {
-            lastWrite = fs::last_write_time(shaderPath);
-        }
         void CompileProgram() {
-            int success {};
+            if (ID != 0) {
+                glDeleteProgram(ID);
+            }
+
             ID = glCreateProgram();
-            glAttachShader(ID, vertexShader);
-            glAttachShader(ID, fragmentShader);
+            for (const auto [key,value] : fileMap){
+                glAttachShader(ID, value.second);
+            }
+
             glLinkProgram(ID);
             
             err("ERROR: shader program compilation error",program,ID);
-            
-            glDeleteShader(vertexShader);
-            glDeleteShader(fragmentShader);
+            for (auto& [key, value] : fileMap) {
+                glDeleteShader(value.second);
+                value.second = 0; // Reset ID so we don't accidentally use deleted shaders
+            }
         }
+
         inline void use() const {
             glUseProgram(ID);
         }
 
         private:
-        void err(const char* message,Shader::shaderType type,unsigned int objectID){
+
+        void err(strView message,Shader::shaderType type,unsigned int& objectID){
             int success;
             char infoLog[512];
 

@@ -205,6 +205,7 @@ int compileProject(bool recompile)
         .getLib(&libGLAD)
         .addIncludefile(mainProj.SourcePath[0]/ "lib" / "RGFW")
         .addIncludefile(mainProj.SourcePath[0]/ "lib" / "glad" / "include")
+        .setResourcePath(mainProj.SourcePath[0] / "res"/".")
         .getCppFile();
     
         mainProj.scanHeader().scanModule()

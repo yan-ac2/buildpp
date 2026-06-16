@@ -64,7 +64,7 @@ int main ()
     App app;
     auto* ren = &app.ren;
     auto start = std::chrono::high_resolution_clock::now();
-    Shader shader;
+    Shader shader("res");
     app.init();
 
     float vertices[] {
@@ -91,43 +91,14 @@ int main ()
         1,2,3
     };
     
-    const char *vertexShaderSource = 
-        R"(#version 430 core
-
-        layout (location = 0) in vec3 aPos;
-        layout (location = 1) in vec3 aColor;
-
-        out vec3 outColor;
-        void main()
-        {
-            gl_Position = vec4(aPos, 1.0);
-            outColor = aColor;
-        }
-        )";
-
-    const char *fragmentShaderSource = 
-        R"(#version 430 core
-        out vec4 FragColor;
-
-        in vec3 outColor;
-        uniform float second;
-        void main()
-        {
-            FragColor = vec4(outColor, second);
-        }
-        )";
-    
-    
-    
     // ren->BufferObj(3,12, box,boxIndices,6),
-    ren->initBuffer<2>(3,64),
-    ren->pushVertices(vertices,18),
-    ren->pushVertices(vertices2,18),
-    shader.VertexShader(vertexShaderSource),
-    shader.FragmentShader(fragmentShaderSource),
+    ren->initBuffer<2>(3,64);
+    ren->pushVertices(vertices,18);
+    ren->pushVertices(vertices2,18);
+    shader.CompileShader();
     shader.CompileProgram();
     
-    auto inputUpdate = [](App* app,int) {
+    auto inputUpdate = [](App* app,Shader* shader) {
         PollEvent(16);
         for (;CheckEvent(&app->win,&app->ev);) {
             switch (app->ev.type)
@@ -138,7 +109,7 @@ int main ()
                     switch(getKey(&app->ev))
                     {
                         case Key::key_escape: {CloseWindow(&app->win); break;}
-                        case Key::key_a: { break;}
+                        case Key::key_a: { shader->CompileShader(),shader->CompileProgram(); break;}
                         case Key::key_b: { break;}
                         case Key::key_c: { break;}
                         case Key::key_d: { break;}
@@ -175,7 +146,7 @@ int main ()
     };
 
     app.update<inputUpdate,renderUpd> (
-        1,
+        &shader,
         std::make_tuple(&start,&shader)
     );
     

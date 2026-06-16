@@ -646,6 +646,7 @@ class Project
     compileCommand* cmdJson;
     
     fs::path Path       {};
+    fs::path ResPath       {};
     std::vector<fs::path> SourcePath     {};
     std::vector<fs::path> IncludePath    {};
     std::vector<std::string> ProjectFile {};
@@ -661,6 +662,7 @@ class Project
     constexpr Project& setCompiler    (std::string_view comp) {Compiler = comp; return *this;}
     constexpr Project& setOptions     (std::string_view opt)  {Options = fmt(" ",opt," ").sv(); return *this;}
     constexpr Project& setProjectPath (fs::path in)           {Path = in; return *this;}
+    constexpr Project& setResourcePath(fs::path in)           {Path = in; return *this;}
     constexpr Project& addSourcePath  (fs::path in)           {SourcePath.emplace_back(in); return *this;}
     constexpr Project& addIncludePath (fs::path in)           {IncludePath.emplace_back(in); return *this;}
     constexpr Project& setincludeas   (enum includeas opt)    {includeas = opt; return *this;}
@@ -992,7 +994,11 @@ class Project
         } else if (fs::last_write_time(f_path) > fs::last_write_time(f_module))
         {
             print << fmt("updated "_fmt.color(fmt::Green) , f_cmd , "\n");
-            fs::rename(f_module,fmt(f_module,".old").str);
+            if(fs::exists(f_module)) {
+                if (fs::exists(fmt(f_module,".old").sv())){
+                fs::remove(fmt(f_module,".old").sv());}
+                fs::rename(f_module,fmt(f_module,".old").sv());
+            }
             return cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
         }
         return 0;
@@ -1110,7 +1116,7 @@ class Project
         const std::string f_cmd {fmt(outFile == Project::staticLib ? fmt(file.libTool," /out:") : fmt(Compiler,Options),f_Output,StaticLib,f_Object).clean()};
         print << f_cmd << "\n";
 
-        
+        if (fs::exists(ResPath)) fs::copy(ResPath,fs::path(OutPath->exePath/ResPath),fs::copy_options::recursive);
         cmd << f_cmd.c_str() >> "linking error"_fmt.color(fmt::Bold_Red);
     }
 
