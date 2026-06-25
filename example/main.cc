@@ -1,15 +1,8 @@
 
-#include <cstddef>
-#include <iostream>
-#include <filesystem>
-#include <chrono>
-#include <type_traits>
 #include <glad/glad.h>
-#include <variant>
-#include <array>
 
 import lib;
-
+import test.std;
 struct buffer {char buff;};
 inline void* operator new(size_t size,buffer* Buff) {return Buff;} 
 
@@ -17,7 +10,7 @@ template <typename T>
 concept TupleLike = requires {
     typename std::tuple_size<std::remove_cvref_t<T>>::type;
 };
-
+std::variant<int,float> vars;
 class App
 {
     public:

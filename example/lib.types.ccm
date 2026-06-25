@@ -1,16 +1,6 @@
 module;
-
-#include <cstdint>
-#include <chrono>
-#include <random>
-#include <istream>
-#include <iostream>
-#include <fstream>
-#include <filesystem>
-#include <string>
-#include <thread>
 export module lib.types;
-
+import test.std;
 template <class Ty, Ty Val>
 struct integral_constant {
     enum : Ty {value = Val};

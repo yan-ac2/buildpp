@@ -155,7 +155,6 @@ int compileProject(bool recompile)
         #elif __unix__
         libGLAD.setCompiler("clang")
         #endif
-        .addCompileCommand(&cmdJson)
         .setOptions("-O0")
         .setProjectPath(rootPath / "example"/ "lib" / "glad")
         .setSourcePath("src")
@@ -225,12 +224,16 @@ int compileProject(bool recompile)
     
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
         std::queue<std::string> queue;
-        for (const auto& i : mainProj.Modules) {queue.push(i.first);}
+        for (const auto& i : mainProj.Modules) {
+            queue.push(i.first);
+        }
         while(!queue.empty()) {
-            std::string_view modulef = queue.front();
+            std::string modulef = queue.front();
             queue.pop();
             const auto moduleReady = mainProj.isModuleExist(modulef);
+            print << fmt("is modules ready ").color(fmt::Red) << modulef << fmt(" ",moduleReady ? "true" : "false","\n");
             if (moduleReady) {
+                
             //    pool.enqueue([&modulef,&mainProj] {mainProj.compileModule(modulef);}); 
                mainProj.compileModule(modulef);
             } else {
