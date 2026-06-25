@@ -617,9 +617,10 @@ class cProject{
 
 class Project
 {
-    std::string ProjectName      {};
+    std::string ProjectName     {};
     std::string Main            {};
     std::string Options         {};
+    std::string LdOptions       {};
     std::string Compiler        {};
     std::string StaticLib       {};
     std::string outputName      {};
@@ -660,7 +661,8 @@ class Project
 
     constexpr Project& setMain        (std::string_view main) {Main = main; return *this;}
     constexpr Project& setCompiler    (std::string_view comp) {Compiler = comp; return *this;}
-    constexpr Project& setOptions     (std::string_view opt)  {Options = fmt(" ",opt," ").sv(); return *this;}
+    constexpr Project& setOptions     (std::string_view opt)  {Options = fmt(" ",opt," ").clean().sv(); return *this;}
+    constexpr Project& setLdOptions   (std::string_view opt)  {LdOptions = fmt(" ",opt," ").clean().sv(); return *this;}
     constexpr Project& setProjectPath (fs::path in)           {Path = in; return *this;}
     constexpr Project& setResourcePath(fs::path in)           {Path = in; return *this;}
     constexpr Project& addSourcePath  (fs::path in)           {SourcePath.emplace_back(in); return *this;}
@@ -934,7 +936,7 @@ class Project
         const auto* mPath = &OutPath->modulePath;
         const auto* oPath = &OutPath->objPath;
         
-        const fmt f_module      {(*mPath / fPath.stem().c_str()).string(), file.pcmModule};
+        const fmt f_module      {(*mPath / fPath.stem().string()).string(), file.pcmModule};
         const fmt f_objOutput   {(*oPath / fPath.stem()).string(), file.objFile};
         
         const auto l_rewrite = [&f_module]{
@@ -966,7 +968,7 @@ class Project
             } return false;
         }();
         
-        fmt f_srcInput     {"-c ",fPath.string()," -fmodule-output=",f_module," -fmodules-reduced-bmi -fprebuilt-module-path=",(*mPath / ". ").string()};
+        fmt f_srcInput     {"-c ",fPath.string()," -fno-modules-reduced-bmi -fmodule-output=",f_module," -fprebuilt-module-path=",(*mPath / ". ").string()};
         
         for (const auto& [mod , dep] : ModuleMap)
         {
@@ -1114,7 +1116,7 @@ class Project
             f_Object.append(fmt(" ",p).sv());
         }
 
-        const std::string f_cmd {fmt(outFile == Project::staticLib ? fmt(file.libTool," /out:") : fmt(Compiler,Options),f_Output,StaticLib,f_Object).clean()};
+        const std::string f_cmd {fmt(outFile == Project::staticLib ? fmt(file.libTool," /out:") : fmt(Compiler,Options,LdOptions),f_Output,StaticLib,f_Object).clean()};
         print << f_cmd << "\n";
 
         if (fs::exists(ResPath)) fs::copy(ResPath,fs::path(OutPath->exePath/ResPath),fs::copy_options::recursive);

@@ -7,6 +7,7 @@
 #include <glad/glad.h>
 #include <variant>
 #include <array>
+
 import lib;
 
 struct buffer {char buff;};
@@ -31,8 +32,8 @@ class App
         return *this;
     }
     
-    template<auto... F> 
-    App& update(auto&&... args)
+    template<auto... F,typename... Tuples> requires (sizeof...(F) == sizeof...(Tuples))
+    App& update(Tuples&&... args)
     {
         for (;ShouldClose(&this->win) == 0;) 
         {
@@ -64,7 +65,21 @@ class App
 int main ()
 {
     vec2<int> ss {2,5};
+    vec3<int> ss2 {2,5,10};
+    vec<int,4> ss3 {2,5,10,15};
     for (const auto& i : ss.get<"yyyxx">()) {
+        std::cout << i << " ";
+    }
+    std::cout << "\n";
+    for (const auto& i : ss2.get<"yyyxxz">()) {
+        std::cout << i << " ";
+    }
+    std::cout << "\n";
+    for (const auto& i : ss3.get<"wyyxxzw">()) {
+        std::cout << i << " ";
+    }
+    std::cout << "\n";
+    for (const auto& i : ss3.get<"wyywxzw">()) {
         std::cout << i << " ";
     }
     std::cout << "\n";

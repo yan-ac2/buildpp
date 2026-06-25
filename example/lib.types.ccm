@@ -66,22 +66,23 @@ export
         operator uint8*() {return col;}
         
     };
-
     template <size_t N>
     struct vecutl {
+        // void compilation_failed_invalid_swizzle_character();
         std::size_t num[N];
         
         constexpr vecutl(const char (&input)[N + 1]) : num{} {
             for (size_t i = 0; i < N; ++i) {
-                num[i] = (input[i] == 'x' ? 0 :
-                        input[i] == 'y' ? 1 : 
-                        input[i] == 'z' ? 2 :
-                        input[i] == 'w' ? 3 : err());
+                char c = input[i];
+
+                num[i] = (c == 'x' ? 0 :
+                        c == 'y' ? 1 : 
+                        c == 'z' ? 2 :
+                        c == 'w' ? 3 : 4);                
             }
         }
-        constexpr std::size_t err() {
-            throw "Invalid swizzle character! Only x, y, z, w are allowed.";
-        }
+        // constexpr std::size_t err(int i) {
+        // }
         constexpr size_t getSize() const { return N; }
         constexpr bool max(int m) const { 
             for (const int& i : num) {
