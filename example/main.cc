@@ -6,6 +6,7 @@
 #include <type_traits>
 #include <glad/glad.h>
 #include <variant>
+#include <array>
 import lib;
 
 struct buffer {char buff;};
@@ -60,68 +61,10 @@ class App
     }
 };
 
-template <size_t N>
-struct vecutl {
-    std::size_t num[N];
-    
-    constexpr vecutl(const char (&input)[N + 1]) : num{} {
-        for (size_t i = 0; i < N; ++i) {
-            num[i] = (input[i] == 'x' ? 0 :
-                      input[i] == 'y' ? 1 : 
-                      input[i] == 'z' ? 2 :
-                      input[i] == 'w' ? 3 : err());
-        }
-    }
-    constexpr std::size_t err() {
-        throw "Invalid swizzle character! Only x, y, z, w are allowed.";
-    }
-    constexpr size_t getSize() const { return N; }
-    constexpr bool max(int m) const { 
-        for (const int& i : num) {
-            if (i > m - 1) return false;
-        }
-        return true;
-    }
-};
-
-template <size_t N>
-vecutl(const char(&)[N]) -> vecutl<N - 1>;
-
-template <typename T>
-class svec2 {
-public:
-    T vec[2];
-    svec2() : vec(0) {}
-    svec2(T x, T y) : vec(x,y) {}
-
-    T& operator []() {
-
-    }
-    template <vecutl s> requires (s.getSize() > 1 && s.max(2))
-    std::array<T, s.getSize()> get() const {
-        std::array<T, s.getSize()> buffer;
-        
-        for (size_t i = 0; i < s.getSize(); ++i) {
-            // Correctly map the pointer using the compiled string indices
-            buffer[i] = vec[s.num[i]];
-        }
-        
-        return buffer; 
-    
-    }
-
-    template <vecutl s> requires (s.getSize() == 1) 
-    T& get() const {
-        return vec[s.num[0]];
-    }
-};
-
 int main ()
 {
-    svec2<int> s {2,5};
-
-    auto ss = s.get<"yxxxx">();
-    for (const auto& i : ss) {
+    vec2<int> ss {2,5};
+    for (const auto& i : ss.get<"yyyxx">()) {
         std::cout << i << " ";
     }
     std::cout << "\n";

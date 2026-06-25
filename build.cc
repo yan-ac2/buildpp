@@ -226,14 +226,14 @@ int compileProject(bool recompile)
         std::queue<std::string> queue;
         for (const auto& i : mainProj.Modules) {queue.push(i.first);}
         while(!queue.empty()) {
-            const fs::path modulef = queue.front();
+            std::string_view modulef = queue.front();
             queue.pop();
-            const auto moduleReady = mainProj.isModuleExist(modulef.string());
+            const auto moduleReady = mainProj.isModuleExist(modulef);
             if (moduleReady) {
             //    pool.enqueue([&modulef,&mainProj] {mainProj.compileModule(modulef);}); 
                mainProj.compileModule(modulef);
             } else {
-                queue.push(modulef.string());
+                queue.push(modulef.data());
             }
         }
         

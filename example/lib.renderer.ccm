@@ -318,8 +318,8 @@ export
         
         std::tuple<int,int> projection(vec3<double> v) {
             return {
-                (v.x + 1.) * width,
-                (v.y + 1.) * height
+                (v[0] + 1.) * width,
+                (v[1] + 1.) * height
             };
         }
         uint8* get() const {return buffer;}

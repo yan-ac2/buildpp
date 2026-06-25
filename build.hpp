@@ -914,12 +914,11 @@ class Project
             {
                 for (const auto& m : modMap)
                 {
-                    // print << fmt("check module "_fmt.color(fmt::Bold_Green) , f_path.string() , " is exist "_fmt.color(fmt::Blue) , fmt((mPath / fs::path(m).stem()).string(), file.pcmModule) 
-                    //).endl().cstr(); 
-                    if (!fs::exists(fmt((mPath / m).string(), file.pcmModule).sv())) {
+                    auto moduleFile = fmt((mPath / m).string(), file.pcmModule).sv();
+                    if (!fs::exists(moduleFile)) {
                         return false;
                     }
-                    if(fs::last_write_time(f_path) > fs::last_write_time(fmt((mPath / m).string(),file.pcmModule).sv()) && recompile)
+                    if(fs::last_write_time(f_path) > fs::last_write_time(moduleFile) && recompile)
                     {
                         return false;
                     }
@@ -930,75 +929,74 @@ class Project
         return exist;
     }
 
-    int compileModule(fs::path f_path) {
-        
-        // const bool f_inModule = std::find_if(modules.begin(), modules.end(), [&f_path](const auto& p) 
-        // {return p.first == f_path.string();}) != modules.end();
-        // const bool f_found = std::find_if(_includeMap.begin(), _includeMap.end(), [&f_path](const auto& p) 
-        // {return p.second[0] == f_path.string();}) != _includeMap.end();
+    int compileModule(std::string_view in_path) {
+        const fs::path fPath = in_path;
         const auto* mPath = &OutPath->modulePath;
         const auto* oPath = &OutPath->objPath;
-        // print << fmt("is system header ",f_path.string()).color(fmt::Blue).endl();
-        const std::string f_module {fmt((*mPath / f_path.stem()).string(), file.pcmModule)};
-        const std::string f_objOutput {fmt((*oPath / f_path.stem()).string(), file.objFile)};
-        const std::string compileInclude = [this,&f_path](){
+        
+        const fmt f_module      {(*mPath / fPath.stem().c_str()).string(), file.pcmModule};
+        const fmt f_objOutput   {(*oPath / fPath.stem()).string(), file.objFile};
+        
+        const auto l_rewrite = [&f_module]{
+            if(fs::exists(f_module.sv())) {
+                if (fs::exists(fmt(f_module,".old").sv())){
+                fs::remove(fmt(f_module,".old").sv());}
+                fs::rename(f_module.sv(),fmt(f_module,".old").str);
+            }
+        };
+        const std::string compileInclude = [this,&fPath](){
             std::string temp {};
             for (const auto& i : IncludeMap)
             {
                 for (const auto& m : i.second) {
-                    if (m == f_path.string()) {
+                    if (m == fPath.string()) {
                         temp.append(fmt(" -I",i.first.first));
                     }
                 }
             }
             return temp;
         }();
+
         const bool f_inObject = [&f_objOutput,this]() {
             for (const auto& obj : Object) {
-                if (obj == f_objOutput) {
+                if (obj == f_objOutput.sv()) {
                     return true;
                     break;
                 }
             } return false;
         }();
-        // std::string f_moduleOutput {fmt(" -o ", f_objOutput)};
-        std::string f_srcInput     {fmt("-c ",f_path.string()," -fmodule-output=",f_module," -fmodules-reduced-bmi -fprebuilt-module-path=",(*mPath / ". ").string())};
+        
+        fmt f_srcInput     {"-c ",fPath.string()," -fmodule-output=",f_module," -fmodules-reduced-bmi -fprebuilt-module-path=",(*mPath / ". ").string()};
         
         for (const auto& [mod , dep] : ModuleMap)
         {
-            if (fs::path(mod).filename().string() == f_path.filename().string()) {
+            if (fs::path(mod).filename()== fPath.filename()) {
                 for(const auto& d : dep)
                 {
-                    ModuleDeps[f_path.filename().string()].append(fmt(" -fmodule-file=",d,"=",(*mPath / d).string(),file.pcmModule," "));
+                    ModuleDeps[fPath.filename().string()].append(
+                        fmt(" -fmodule-file=",d,"=",(*mPath / d).string(),file.pcmModule," "));
                 }
             }
         }
         
-        if (!f_inObject)
-        {
-            Object.emplace_back(f_objOutput);
-        } 
-        const std::string f_cmd {fmt(Compiler, Options ,f_srcInput ,compileInclude,ModuleDeps[f_path.filename().string()]," -o ",f_objOutput).clean()};
-        if(cmdJson != nullptr) { cmdJson->addCompilecmd(f_path.parent_path().string(),f_cmd,f_path.string().c_str(),f_objOutput);}
+        if (!f_inObject) {Object.emplace_back(f_objOutput);}
+
+        const std::string f_cmd {fmt(Compiler, Options ,f_srcInput ,compileInclude,ModuleDeps[fPath.filename().string()]," -o ",f_objOutput).clean()};
+        
+        if(cmdJson != nullptr) { cmdJson->addCompilecmd(fPath.parent_path().string(),f_cmd,fPath.string(),f_objOutput);}
         
         if (recompile) {
             print << fmt("recompiling "_fmt.color(fmt::Green) , f_cmd , "\n");
-            if(fs::exists(f_module)) {
-                fs::rename(f_module,fmt(f_module,".old").str);
-            }
+            l_rewrite();
             return cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
-        } else if (!fs::exists(f_module))
+        } else if (!fs::exists(f_module.sv()))
         {
             print << fmt("compiling "_fmt.color(fmt::Green) , f_cmd , "\n");
             return  cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
-        } else if (fs::last_write_time(f_path) > fs::last_write_time(f_module))
+        } else if (fs::last_write_time(in_path) > fs::last_write_time(f_module.sv()))
         {
             print << fmt("updated "_fmt.color(fmt::Green) , f_cmd , "\n");
-            if(fs::exists(f_module)) {
-                if (fs::exists(fmt(f_module,".old").sv())){
-                fs::remove(fmt(f_module,".old").sv());}
-                fs::rename(f_module,fmt(f_module,".old").sv());
-            }
+            l_rewrite();
             return cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
         }
         return 0;
@@ -1009,7 +1007,8 @@ class Project
         const auto* oPath = &OutPath->objPath;
         const auto* mPath = &OutPath->modulePath;
         const fs::path    f_path = inPath;
-        const std::string f_objOutput {fmt((*oPath / f_path.filename().stem()).string(), file.objFile)};
+        const fmt f_objOutput {(*oPath / f_path.filename().stem()).string(), file.objFile};
+
         const bool f_isModule = file.isModule(f_path.extension().string());
         if (f_isModule) return;
         const std::string f_filein    {f_isModule ? fmt((*mPath / f_path.filename().stem()).string(),file.pcmModule ) : f_path.string()};
@@ -1033,7 +1032,7 @@ class Project
         
         const bool f_inObject = [&f_objOutput,this]() {
             for (const auto& obj : Object) {
-                if (obj == f_objOutput) {
+                if (obj == f_objOutput.sv()) {
                     return true;
                     break;
                 }
@@ -1054,13 +1053,12 @@ class Project
             return false;
         }();
             
-        const std::string f_cppOutput {fmt(f_isModule ?"":"-c ",f_filein, Modules.empty() ? "" : 
-            fmt(" -fprebuilt-module-path=", (*mPath / ".").string()," "))};
+        const fmt f_cppOutput {f_isModule ?"":"-c ",f_filein, Modules.empty() ? "" : 
+            fmt(" -fprebuilt-module-path=", (*mPath / ".").string()," ")};
             
         const std::string f_cmd {fmt(Compiler, Options ,f_cppOutput,compileInclude,f_inModuledep ? ModuleDeps[f_path.filename().string()] : "",f_isModule?" -c -o ":" -o ", f_objOutput).clean()};
         
         if(cmdJson != nullptr && !f_isModule) { cmdJson->addCompilecmd(f_path.parent_path().string(),f_cmd,f_path.string().c_str(),f_objOutput);}
-        // if(cmdJson != nullptr) { cmdJson->addCompilecmd(f_cmd);}
         
         if (!f_inObject)
         {
@@ -1072,12 +1070,12 @@ class Project
             print << fmt("recompiling "_fmt.color(fmt::Bold_Green) , f_cmd , "\n");
             cmd << f_cmd.c_str() >> "error compiling "_fmt.color(fmt::Bold_Red);
             return;
-        } else if (!fs::exists(f_objOutput))
+        } else if (!fs::exists(f_objOutput.sv()))
         {
             print << fmt("compiling "_fmt.color(fmt::Bold_Green) , f_cmd , "\n");
             cmd << f_cmd.c_str() >> "error compiling "_fmt.color(fmt::Bold_Red);
             return;
-        } else if (fs::last_write_time(f_path) > fs::last_write_time(f_objOutput))
+        } else if (fs::last_write_time(f_path) > fs::last_write_time(f_objOutput.sv()))
         {
             print << fmt("updated "_fmt.color(fmt::Bold_Green) , f_cmd , "\n");
             cmd << f_cmd.c_str() >> "error compiling "_fmt.color(fmt::Bold_Red);
@@ -1090,7 +1088,9 @@ class Project
         print << fmt("linking"_fmt.color(fmt::Bold_Green).endl());
         const std::string f_targetOut {fmt((OutPath->exePath / target).string())};
         const std::string f_Output {fmt(outFile == staticLib ? " " : " -o ", f_targetOut, outFile == staticLib ? file.libFile : file.executable)};
+        
         std::string f_Object;
+
         if(outFile == Project::staticLib) {
             f_Object = fmt(Modules.empty() ? "" : fmt(" -fprebuilt-module-path=", (OutPath->modulePath / ".").string()));
             outputName = f_targetOut;
@@ -1101,6 +1101,7 @@ class Project
                 fs::rename(fmt(f_targetOut, file.executable).str, fmt(f_targetOut, file.executable, ".old").str);
             }
         }
+
         for (const auto& p : Object) {
             for (const auto& deps : Dependency)
             {
