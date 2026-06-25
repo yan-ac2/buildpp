@@ -1,18 +1,12 @@
 
 module;
 #include <glad/glad.h>
-#include <cstring> 
-#include <filesystem> 
-#include <iostream>
-#include <fstream>
-#include <string>
-#include <chrono>
-#include <tuple>
-#include <unordered_map>
-#include <numeric>
+
 export module lib.renderer;
+import test.std;
 import lib.types;
 import lib.RGFW;
+
 namespace fs = std::filesystem;
 export
 {
@@ -158,7 +152,7 @@ export
         void CompileShader() {
             auto cmpShader = [this](const char* source,shaderPair* spair) {
                 spair->second = glCreateShader(spair->first);
-                glShaderSource(spair->second,1,&source,NULL);
+                glShaderSource(spair->second,1,&source,nullptr);
                 glCompileShader(spair->second);
                 err("ERROR: shader compilation error",spair->first, spair->second);
             };
@@ -215,13 +209,13 @@ export
             if (type == program) {
                 glGetProgramiv(objectID, GL_LINK_STATUS, &success);
                 if (!success) {
-                    glGetProgramInfoLog(objectID, 512, NULL, infoLog);
+                    glGetProgramInfoLog(objectID, 512, nullptr, infoLog);
                     std::cout << message << "\n" << infoLog << "\n";
                 }
             } else {
                 glGetShaderiv(objectID, GL_COMPILE_STATUS, &success);
                 if (!success) {
-                    glGetShaderInfoLog(objectID, 512, NULL, infoLog);
+                    glGetShaderInfoLog(objectID, 512, nullptr, infoLog);
                     std::cout << message << "\n" << infoLog << "\n";
                 }
             }
