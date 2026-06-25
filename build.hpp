@@ -949,25 +949,27 @@ class Project
     
     bool isModuleExist(std::string_view infile)
     {
-        const fs::path f_path {infile};
-        if (!infile.empty() && (infile.front() == '<' || infile.front() == '"')) {
+        bool isHeader = (infile.front() == '<' || infile.front() == '"');
+        if (!infile.empty() && isHeader) {
             return true; 
         }
+
+        const fs::path f_path = infile;
         const auto& mPath = OutPath->modulePath;
         const auto modMap = ModuleMap.find(infile);
         if (modMap == ModuleMap.end()) {
-            return false; // Or true, depending on your fallback logic if not tracked
+            return true; // Or true, depending on your fallback logic if not tracked
         }
         for (const auto& m : modMap->second)
         {
             if (m.empty()){continue;}
             bool isWrapped = (m.front() == '<' || m.front() == '"');
-            auto moduleFile = fmt((mPath / (isWrapped ? m.substr(1, m.length() - 2) : m)).string(), file.pcmModule).sv();
+            auto moduleFile = fmt((mPath / (isWrapped ? m.substr(1, m.length() - 2) : m)).string(), file.pcmModule).clean().str;
             print << moduleFile << " " << (fs::exists(moduleFile) ? "exist" : "not exist") << "\n";
             if (!fs::exists(moduleFile)) {
                 return false;
             }
-            if(fs::last_write_time(f_path) > fs::last_write_time(moduleFile) && recompile)
+            if(!isWrapped && (fs::last_write_time(f_path) > fs::last_write_time(moduleFile) && recompile))
             {
                 return false;
             }

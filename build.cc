@@ -138,7 +138,7 @@ int selfCompile(bool recompile)
 int compileProject(bool recompile)
 {
         ThreadPool pool(std::thread::hardware_concurrency());
-        const fs::path rootPath = fs::current_path();
+        const fs::path rootPath = ".";
         const fs::path exePath = rootPath / "bin";
 
         compileCommand cmdJson;
