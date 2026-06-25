@@ -66,37 +66,38 @@ export
         operator uint8*() {return col;}
         
     };
-    template <size_t N>
-    struct vecutl {
-        // void compilation_failed_invalid_swizzle_character();
-        std::size_t num[N];
-        
-        constexpr vecutl(const char (&input)[N + 1]) : num{} {
-            for (size_t i = 0; i < N; ++i) {
-                char c = input[i];
-
-                num[i] = (c == 'x' ? 0 :
-                        c == 'y' ? 1 : 
-                        c == 'z' ? 2 :
-                        c == 'w' ? 3 : 4);                
-            }
-        }
-        // constexpr std::size_t err(int i) {
-        // }
-        constexpr size_t getSize() const { return N; }
-        constexpr bool max(int m) const { 
-            for (const int& i : num) {
-                if (i > m - 1) return false;
-            }
-            return true;
-        }
-    };
-
-    template <size_t N>
-    vecutl(const char(&)[N]) -> vecutl<N - 1>;
+    
 
     template <typename T,int N>
     class vec {
+        template <size_t Num>
+        struct vecutl {
+            // void compilation_failed_invalid_swizzle_character();
+            std::size_t num[Num];
+            
+            constexpr vecutl(const char (&input)[Num + 1]) : num{} {
+                for (size_t i = 0; i < N; ++i) {
+                    char c = input[i];
+
+                    num[i] = (c == 'x' ? 0 :
+                            c == 'y' ? 1 : 
+                            c == 'z' ? 2 :
+                            c == 'w' ? 3 : 4);                
+                }
+            }
+            // constexpr std::size_t err(int i) {
+            // }
+            constexpr size_t getSize() const { return N; }
+            constexpr bool max(int m) const { 
+                for (const int& i : num) {
+                    if (i > m - 1) return false;
+                }
+                return true;
+            }
+        };
+
+        template <size_t Num>
+        vecutl(const char(&)[Num]) -> vecutl<Num - 1>;
     public:
         T _vec[N] {};
 

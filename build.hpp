@@ -869,8 +869,10 @@ class Project
 
     Project& scanModule() {
         for (const auto& p : ProjectFile) {
+            
             const auto& name = fs::path(p).filename().stem().string();
             print << fmt("Scan module " , p ).endl();
+
             if (p.empty())        {err(true ,"Error: Empty project path"); }
 
             std::ifstream files(p);
@@ -881,13 +883,15 @@ class Project
                 size_t ipos = line.find(file.importToken);
                 if (ipos != std::string::npos && line.find(';') != std::string::npos) {
                     std::string moduleName = line.substr(ipos + file.importToken.length() + 1);
-                    moduleName.erase(moduleName.find(';'));
+                    size_t semiColonPos = moduleName.find(';');
+                    if (semiColonPos != std::string::npos) {
+                        moduleName.erase(semiColonPos);
+                    }
                     print << fmt("import module "_fmt.color(fmt::Bold_Blue) , moduleName , " found in " , p).endl();
                     
-                    // for (const auto& i : SystemHeader) {
-                    //     // print << fmt(moduleName.substr(1,moduleName.find('>')-1)).endl(); 
-                    //     if (moduleName.substr(1,moduleName.find('>')-1) == i)
-                    //     ModuleMap[p].push_back(i);
+                    // if (moduleName.front() == '<' || moduleName.front() == '"') {
+                    //     std::string rawHeader = moduleName.substr(1, moduleName.size() - 2);
+                    //     ModuleMap[p].push_back(rawHeader);
                     // }
 
                     for (const auto& i : Modules)
@@ -909,26 +913,22 @@ class Project
     {
         const auto& mPath = OutPath->modulePath;
         const fs::path f_path {infile};
-        bool exist = [&mPath,&infile,&f_path,this] -> bool{
-            
-            const auto modMap = ModuleMap.find(infile)->second;
-            if (!ModuleMap.empty())
+        const auto modMap = ModuleMap.find(infile)->second;
+        if (!ModuleMap.empty())
+        {
+            for (const auto& m : modMap)
             {
-                for (const auto& m : modMap)
+                auto moduleFile = fmt((mPath / m).string(), file.pcmModule).sv();
+                if (!fs::exists(moduleFile)) {
+                    return false;
+                }
+                if(fs::last_write_time(f_path) > fs::last_write_time(moduleFile) && recompile)
                 {
-                    auto moduleFile = fmt((mPath / m).string(), file.pcmModule).sv();
-                    if (!fs::exists(moduleFile)) {
-                        return false;
-                    }
-                    if(fs::last_write_time(f_path) > fs::last_write_time(moduleFile) && recompile)
-                    {
-                        return false;
-                    }
+                    return false;
                 }
             }
-            return true;
-        }();
-        return exist;
+        }
+        return true;
     }
 
     int compileModule(std::string_view in_path) {
@@ -936,14 +936,14 @@ class Project
         const auto* mPath = &OutPath->modulePath;
         const auto* oPath = &OutPath->objPath;
         
-        const fmt f_module      {(*mPath / fPath.stem().string()).string(), file.pcmModule};
+        const fmt f_module      {(*mPath / fPath.stem()).string(), file.pcmModule};
         const fmt f_objOutput   {(*oPath / fPath.stem()).string(), file.objFile};
         
         const auto l_rewrite = [&f_module]{
-            if(fs::exists(f_module.sv())) {
-                if (fs::exists(fmt(f_module,".old").sv())){
-                fs::remove(fmt(f_module,".old").sv());}
-                fs::rename(f_module.sv(),fmt(f_module,".old").str);
+            if(fs::exists(f_module.str)) {
+                if (fs::exists(fmt(f_module,".old").str)){
+                fs::remove(fmt(f_module,".old").str);}
+                fs::rename(f_module.str,fmt(f_module,".old").str);
             }
         };
         const std::string compileInclude = [this,&fPath](){
@@ -972,7 +972,7 @@ class Project
         
         for (const auto& [mod , dep] : ModuleMap)
         {
-            if (fs::path(mod).filename()== fPath.filename()) {
+            if (fs::path(mod).filename() == fPath.filename()) {
                 for(const auto& d : dep)
                 {
                     ModuleDeps[fPath.filename().string()].append(
@@ -991,11 +991,11 @@ class Project
             print << fmt("recompiling "_fmt.color(fmt::Green) , f_cmd , "\n");
             l_rewrite();
             return cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
-        } else if (!fs::exists(f_module.sv()))
+        } else if (!fs::exists(f_module.str))
         {
             print << fmt("compiling "_fmt.color(fmt::Green) , f_cmd , "\n");
             return  cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
-        } else if (fs::last_write_time(in_path) > fs::last_write_time(f_module.sv()))
+        } else if (fs::last_write_time(in_path) > fs::last_write_time(f_module.str))
         {
             print << fmt("updated "_fmt.color(fmt::Green) , f_cmd , "\n");
             l_rewrite();
@@ -1013,6 +1013,7 @@ class Project
 
         const bool f_isModule = file.isModule(f_path.extension().string());
         if (f_isModule) return;
+
         const std::string f_filein    {f_isModule ? fmt((*mPath / f_path.filename().stem()).string(),file.pcmModule ) : f_path.string()};
         // print << fmt("is module " ,f_isModule ? "true ": "false ",f_path.extension().string()).color(fmt::Bold_Red).endl();
         // const bool f_includefound = std::find_if(IncludeMap.begin(), IncludeMap.end(), [&f_path](const auto& p) {
@@ -1034,7 +1035,7 @@ class Project
         
         const bool f_inObject = [&f_objOutput,this]() {
             for (const auto& obj : Object) {
-                if (obj == f_objOutput.sv()) {
+                if (obj == f_objOutput.str) {
                     return true;
                     break;
                 }
@@ -1043,7 +1044,7 @@ class Project
         const bool f_inModuledep = [&f_isModule,&f_path,&mPath,this](){
             if (f_isModule) return true;
             for (const auto& [mod , dep] : ModuleMap) {
-                    if (fs::path(mod).filename().string() == f_path.filename().string()) {
+                    if (fs::path(mod).filename() == f_path.filename()) {
                         for(const auto& d : dep)
                         {
                             ModuleDeps[f_path.filename().string()].append(fmt(" -fmodule-file=",d,"=",(*mPath / d).string(),file.pcmModule," "));
@@ -1060,7 +1061,7 @@ class Project
             
         const std::string f_cmd {fmt(Compiler, Options ,f_cppOutput,compileInclude,f_inModuledep ? ModuleDeps[f_path.filename().string()] : "",f_isModule?" -c -o ":" -o ", f_objOutput).clean()};
         
-        if(cmdJson != nullptr && !f_isModule) { cmdJson->addCompilecmd(f_path.parent_path().string(),f_cmd,f_path.string().c_str(),f_objOutput);}
+        if(cmdJson != nullptr && !f_isModule) { cmdJson->addCompilecmd(f_path.parent_path().string(),f_cmd,f_path.string(),f_objOutput);}
         
         if (!f_inObject)
         {
