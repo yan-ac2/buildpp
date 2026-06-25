@@ -15,7 +15,6 @@ module;
 export module lib.renderer;
 import lib.RGFW;
 import lib.types;
-import lib.std;
 namespace fs = std::filesystem;
 export
 {

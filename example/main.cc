@@ -61,22 +61,34 @@ class App
 };
 
 template <size_t N>
-struct arrutl {
+struct vecutl {
     std::size_t num[N];
     
-    constexpr arrutl(const char (&input)[N + 1]) : num{} {
-        for (size_t i = 0; i < N; ++i) { // Stop before the null-terminator
+    constexpr vecutl(const char (&input)[N + 1]) : num{} {
+
+        for (size_t i = 0; i < N; ++i) {
             num[i] = (input[i] == 'x' ? 0 :
                       input[i] == 'y' ? 1 : 
                       input[i] == 'z' ? 2 :
-                      input[i] == 'w' ? 3 : 0);
+                      input[i] == 'w' ? 3 : err());
         }
     }
+    std::size_t err() {
+        static_assert(0==0,"err");
+        return 0;
+    }
     constexpr size_t getSize() const { return N; }
+    constexpr bool max(int m) const { 
+        for (const int& i : num) {
+            if (i > m - 1) return false;
+        }
+        return true;
+    }
 };
 
 template <size_t N>
-arrutl(const char(&)[N]) -> arrutl<N - 1>;
+vecutl(const char(&)[N]) -> vecutl<N - 1>;
+
 template <typename T>
 class svec2 {
 public:
@@ -87,9 +99,9 @@ public:
     T& operator []() {
 
     }
-    template <arrutl s>
-    inline std::array<T&, s.getSize()> get() {
-        std::array<T&, s.getSize()> buffer;
+    template <vecutl s> requires (s.getSize() > 1 && s.max(2))
+    std::array<T, s.getSize()> get() const {
+        std::array<T, s.getSize()> buffer;
         
         for (size_t i = 0; i < s.getSize(); ++i) {
             // Correctly map the pointer using the compiled string indices
@@ -100,18 +112,22 @@ public:
     
     }
 
-    template <arrutl s> requires (s.getSize() == 1)
-    inline T& get() {
+    template <vecutl s> requires (s.getSize() == 1) 
+    T& get() const {
         return vec[s.num[0]];
     }
 };
+
 int main ()
 {
     svec2<int> s {2,5};
 
-    s.get<"xy">() = 50;
-    std::cout << s.get<"y">() << "\n";
-    
+    auto ss = s.get<"yxxxx">();
+    for (const auto& i : ss) {
+        std::cout << i << " ";
+    }
+    std::cout << "\n";
+
     App app;
     auto* ren = &app.ren;
     auto start = std::chrono::high_resolution_clock::now();

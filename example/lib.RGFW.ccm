@@ -6,7 +6,6 @@ module;
 #include <RGFW.h>
 
 export module lib.RGFW;
-import lib.std;
 import lib.types;
 export 
 {
