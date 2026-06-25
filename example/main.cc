@@ -80,35 +80,36 @@ arrutl(const char(&)[N]) -> arrutl<N - 1>;
 template <typename T>
 class svec2 {
 public:
-    T x, y;
-    svec2() : x(0), y(0) {}
-    svec2(T x, T y) : x(x), y(y) {}
+    T vec[2];
+    svec2() : vec(0) {}
+    svec2(T x, T y) : vec(x,y) {}
 
+    T& operator []() {
+
+    }
     template <arrutl s>
-    inline std::array<T*, s.getSize()> get() {
-    
-        std::array<T*, s.getSize()> buffer;
+    inline std::array<T&, s.getSize()> get() {
+        std::array<T&, s.getSize()> buffer;
         
         for (size_t i = 0; i < s.getSize(); ++i) {
             // Correctly map the pointer using the compiled string indices
-            buffer[i] = (s.num[i] == 0) ? &x : &y;
+            buffer[i] = vec[s.num[i]];
         }
         
-        // Simply return the array; std::variant handles the conversion implicitly
         return buffer; 
     
     }
 
     template <arrutl s> requires (s.getSize() == 1)
     inline T& get() {
-        return (s.num[0] == 0) ? x : y;
+        return vec[s.num[0]];
     }
 };
 int main ()
 {
     svec2<int> s {2,5};
 
-    *s.get<"xy">()[1] = 50;
+    s.get<"xy">() = 50;
     std::cout << s.get<"y">() << "\n";
     
     App app;
