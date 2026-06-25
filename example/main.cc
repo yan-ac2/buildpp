@@ -5,6 +5,7 @@
 #include <chrono>
 #include <type_traits>
 #include <glad/glad.h>
+#include <variant>
 import lib;
 
 struct buffer {char buff;};
@@ -59,34 +60,83 @@ class App
     }
 };
 
+template <size_t N>
+struct arrutl {
+    std::size_t num[N];
+    
+    constexpr arrutl(const char (&input)[N + 1]) : num{} {
+        for (size_t i = 0; i < N; ++i) { // Stop before the null-terminator
+            num[i] = (input[i] == 'x' ? 0 :
+                      input[i] == 'y' ? 1 : 
+                      input[i] == 'z' ? 2 :
+                      input[i] == 'w' ? 3 : 0);
+        }
+    }
+    constexpr size_t getSize() const { return N; }
+};
+
+template <size_t N>
+arrutl(const char(&)[N]) -> arrutl<N - 1>;
+template <typename T>
+class svec2 {
+public:
+    T x, y;
+    svec2() : x(0), y(0) {}
+    svec2(T x, T y) : x(x), y(y) {}
+
+    template <arrutl s>
+    inline std::array<T*, s.getSize()> get() {
+    
+        std::array<T*, s.getSize()> buffer;
+        
+        for (size_t i = 0; i < s.getSize(); ++i) {
+            // Correctly map the pointer using the compiled string indices
+            buffer[i] = (s.num[i] == 0) ? &x : &y;
+        }
+        
+        // Simply return the array; std::variant handles the conversion implicitly
+        return buffer; 
+    
+    }
+
+    template <arrutl s> requires (s.getSize() == 1)
+    inline T& get() {
+        return (s.num[0] == 0) ? x : y;
+    }
+};
 int main ()
 {
+    svec2<int> s {2,5};
+
+    *s.get<"xy">()[1] = 50;
+    std::cout << s.get<"y">() << "\n";
+    
     App app;
     auto* ren = &app.ren;
     auto start = std::chrono::high_resolution_clock::now();
     Shader shader("res");
-    
+
     float x = 0,y = 0;
 
     app.init();
 
     float vertices[] {
-        -0.95f,-0.6f,0.0f,1.0f,0.0f,0.0f,
-        -0.5f,0.6f,0.0f,0.0f,1.0f,0.0f,
-        -0.1f,-0.6f, 0.0f,0.0f,0.0f,1.0f,
+        -0.95f,-0.6f,0.0f,1.0f,0.0f,0.0f,0.0f,0.0f,
+        -0.5f,0.6f,0.0f,0.0f,1.0f,0.0f,1.0f,0.0f,
+        -0.1f,-0.6f, 0.0f,0.0f,0.0f,1.0f,0.5f,1.0f
     };
     float vertices2[] {
-        0.95f,-0.6f,0.0f,0.0f,1.0f,0.0f,
-        0.5f,0.6f,0.0f,1.0f,0.0f,0.0f,
-        0.1f,-0.6f, 0.0f,0.0f,0.0f,1.0f,
+        0.95f,-0.6f,0.0f,0.0f,1.0f,0.0f,0.0f,0.0f,
+        0.5f,0.6f,0.0f,1.0f,0.0f,0.0f,1.0f,0.0f,
+        0.1f,-0.6f, 0.0f,0.0f,0.0f,1.0f,0.5f,1.0f
     };
 
 
     float box[] {
-        0.5f, 0.5f,0.0f,
-        0.5f, -0.5f,0.0f,
-        -0.5f,-0.5f,0.0f,
-        -0.5f,0.5f,0.0f,
+        0.5f, 0.5f,0.0f,0.0f,1.0f,0.0f,0.0f,1.0f,
+        0.5f, -0.5f,0.0f,0.0f,0.0f,1.0f,-0.5f,1.0f,
+        -0.5f,-0.5f,0.0f,0.0f,1.0f,0.0f,0.5f,1.0f,
+        -0.5f,0.5f,0.0f,0.0f,0.0f,1.0f,1.0f,0.5f,
     };
 
     unsigned int boxIndices[] = {
@@ -95,9 +145,11 @@ int main ()
     };
     
     // ren->BufferObj(3,12, box,boxIndices,6),
-    ren->initBuffer<2>(3,64);
-    ren->pushVertices(vertices,18);
-    ren->pushVertices(vertices2,18);
+    ren->initBuffer<3>({3,3,2},128);
+    ren->pushVertices(vertices,24);
+    ren->pushVertices(vertices2,24);
+    // 
+    // ren->pushVertices(box,32);
     shader.CompileShader();
     shader.CompileProgram();
     
@@ -148,7 +200,7 @@ int main ()
         glBindVertexArray(ren->VAO);
         shader->use();
     
-        glDrawArrays(GL_TRIANGLES,0,64);
+        glDrawArrays(GL_TRIANGLES,0,128);
         // glDrawElements(GL_TRIANGLES,6,GL_UNSIGNED_INT,0);
 
     };

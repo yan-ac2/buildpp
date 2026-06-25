@@ -11,6 +11,7 @@ module;
 #include <chrono>
 #include <tuple>
 #include <unordered_map>
+#include <numeric>
 export module lib.renderer;
 import lib.RGFW;
 import lib.types;
@@ -49,8 +50,9 @@ export
         void swapbuffer() {
             swapBuffer(window);
         }
+        
         template<int Attrib>
-        void initBuffer(int component,std::size_t maxVert,bool color = false,std::size_t maxIndices = 0) {
+        void initBuffer(std::array<int,Attrib> component,std::size_t maxVert,std::size_t maxIndices = 0) {
             glGenVertexArrays(1,&VAO);
             glBindVertexArray(VAO);
             
@@ -59,25 +61,29 @@ export
             glBindBuffer(GL_ARRAY_BUFFER,VBO);
             glBufferData(GL_ARRAY_BUFFER, maxVert * sizeof(float),nullptr,GL_DYNAMIC_DRAW);
             
-            GLsizei stride = Attrib * component * sizeof(float);
+            GLsizei stride = std::reduce(component.begin(),component.end(),0) * sizeof(float);
+            std::size_t offset = 0; 
             for (int i = 0; i < Attrib; ++i) {
-                void* offset = (void*)(i * component * sizeof(float));
                 glVertexAttribPointer(
-                    i, component,GL_FLOAT,GL_FALSE, 
+                    i, component[i],GL_FLOAT,
+                    GL_FALSE, 
                     stride, 
-                    offset
+                    (void*)offset
                 );
                 glEnableVertexAttribArray(i);
+
+                offset += component[i] * sizeof(float);
             }
 
             if (maxIndices > 0) {
                 glGenBuffers(1,&EBO);
                 glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,EBO);
-                glBufferData(GL_ELEMENT_ARRAY_BUFFER, maxIndices * sizeof(float),nullptr,GL_DYNAMIC_DRAW);
+                glBufferData(GL_ELEMENT_ARRAY_BUFFER, maxIndices * sizeof(unsigned int),nullptr,GL_DYNAMIC_DRAW);
             }
 
             glBindVertexArray(0);
             glBindBuffer(GL_ARRAY_BUFFER,0);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
         }
 
         void pushVertices(float* vertices, std::size_t count) {
