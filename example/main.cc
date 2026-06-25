@@ -65,7 +65,6 @@ struct vecutl {
     std::size_t num[N];
     
     constexpr vecutl(const char (&input)[N + 1]) : num{} {
-
         for (size_t i = 0; i < N; ++i) {
             num[i] = (input[i] == 'x' ? 0 :
                       input[i] == 'y' ? 1 : 
@@ -73,9 +72,8 @@ struct vecutl {
                       input[i] == 'w' ? 3 : err());
         }
     }
-    std::size_t err() {
-        static_assert(0==0,"err");
-        return 0;
+    constexpr std::size_t err() {
+        throw "Invalid swizzle character! Only x, y, z, w are allowed.";
     }
     constexpr size_t getSize() const { return N; }
     constexpr bool max(int m) const { 
