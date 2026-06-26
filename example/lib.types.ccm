@@ -45,11 +45,42 @@ export
     template<typename F,typename... Args>  struct isFn_ptr<F(*)(Args...)> : true_t {};
     
     namespace fs = std::filesystem;
+        
+    template <size_t N>
+    struct StaticString
+    {
+        char data[N] {};
+
+        constexpr StaticString(const char (&input)[N + 1])
+        {
+            for(size_t i {0};input[i] != '\0';i++) {
+                data[i] = input[i];
+            }
+        }
+        constexpr const size_t getSize() const {return N;}
+        constexpr const char* getData () const {return data;}
+        constexpr operator const char*() const {return data;}
+    };
+    template <size_t N> StaticString(const char(&)[N]) -> StaticString<N - 1>;
+
+    template <class Ty,int ID,StaticString S>
+    struct var {
+        static constexpr std::string_view Name {S.getData(),S.getSize()};
+        static constexpr int id = ID; 
+        using type = Ty;
+    };
+
+    using int32_v   = var<int, 1, "int">;
+    using int32     = int32_v::type;
+    // int32 s = 12;
+    static_assert(int32_v::Name == "int", "");
+    static_assert(int32_v::id == 1, "");
+    static_assert(sizeof(int32) == 4, "");
+    
     using f32       = float;
     using f64       = double;
     using int8      = char;
     using uint8     = std::uint8_t;
-    using int32     = std::int32_t;
     using uint32    = std::uint32_t;
     using int64     = std::int64_t;
     using uint64    = std::uint64_t;

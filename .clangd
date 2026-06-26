@@ -6,7 +6,6 @@ CompileFlags:
   Remove: [
     -fmodule-output=*,
     -fmodule-file=*,
-    -fprebuilt-module-path=*,
     -fno-modules-reduced-bmi
   ]
   Add: [

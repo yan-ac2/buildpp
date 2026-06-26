@@ -24,6 +24,8 @@ template<typename  T,typename U> struct is_enum : false_t {};
 template<typename T> struct is_ptr     :false_t {};
 template<typename T> struct is_ptr<T*> :true_t  {};
 
+
+
 struct variantBuffer{char buffer;};
 inline void* operator new (size_t size,variantBuffer* p) {return p;}
 inline constexpr void memcopy(void* to,const void* from,const size_t len) noexcept {
@@ -241,22 +243,6 @@ class string {
     constexpr int getindex() const noexcept {return storage.type_index;}
 };
 
-template <size_t N>
-struct StaticString
-{
-    char data[N] {};
-
-    constexpr StaticString(const char (&input)[N + 1])
-    {
-        for(size_t i {0};input[i] != '\0';i++) {
-            data[i] = input[i];
-        }
-    }
-    constexpr const size_t getSize() const {return N;}
-    constexpr const char* getData () {return data;}
-    constexpr operator char*() const {return data;}
-};
-template <size_t N> StaticString(const char(&)[N]) -> StaticString<N - 1>;
 
 int main()
 {
