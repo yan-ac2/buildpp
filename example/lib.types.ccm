@@ -1,6 +1,8 @@
 module;
 export module lib.types;
+
 import test.std;
+
 template <class Ty, Ty Val>
 struct integral_constant {
     enum : Ty {value = Val};
@@ -45,6 +47,9 @@ export
     using size_t    = std::size_t;
     using cstr      = const char*;
     
+    struct buffer {char buff;};
+    inline void* operator new(size_t size,buffer* Buff) {return Buff;} 
+
     struct RGBA {
         uint8 col[4];
         constexpr RGBA() {}
@@ -57,7 +62,6 @@ export
         
     };
     
-
     template <typename T,int N>
     class vec {
         template <size_t Num>
@@ -74,6 +78,9 @@ export
                             c == 'z' ? 2 :
                             c == 'w' ? 3 : 4);                
                 }
+            }
+            constexpr std::size_t operator[](std::size_t i) const {
+                return num[i];
             }
             // constexpr std::size_t err(int i) {
             // }
@@ -108,7 +115,7 @@ export
 
         template <vecutl s> requires (s.getSize() == 1) 
         T& get() {
-            return _vec[s.num[0]];
+            return _vec[s[0]];
         }
     };
 

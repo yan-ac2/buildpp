@@ -3,13 +3,12 @@
 
 import lib;
 import test.std;
-struct buffer {char buff;};
-inline void* operator new(size_t size,buffer* Buff) {return Buff;} 
 
 template <typename T>
 concept TupleLike = requires {
     typename std::tuple_size<std::remove_cvref_t<T>>::type;
 };
+
 std::variant<int,float> vars;
 class App
 {
