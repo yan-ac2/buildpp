@@ -1,10 +1,7 @@
 #include "build.hpp"
 
-#include <filesystem>
 #include <functional>
 #include <mutex>
-#include <condition_variable>
-#include <string_view>
 #include <thread>
 #include <queue>
 
@@ -73,15 +70,15 @@ int test()
     Project test("test",&outPath,Project::exe,true);
 
     #ifdef _WIN32
-    test.setCompiler("clang++").setOptions("-O3 -Wall -std=c++23")
+    test.setCompiler("clang++").setOptions("-Oz -s -flto -Wall -std=c++23")
     #elif __unix__
     test.setCompiler("clang++")
     .setOptions("-O0 -std=c++23 -nostdlib ")
     #endif
-    .setProjectPath(rootPath)
+    .setProjectPath(rootPath.string())
     .addSourcePath("testlib")
-    .setMain((test.SourcePath[0] / "inprogress.cc").string())
-    .addSource({(test.SourcePath[0] / "inprogress.cc").string()})
+    .setMain((fs::path(test.SourcePath[0]) / "inprogress.cc").string())
+    .addSource({(fs::path(test.SourcePath[0]) / "inprogress.cc").string()})
     .getCppFile();
     
     #ifdef __unix__
@@ -112,13 +109,15 @@ int selfCompile(bool recompile)
     Project rebuild("build",&outPath,Project::exe,recompile);
 
     #ifdef _WIN32
-    rebuild.setCompiler("clang++").setOptions("-fuse-ld=lld -Wall -std=c++23")
+    rebuild.setCompiler("clang++")
+    .setOptions("-O2 -flto=thin -fno-rtti -fuse-ld=lld -Wall -std=c++23")
+    .setLdOptions("-s")
     #elif __unix__
     rebuild.setCompiler("clang++")
     .setOptions("-O3 -Wall -std=c++23 -stdlib=libc++ ")
     #endif
-    .setProjectPath(rootPath)
-    .addSourcePath(rootPath)
+    .setProjectPath(rootPath.string())
+    .addSourcePath(rootPath.string())
     .setMain((rebuild.Path / "build.cc").string())
     .addSource({"build.cc"})
     .getCppFile();
@@ -138,7 +137,7 @@ int selfCompile(bool recompile)
 int compileProject(bool recompile)
 {
         ThreadPool pool(std::thread::hardware_concurrency());
-        const fs::path rootPath = ".";
+        const fs::path rootPath = fs::current_path();
         const fs::path exePath = rootPath / "bin";
 
         compileCommand cmdJson;
@@ -155,6 +154,7 @@ int compileProject(bool recompile)
         #elif __unix__
         libGLAD.setCompiler("clang")
         #endif
+        .addCompileCommand(&cmdJson)
         .setOptions("-O0")
         .setProjectPath(rootPath / "example"/ "lib" / "glad")
         .setSourcePath("src")
@@ -191,21 +191,22 @@ int compileProject(bool recompile)
     
         #ifdef _WIN32
         mainProj.setCompiler("clang++")
-        .setOptions("-O3 -fno-exceptions -std=c++23")
-        .setLdOptions("-fuse-ld=lld -flto=full")
+        .setOptions(" -O2 -flto=thin -fno-rtti -fno-exceptions -fuse-ld=lld -std=c++23")
+        .setLdOptions("-s ")
         #elif __unix__
         mainProj.setCompiler("clang++")
         .setOptions("-O3 -fno-exceptions  -stdlib=libc++ -std=c++23")
         #endif
         .addCompileCommand(&cmdJson)
-        .setProjectPath((rootPath / "example"))
-        .addSourcePath(mainProj.Path)
-        .setMain("main.cc")
+        .setProjectPath((rootPath).string())
+        .addSourcePath((mainProj.Path / "example").string())
+        .setMain("main.cc");
         // .getLib(&meshoptimizer)
-        .getLib(&libGLAD)
-        .addIncludefile(mainProj.SourcePath[0]/ "lib" / "RGFW")
-        .addIncludefile(mainProj.SourcePath[0]/ "lib" / "glad" / "include")
-        .setResourcePath(mainProj.SourcePath[0] / "res"/".")
+        print << fmt("Source Path: "_fmt.color(fmt::Red),mainProj.getMainPath()," root path: "_fmt.color(fmt::Blue),mainProj.Path.string(),"\n");
+        mainProj.getLib(&libGLAD)
+        .addIncludefile((mainProj.Path / mainProj.getMainPath() / "lib" / "RGFW").string())
+        .addIncludefile((mainProj.Path / mainProj.getMainPath() / "lib" / "glad" / "include").string())
+        .setResourcePath("res")
         .getCppFile();
     
         mainProj.scanHeader().scanModule()

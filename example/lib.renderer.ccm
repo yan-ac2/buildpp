@@ -1,13 +1,19 @@
 
 module;
+#include <array>
+#include <chrono>
+#include <iostream>
+#include <filesystem>
+#include <numeric>
+#include <unordered_map>
+
 #include <glad/glad.h>
 
 export module lib.renderer;
-import test.std;
-import lib.types;
-import lib.RGFW;
 
-namespace fs = std::filesystem;
+import lib.RGFW;
+import lib.types;
+
 export
 {
     template<StaticString str>
@@ -77,7 +83,7 @@ export
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
         }
 
-        void pushVertices(float* vertices, std::size_t count) {
+        void pushVertices(float* vertices, size_t count) {
             count = count * sizeof(float);
 
             glBindBuffer(GL_ARRAY_BUFFER, VBO);
@@ -87,7 +93,7 @@ export
             glBindBuffer(GL_ARRAY_BUFFER,0);
         }
 
-        void pushIndices(unsigned int* indices,std::size_t count) {
+        void pushIndices(unsigned int* indices,size_t count) {
             if (EBO == 0) return;
             count = count * sizeof(unsigned int);
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);

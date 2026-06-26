@@ -1,5 +1,17 @@
-If:
-    PathExclude:
-        - ".build/.*"
+Diagnostics:
+  Suppress: [
+    "module_odr_violation_record"
+  ]
 CompileFlags:
-    Add: ["-std=c++23"]
+  Remove: [
+    -fmodule-output=*,
+    -fmodule-file=*,
+    -fprebuilt-module-path=*,
+    -fno-modules-reduced-bmi
+  ]
+  Add: [
+    -std=c++23,
+    -fno-exceptions,
+    --target=x86_64-w64-windows-gnu
+  ]
+  Compiler: clang++
