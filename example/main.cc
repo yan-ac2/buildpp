@@ -121,23 +121,24 @@ int main ()
     auto inputUpdate = [](App* app,
         Shader* shader,
         float* x,float* y) {
+        int32 b = 0;
         PollEvent(16);
         for (;CheckEvent(&app->win,&app->ev);) {
             switch (app->ev.type)
             {
                 case eventType::keyPressed:
                 {
-                    std::printf("%i \n",getKey(&app->ev));
-                    switch(getKey(&app->ev))
+                    b = getKey(&app->ev);
+                    switch(b)
                     {
-                        case Key::key_escape: {CloseWindow(&app->win); break;}
-                        case Key::key_a: { shader->CompileShader(),shader->CompileProgram(); break;}
-                        case Key::key_b: { break;}
-                        case Key::key_c: { break;}
-                        case Key::key_k: {*x+=0.01f, shader->setFloat("x", x); break;}
-                        case Key::key_h: {*x-=0.01f, shader->setFloat("x", x); break;}
-                        case Key::key_u: {*y+=0.01f, shader->setFloat("y", y); break;}
-                        case Key::key_j: {*y-=0.01f, shader->setFloat("y", y); break;}
+                        case Key::key_escape: {CloseWindow(&app->win); continue;}
+                        case Key::key_a: { shader->CompileShader(),shader->CompileProgram(); continue;}
+                        case Key::key_b: { continue;}
+                        case Key::key_c: { continue;}
+                        case Key::key_k: {*x+=0.01f, shader->setFloat("x", x); continue;}
+                        case Key::key_h: {*x-=0.01f, shader->setFloat("x", x); continue;}
+                        case Key::key_u: {*y+=0.01f, shader->setFloat("y", y); continue;}
+                        case Key::key_j: {*y-=0.01f, shader->setFloat("y", y); continue;}
                         default: break;
                     }
                 }
