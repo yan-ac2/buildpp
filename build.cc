@@ -86,7 +86,7 @@ int test()
     #endif
     for (const auto& i : test.ProjectFile)
     {
-        test.compileCpp(i);
+        test.compileCpp(i.Name);
     }
 
     test.link("test");
@@ -127,7 +127,7 @@ int selfCompile(bool recompile)
     #endif
     for (const auto& i : rebuild.ProjectFile)
     {
-        rebuild.compileCpp(i);
+        rebuild.compileCpp(i.Name);
     }
 
     rebuild.link("build");
@@ -246,7 +246,8 @@ int compileProject(bool recompile)
         
         for (const auto& i : mainProj.ProjectFile) {
             // pool.enqueue ([&i,&mainProj]{mainProj.compileCpp(i);});
-            mainProj.compileCpp(i);
+            print << "ID of " << i.Name << " is: " << std::to_string(i.ID) << "\n";
+            mainProj.compileCpp(i.Name);
         }
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
 

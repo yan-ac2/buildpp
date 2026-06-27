@@ -202,25 +202,6 @@ export
         vec3<double> vert(const int i) const {return verts[i];}
         vec3<double> vert(const int iface,const int nthvert) const {return verts[faces[iface*3+nthvert]];}
     };
-    
-    template <size_t N>
-    struct StaticString
-    {
-        char data[N] {};
-
-        constexpr StaticString(const char (&input)[N + 1])
-        {
-            for(size_t i {0};input[i] != '\0';i++) {
-                data[i] = input[i];
-            }
-        }
-        constexpr const size_t getSize() const {return N;}
-    };
-
-    template <size_t N>
-    StaticString(const char(&)[N]) -> StaticString<N - 1>;
-    
-    
 
     class FastBoolGenerator {
     public:

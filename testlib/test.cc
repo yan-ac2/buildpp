@@ -76,6 +76,12 @@ struct char_trait
     static constexpr int_t eof() {return -1;}
 };
 
+template<typename T>
+struct TempPtr {
+    T* ptr = nullptr;
+    TempPtr(T* other) : ptr(other) {}
+    ~TempPtr() {ptr == nullptr;}
+};
 
 template<typename T>
 class sPtr
