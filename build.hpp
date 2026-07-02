@@ -648,21 +648,17 @@ class Project
     
     outputPath* OutPath;
     compileCommand* cmdJson;
-    
+
     struct File {
         bool compiled = false;
-        enum type : char {
+        mutable enum type : char {
             Source,
             Header,
             Module,
             none
-        } fileType;
+        } fileType = none;
         std::size_t ID {};
-        const FileManager* manager = nullptr;
-        explicit File(std::size_t inID,FileManager* ptr) : ID(inID), manager(ptr) {}
-        auto operator [](std::size_t idx) {
-            return *manager[idx];
-        }
+        explicit File(std::size_t inID) : ID(inID){}
     };
 
     class FileManager {
@@ -673,7 +669,7 @@ class Project
         std::size_t addFile(std::string_view name) {
             std::size_t id = NextID++;
             Name.emplace_back(name);
-            Files[Name[id]] = File(id,this);
+            Files[Name[id]] = File(id);
             return id;
         }
         int getID(std::string_view str) {
@@ -695,19 +691,19 @@ class Project
         std::string_view operator [](std::size_t id) {
             return Name[id];
         }
-        std::string_view getFile(std::size_t id) {
-            return Name[id];
+        File& getFile(std::size_t id) {
+            return Files[Name[id]];
         }
-        const std::string_view getFile(std::size_t id) const {
-            return Name[id];
+        const File& getFile(std::size_t id) const {
+            return Files.at(Name[id]);
         }
         bool empty () const {return Name.empty();}
 
-        auto begin() { return std::views::values(Files).begin(); }
-        auto end()   { return std::views::values(Files).end(); }
+        auto begin() { return Files.begin(); }
+        auto end()   { return Files.end(); }
 
-        auto begin() const { return std::views::values(Files).begin(); }
-        auto end()   const { return std::views::values(Files).end(); }
+        auto begin() const { return Files.begin(); }
+        auto end()   const { return Files.end(); }
 
     };
 
@@ -817,12 +813,12 @@ class Project
             f_deps.append(fmt(" -l" , d , " "));
         }
 
-        for (const auto& mod : ProjectFile) {
-            std::string filename = fs::path(ProjectFile[mod.ID]).filename().string();
+        for (const auto& [k,mod] : ProjectFile) {
+            std::string filename = fs::path(k).filename().string();
             //print << fmt("check file " , filename , " against " , inFile , "\n");
             if (filename == inFile) {
-                print << fmt("dependency found for " , inFile , " in " , ProjectFile[mod.ID] , " imp filename " , filename , "\n");
-                f_file = ProjectFile[mod.ID];
+                print << fmt("dependency found for " , inFile , " in " , k , " imp filename " , filename , "\n");
+                f_file = k;
                 break;
             }
         }
@@ -878,8 +874,8 @@ class Project
 
     Project& scanHeader() {
         print << "Scanning Files"_fmt.color(fmt::Bold_Green).endl();
-        for (const auto& p : ProjectFile) {
-            std::string_view shName = ProjectFile[p.ID];
+        for (const auto& [K, V] : ProjectFile) {
+            std::string_view shName = K;
             print << "scan " << shName << "\n";
             if (shName.empty()) {err(true,"Error: Empty project path"_fmt.color(fmt::Bold_Red));}
             
@@ -894,6 +890,7 @@ class Project
                 while (std::getline(files,line)) {
                     size_t epos = line.find(file.exportToken);
                     if (epos != std::string::npos) {
+                        V.fileType = File::Module;
                         moduleName = line.substr(epos + file.exportToken.length() + 1);
                         moduleName.erase(moduleName.find(';'));
                         print << fmt("export module "_fmt.color(fmt::Yellow), moduleName ," found in " , shName ).endl();
@@ -937,8 +934,8 @@ class Project
     }
 
     Project& scanModule() {
-        for (const auto& p : ProjectFile) {
-            std::string_view smName = p.Name;
+        for (const auto& [K,V] : ProjectFile) {
+            std::string_view smName = K;
             const auto& name = fs::path(smName).filename().stem().string();
             print << fmt("Scan module " , smName ).endl();
 
@@ -995,7 +992,7 @@ class Project
                     if (moduleName.front() == '<' || moduleName.front() == '"') {
                         std::string rawHeader = moduleName.substr(1, moduleName.size() - 2);
                         Modules.push_back({(moduleName.front() == '"') ? (Path / getMainPath() / rawHeader).string() : moduleName,rawHeader});
-                        ModuleMap[p.Name].push_back(moduleName);
+                        ModuleMap[smName].push_back(moduleName);
                     }
                         
                     for (const auto& i : Modules)
@@ -1294,7 +1291,7 @@ class Project
     Project& dumpProject() {
         print << " dump project"_fmt.color(fmt::Yellow).endl();
         for (const auto& p : ProjectFile) {
-            print << p.Name << "\n";
+            print << p.first << "\n";
         }
         return *this;
     }
