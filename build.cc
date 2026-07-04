@@ -216,12 +216,7 @@ int compileProject(bool recompile)
         .addDependency("lib.RGFW.ccm",{"X11", "Xrandr"})
         .addDependency("lib.std.ccm",{"c++","c++abi"})
         #endif
-        .dumpProject()
-        .dumpIncludeMap()
-        .dumpModule()
-        .dumpDependencies()
-        .dumpModuleMap()
-        .dumpInclude();
+        .dumpProject();
     
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
         std::queue<std::string> queue;
@@ -246,7 +241,7 @@ int compileProject(bool recompile)
         
         for (const auto& i : mainProj.ProjectFile) {
             // pool.enqueue ([&i,&mainProj]{mainProj.compileCpp(i);});
-            print << "ID of " << i.first << " is: " << std::to_string(i.second.ID) << "\n";
+            print << "File " << i.first << " with ID: " << std::to_string(i.second.ID) << " is: " << (i.second.compiled ? "Compiled" : "not Compiled") << "\n";
             mainProj.compileCpp(i.first);
         }
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
