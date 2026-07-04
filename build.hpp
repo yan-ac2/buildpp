@@ -682,8 +682,9 @@ class Project
                 return std::hash<std::string_view>{}(str);
             }
         };
+        using MapValuePtr = std::pair<const std::string, File>*;
         std::unordered_map<std::string, File,StringHash,std::equal_to<>> Files {};
-        std::vector<decltype(Files)::value_type*> IDMap {};
+        std::vector<MapValuePtr> IDMap {};
         std::size_t NextID = 0;
         public:
         File& addFile(std::string_view name) {
@@ -731,12 +732,6 @@ class Project
         auto begin() { return Files.begin(); }
         auto end()   { return Files.end(); }
 
-        auto getTypeRange(File::fTypes types){
-            return IDMap | std::ranges::views::filter([&types](const decltype(Files)::value_type* idFile) {
-                return idFile->second.fileType == types;
-            });
-        }
-        
         auto begin() const { return Files.begin(); }
         auto end()   const { return Files.end(); }
 
@@ -1323,11 +1318,8 @@ class Project
     }
 
     Project& dumpProject() {
-        // auto getSource = ProjectFile.getTypeRange(File::Source);
-        auto getModule = ProjectFile.getTypeRange(File::Module);
-        auto getHeader = ProjectFile.getTypeRange(File::Header);
+        
         print << "Dump project"_fmt.color(fmt::Yellow).endl();
-
         for (const auto& [K,V]: ProjectFile) {
             if (V.fileType != File::Header){continue;}
             print << "ID: " << std::to_string(V.ID) << " File: " << K << " Type: "
@@ -1341,8 +1333,8 @@ class Project
         }
 
         print << "\nDump Module"_fmt.color(fmt::Yellow).endl();
-        for (const auto& M : getModule) {
-            auto [K,V] = *M;
+        for (const auto&  [K,V]: ProjectFile) {
+            if (V.fileType != File::Module) {continue;}
             print << "Module: " << K << " Name: " << V.Name << "\n";
         }
 
