@@ -120,13 +120,13 @@ int selfCompile(bool recompile)
     .addSourcePath(rootPath.string())
     .addSource({"build.cc"})
     .getCppFile();
-    rebuild.setMain("build.cc").dumpProject();
+    rebuild.dumpProject().setMain("build.cc");
     #ifdef __unix__
     rebuild.addDependency("build.cc",{"c++","c++abi"});
     #endif
-    for (auto& i : rebuild.ProjectFile)
+    for (auto& i : rebuild.ProjectFile.VIter())
     {
-        rebuild.compileCpp(i);
+        rebuild.compileCpp(*i);
     }
 
     rebuild.link(rebuild.ProjectFile.getMain());
@@ -157,9 +157,10 @@ int compileProject(bool recompile)
         .setOptions("-O0")
         .setProjectPath(rootPath / "example"/ "lib" / "glad")
         .setSourcePath("src")
-        .setMain((fs::path(libGLAD.getMainSource()) / "glad.c").string())
         .addIncludefile((libGLAD.Path / "include").string())
         .getCFile()
+        .dumpProject()
+        .setMain("glad.c")
         .scanInclude()
         #ifdef _WIN32
         .addDependency("glad.c", {"opengl32"});
@@ -207,29 +208,30 @@ int compileProject(bool recompile)
         .setResourcePath("res")
         .getCppFile();
     
-        mainProj.setMain("main.cc").scanHeader().scanModule()
+        mainProj
+        .dumpProject()
+        .setMain("main.cc").scanHeader().scanModule()
         #ifdef _WIN32
         .addDependency("lib.RGFW.ccm",{"gdi32","opengl32"})
         #elif __unix__
         .addDependency("lib.RGFW.ccm",{"X11", "Xrandr"})
         .addDependency("lib.std.ccm",{"c++","c++abi"})
         #endif
-        .dumpProject();
-    
+        ;
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
-        std::queue<std::pair<const std::string,File>*> queue;
-        for (auto i : mainProj.ProjectFile.VIter()) {
-            if (i->second.fileType == File::Source) {
+        std::queue<std::reference_wrapper<File>> queue;
+        for (auto& i : mainProj.ProjectFile) {
+            if (i.second.fileType == File::Source) {
                 continue;
             }
-            queue.push(i);
+            queue.push(i.second);
         }
         while(!queue.empty()) {
-            auto modulef = queue.front();
+            auto& modulef = queue.front().get();
             queue.pop();
             // const auto moduleReady = mainProj.isModuleExist(modulef);
-            print << "Compiling Module: "_fmt.color(fmt::Red) << modulef->first <<"\n";
-            if (mainProj.compileModule(*modulef) < 0) {
+            // print << "Compiling Module: "_fmt.color(fmt::Red) << modulef.Path <<"\n";
+            if (mainProj.compileModule(modulef) < 0) {
                 queue.emplace(modulef);
             }
         }
@@ -238,8 +240,8 @@ int compileProject(bool recompile)
         
         for (auto& i : mainProj.ProjectFile) {
             // pool.enqueue ([&i,&mainProj]{mainProj.compileCpp(i);});
-            print << "File " << i.first << " with ID: " << std::to_string(i.second.ID) << " is: " << (i.second.compiled ? "Compiled" : "not Compiled") << "\n";
-            mainProj.compileCpp(i);
+            // print << "File " << i.first << " with ID: " << std::to_string(i.second.ID) << " is: " << (i.second.compiled ? "Compiled" : "not Compiled") << "\n";
+            mainProj.compileCpp(i.second);
         }
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
 

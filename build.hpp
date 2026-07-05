@@ -3,6 +3,7 @@
 
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -15,7 +16,6 @@
 #include <unordered_map>
 #include <source_location>
 #include <utility>
-#include <set>
 #include <functional>
 #include <ranges>
 
@@ -371,6 +371,7 @@ struct File {
         none
     } fileType = none;
     std::size_t ID          {};
+    std::string_view Path   {};
     std::string Name        {};
     std::string Flags       {};
     std::string ldFlags     {};
@@ -408,10 +409,10 @@ class FileManager {
     using MapPair = std::pair<const std::string, File>;
     std::unordered_map<std::string, std::vector<std::string>,StringHash,std::equal_to<>> Header {};
     std::unordered_map<std::string, File,StringHash,std::equal_to<>> Files {};
-    std::vector<MapPair*> IDMap {};
+    std::vector<File*> IDMap {};
     std::size_t NextID = 0;
     public:
-    MapPair* Main = nullptr;
+    File* Main = nullptr;
     File& addFile(std::string_view name) {
         auto it = Files.find(name);
         if (it != Files.end()) {
@@ -419,8 +420,9 @@ class FileManager {
         }
         NextID = Files.size();
         
-        auto ref = Files.emplace(std::string(name), File{.ID = NextID}).first;
-        IDMap.emplace_back(&(*ref));
+        auto ref = Files.try_emplace(std::string(name), File{.ID = NextID}).first;
+        ref->second.Path = ref->first;
+        IDMap.emplace_back(&ref->second);
         
         return ref->second;
     }
@@ -428,6 +430,7 @@ class FileManager {
     std::vector<std::string>& setHeaderPath(std::string_view name) {
         return Header.try_emplace(name.data(),std::vector<std::string>{}).first->second;
     }
+
     void addHeader(std::string_view name,std::string_view H) {
         auto it = Header.find(name);
         std::string n = fs::path(H).lexically_relative(name).generic_string();
@@ -439,9 +442,9 @@ class FileManager {
     File& copyFile(std::string_view name,const File& other) {
         NextID = Files.size();
         
-        auto ref = Files.try_emplace(std::string(name), other).first;
-        IDMap.emplace_back(&(*ref));
-        return IDMap[NextID]->second;
+        auto& ref = Files.try_emplace(std::string(name), other).first->second;
+        IDMap.emplace_back(&ref);
+        return *IDMap[ref.ID];
     }
     int getID(std::string_view str) {
         const auto it = Files.find(str);
@@ -451,38 +454,48 @@ class FileManager {
         
         std::size_t newId = Files.size();
         auto ref = Files.try_emplace(std::string(str), File{.ID = newId}).first;
-        IDMap.emplace_back(&(*ref));
+        ref->second.Path = ref->first;
+        IDMap.emplace_back(&ref->second);
         return ref->second.ID;
     }
-    // File& operator [](std::size_t id) {
-    //     return Files[id];
+    // std::string_view getPath(std::size_t ID) {
+    //     for(const auto& [K,V] : Files) {
+    //         if (V.ID == ID) {return K;}
+    //     }
+    //     err(true,fmt("Error: "_fmt.color(fmt::Red),"ID doesn't exists"));
+    //     return "";
     // }
     File* operator [](std::string_view id) {
         auto it = Files.find(id); 
         if (it != Files.end()) {
             return &it->second;
         }
-        err(true,fmt("Error: "_fmt.color(fmt::Red),"Key doesn't exists")); 
+        err(true,fmt("Error: "_fmt.color(fmt::Red),"Key doesn't exists"));
         return nullptr;
     }
     File& operator [](std::size_t id) {
         err(id > IDMap.size(),fmt("Error: "_fmt.color(fmt::Red),"ID out of bounds in IDMap"));
-        return IDMap[id]->second; 
+        return *IDMap[id]; 
+    }
+    
+    MapPair* getPair (std::string_view id) {
+        auto it = Files.find(id);
+        if (it != Files.end()) {
+            return &*it; 
+        }
+        err(true,fmt("Error: "_fmt.color(fmt::Red),"Key doesn't exists"));
+        return nullptr; 
     }
 
-    MapPair& getPair (std::string_view id) {
-        return *IDMap[(*this)[id]->ID]; 
-    }
-
-    File* getFile(std::string_view id) {
-        return (*this)[id];
+    File& getFile(std::string_view id) {
+        return *(*this)[id];
     }
     void setMain(std::string_view id) {
-        print << "Set Main: " << (*this)[id]->Name;
-        Main = IDMap[(*this)[id]->ID];
+        print << "Set Main: " << id << " " << (*this)[id]->Name << "\n";
+        Main = (*this)[id];
     }
     File& getMain() {
-        return Main->second;
+        return *Main;
     }
     decltype(Files)& getFileContainer() {
         return Files;
@@ -511,7 +524,7 @@ class cProject{
     std::string compileInclude  {};
     
     constexpr cProject& err(bool isError = false,std::string_view msg = "",std::string_view f = std::source_location().current().function_name()) {
-        if (isError) { print << fmt(msg , " at " , f); std::exit(1); } 
+        if (isError) { print << "ERROR "_fmt.color(fmt::Bold_Red) << fmt(msg , " at " , f); std::exit(1); } 
         return *this;
     }
     public:
@@ -523,30 +536,28 @@ class cProject{
     } outFile;
     compileCommand* cmdJson;
     
+    fs::path Path       {};
     std::string ProjectName     {};
     std::string outputName      {};
-    fs::path Path       {};
     std::vector<std::string> SourcePath {};
-    FileManager ProjectFile;
     std::vector<std::string> includePath {};
-    std::vector<std::string> project     {};
-    std::vector<std::string> object      {};
-    std::vector<std::string> include     {};
-    std::vector<std::pair<std::string, std::string>> dependency {};
-    std::unordered_map<std::string,std::vector<std::string_view>>   includeMap {};
+    FileManager ProjectFile;
 
     cProject(outputPath* path, projectType exe,bool recomp = false) {
         projectOutPath = path;
         outFile = exe;
         cmdJson = nullptr;
         recompile = recomp;
-        print << fmt("Project initialized at "_fmt.color(fmt::Bold_Green) , this->Path.string());
     };
-
-    cProject& setMain(std::string_view main)         {Main = main;ProjectFile.setMain(main); return *this;}
+    
+    cProject& setMain(std::string_view main)         {Main = main;ProjectFile.setMain((Path / getMainSource() / main).string()); return *this;}
     cProject& setCompiler(std::string_view comp)     {Compiler = fmt(comp, " ").str;return *this;}
     cProject& setOptions (std::string_view opt)      {Options = fmt(opt, " ").str;return *this;}
-    cProject& setProjectPath(fs::path in)            {Path = in;return *this;}
+    cProject& setProjectPath(fs::path in)            {
+        Path = in;
+        print << fmt("Project initialized at "_fmt.color(fmt::Bold_Green) , in.string(),"\n");
+        ;return *this;
+    }
     cProject& setSourcePath(fs::path in)             {SourcePath.emplace_back(fs::path(in).lexically_proximate(Path).string()); return *this;}
     cProject& setSource(std::initializer_list<std::string_view> in) {
         for (const auto& i : in) {
@@ -606,8 +617,8 @@ class cProject{
 
     cProject& getCFile() {
         for (const auto& F : SourcePath) {
-            err((!fs::exists(F) || !fs::is_directory(F)), "Directory does not exist.\n");
-            fs::directory_iterator iterator(F);
+            err((!fs::exists(Path/F) || !fs::is_directory(Path/F)), fmt("Directory: ",F," does not exist.\n"));
+            fs::directory_iterator iterator(Path/F);
             for (const auto& entry : iterator) {
                 if (entry.is_regular_file() && (entry.path().extension() == file.cSource)) {
                     // std::cout << "add project file " << entry.path().filename().string() << " " << entry.path().string() << std::endl;
@@ -693,7 +704,8 @@ class cProject{
         const std::string f_cmd {fmt(Compiler,Options, V.Flags ,fmt(" -c ", K, " -o ", f_obj)).clean()};
 
         if(cmdJson != nullptr) cmdJson->addCompilecmd(fs::path(K).parent_path().string(), f_cmd, K, f_obj);
-        object.push_back(f_obj);
+        
+        V.objectPath = f_obj;
         int ret {};
         if (recompile)
         {
@@ -808,13 +820,6 @@ class Project
     std::vector<std::string> SourcePath  {};
     std::vector<std::string> IncludePath {};
     FileManager ProjectFile        {};
-    // std::vector<std::string> Object      {};
-    // std::vector<std::pair<std::string, std::string>> Dependency {};
-    // std::vector<std::pair<std::string, std::string>> Modules    {};
-    // std::unordered_map<std::string,std::string>      ModuleDeps {};
-    // std::unordered_map<std::string_view,std::vector<std::string>> ModuleMap  {};
-    // std::unordered_map<std::string,std::vector<std::string>>      Include    {};
-    // std::map<std::pair<std::string,std::string>,std::set<std::string_view>>   IncludeMap {};
 
     constexpr Project& setMain        (std::string_view main) {Main = main;ProjectFile.setMain((fs::path(getMainPath()) / main).string()); return *this;}
     constexpr Project& setCompiler    (std::string_view comp) {Compiler = comp; return *this;}
@@ -822,7 +827,7 @@ class Project
     constexpr Project& setLdOptions   (std::string_view opt)  {LdOptions = fmt(" ",opt," ").clean().str; return *this;}
     constexpr Project& setProjectPath (std::string_view in)   {Path = in; return *this;}
     constexpr Project& setResourcePath(std::string_view in)   {ResPath = in; return *this;}
-    constexpr Project& addSourcePath  (std::string_view in)   {SourcePath.emplace_back(fs::path(in).lexically_proximate(Path).string()); return *this;}
+    constexpr Project& addSourcePath  (std::string_view in)   {SourcePath.emplace_back(in); return *this;}
     constexpr Project& addIncludePath (std::string_view in)   {IncludePath.emplace_back(in); ProjectFile.setHeaderPath(in); return *this;}
     constexpr Project& setincludeas   (enum includeas opt)    {includeas = opt; return *this;}
     
@@ -830,8 +835,8 @@ class Project
     
     constexpr Project& addSource(std::initializer_list<std::string_view> in) {
         for (const auto& i : in) {
-            auto filePath = (Path / i);
-            err (!fs::exists(filePath),fmt("source file "_fmt.color(fmt::Red) , i , " does not exist" ));
+            fs::path filePath = fs::path(getMainPath()) / i;
+            err (!fs::exists(filePath),fmt("source file "_fmt.color(fmt::Red) , filePath.string() , " does not exist" ));
             auto & P = ProjectFile.addFile(filePath.string());
             P.Name = filePath.stem().string();
             P.fileType = File::Source;
@@ -932,20 +937,17 @@ class Project
         {
             err ((!fs::exists(p) || !fs::is_directory(p)), fmt("Directory does not exist. "_fmt.color(fmt::Bold_Red),p));
             fs::directory_iterator iterator(p);
-            if (ProjectFile.empty())
-            {
-                for (const auto& entry : iterator) {
-                    bool isModule = file.isModule(entry.path().extension().string());
-                    bool isSource = file.isCpp(entry.path().extension().string());
-                    if (entry.is_regular_file() && ( isModule || isSource)) {
-                        
-                        print << fmt("add project file " , entry.path().filename().string() , " " , entry.path().string()).endl();
-                        auto& f = ProjectFile.addFile(entry.path().string());
-                        f.Name = entry.path().stem().string();
-                        f.fileType = File::Source;
-                    }
+            
+            for (const auto& entry : iterator) {
+                bool isModule = file.isModule(entry.path().extension().string());
+                bool isSource = file.isCpp(entry.path().extension().string());
+                if (entry.is_regular_file() && ( isModule || isSource)) {
+                    
+                    print << fmt("add project file " , entry.path().filename().string() , " " , entry.path().string()).endl();
+                    auto& f = ProjectFile.addFile(entry.path().string());
+                    f.Name = entry.path().stem().string();
+                    f.fileType = File::Source;
                 }
-                
             }
 
             for (const auto& [K,V] : ProjectFile.hIter()) {
@@ -1017,15 +1019,15 @@ class Project
 
     Project& scanModule() {
         for (const auto& [K,V] : ProjectFile) {
-           
-            std::string_view smName = K;
+            if (V.fileType == File::SystemHeader) { 
+                continue;
+            }
+            print << fmt("Scan module " , K ).endl();
 
-            print << fmt("Scan module " , smName ).endl();
+            err(K.empty() ,"Error: Empty project path"_fmt.color(fmt::Bold_Red)); 
 
-            err(smName.empty() ,"Error: Empty project path"_fmt.color(fmt::Bold_Red)); 
-
-            std::ifstream files(smName.data());
-            err(!files.is_open(),"Error: Unable to open file "_fmt.color(fmt::Bold_Red));
+            std::ifstream files(K);
+            err(!files.is_open(),fmt("Error: Unable to open file "_fmt.color(fmt::Bold_Red)," File: ",K));
 
             std::string line;
             bool inBlockComment = false;
@@ -1070,7 +1072,7 @@ class Project
                     std::string moduleName = line.substr(startPos,epos - startPos);
                     
                     print << fmt("import module "_fmt.color(
-                    fmt::Bold_Blue) , moduleName , " found in " , smName).endl();
+                    fmt::Bold_Blue) , moduleName , " found in " , K).endl();
                     
                     if (moduleName.front() == '<' || moduleName.front() == '"') {
                         std::string rawHeader = moduleName.substr(1, moduleName.size() - 2);
@@ -1092,57 +1094,22 @@ class Project
         }
         return *this;
     }
-    
-    // bool isModuleExist(std::string_view infile)
-    // {
-    //     bool isHeader = (infile.front() == '<' || infile.front() == '"');
-    //     if (!infile.empty() && isHeader) {
-    //         return true; 
-    //     }
 
-    //     const fs::path f_path = infile;
-    //     const auto& mPath = OutPath->modulePath;
-    //     const auto modMap = ModuleMap.find(infile);
-    //     if (modMap == ModuleMap.end()) {
-    //         return true; // Or true, depending on your fallback logic if not tracked
-    //     }
-    //     for (const auto& m : modMap->second)
-    //     {
-    //         if (m.empty()){continue;}
-    //         bool isWrapped = (m.front() == '<' || m.front() == '"');
-    //         auto moduleFile = fmt((mPath / (isWrapped ? m.substr(1, m.length() - 2) : m)).string(), file.pcmModule).clean().str;
-    //         print << moduleFile << " " << (fs::exists(moduleFile) ? "exist" : "not exist") << "\n";
-    //         if (!fs::exists(moduleFile)) {
-    //             return false;
-    //         }
-    //         if(!isWrapped && (fs::last_write_time(f_path) > fs::last_write_time(moduleFile) && recompile))
-    //         {
-    //             return false;
-    //         }
-        
-    //     }
-    //     return true;
-    // }
-
-    int compileModule(std::pair<const std::string, File>& inFile) {
-        auto& [K,V] = inFile;
-        if(!V.dependencies.empty()) {
-            for (const auto& I : V.dependencies) {
+    int compileModule(File& inFile) {
+        if(!inFile.dependencies.empty()) {
+            for (const auto& I : inFile.dependencies) {
                 print << "Is Compiled: "_fmt.color(fmt::Bold_Yellow) << ProjectFile[I].Name << (ProjectFile[I].compiled ? " Yes" : " No") << "\n"; 
                 if(!ProjectFile[I].compiled) {return -1;}
             }
         }
-        bool headerUnits = false;
-        const bool isSystemHeader = (V.fileType == File::SystemHeader);
+        bool haveHeaderUnit = false;
+        const bool isSystemHeader = (inFile.fileType == File::SystemHeader);
         const auto& mPath = OutPath->modulePath;
         const auto& oPath = OutPath->objPath;
         
-        // const bool f_isUserHeader = file.isCppHeader(fPath.extension().string());
-        // const fs::path fPath = in_path;
-        
-        const std::string fModule    = fmt((mPath / V.Name).string(), file.pcmModule).str;
+        const std::string fModule    = fmt((mPath / inFile.Name).string(), file.pcmModule).str;
 
-        const std::string fObjOutput = fmt((oPath / V.Name).string(), file.objFile).str;
+        const std::string fObjOutput = fmt((oPath / inFile.Name).string(), file.objFile).str;
         
         const auto l_rewrite = [&isSystemHeader,&fModule] -> void {
             if (!isSystemHeader) {
@@ -1157,100 +1124,99 @@ class Project
 
         const std::string f_srcInput = 
         // f_isUserHeader ? fmt("-Wno-pragma-system-header-outside-header -fmodule-header=user --precompile ",fPath.string()," -o ",f_module).str :
-        isSystemHeader ? fmt("-Wno-pragma-system-header-outside-header -x c++-system-header --precompile ",V.Name," -o ",fModule).str :
-        fmt("-c ",(Path / K).string()," -fno-modules-reduced-bmi -fmodule-output=",fModule," -fprebuilt-module-path=",(mPath).string()).str;
+        isSystemHeader ? fmt("-Wno-pragma-system-header-outside-header -x c++-system-header --precompile ",inFile.Name," -o ",fModule).str :
+        fmt("-c ",(Path / inFile.Path).string()," -fno-modules-reduced-bmi -fmodule-output=",fModule," -fprebuilt-module-path=",(mPath).string()).str;
         
-        for (const auto& I : V.dependencies) {
-            ProjectFile[V.ID].Flags.append(
+        for (const auto& I : inFile.dependencies) {
+            bool isDepsSystemHeader = ProjectFile[I].fileType == File::SystemHeader;
+            if(isDepsSystemHeader) { haveHeaderUnit = true;}
+            inFile.Flags.append(
                 ProjectFile[I].fileType == File::SystemHeader ? fmt(" -fmodule-file=",fmt((mPath / ProjectFile[I].Name).string(),file.pcmModule)) :
                 fmt(" -fmodule-file=",ProjectFile[I].Name,"=",fmt((mPath / ProjectFile[I].Name).string(),file.pcmModule))
             );
         }
         
-        if (V.objectPath.empty()) {ProjectFile[V.ID].objectPath = fObjOutput;}
+        if (inFile.objectPath.empty()) {inFile.objectPath = fObjOutput;}
 
         const std::string f_cmd = 
         isSystemHeader ? fmt(Compiler, Options,f_srcInput).clean().str : 
         // f_isUserHeader ? fmt(Compiler, Options,f_srcInput).clean().str :
-        fmt(Compiler, Options,headerUnits ? "-Wno-experimental-header-units ": "" ,f_srcInput ,V.Flags," -o ",fObjOutput).clean().str;
+        fmt(Compiler, Options,haveHeaderUnit ? "-Wno-experimental-header-units ": "" ,f_srcInput ,inFile.Flags," -o ",fObjOutput).clean().str;
         
-        if(cmdJson != nullptr && !isSystemHeader) { cmdJson->addCompilecmd((Path / K).parent_path().string(),f_cmd,(Path / K).string(),fObjOutput);}
+        if(cmdJson != nullptr && !isSystemHeader) { cmdJson->addCompilecmd((Path / inFile.Path).parent_path().string(),f_cmd,(Path / inFile.Path).string(),fObjOutput);}
         
         int ret {};
         if (recompile && !isSystemHeader) {
-            print << fmt("recompiling "_fmt.color(fmt::Green) , f_cmd , "\n");
+            // print << fmt("recompiling "_fmt.color(fmt::Green) , f_cmd , "\n");
             l_rewrite();
             ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
-        } else if (isSystemHeader) {
-            print << fmt("System Header "_fmt.color(fmt::Green) , f_cmd , "\n");
-            if(fs::exists(fModule)) {ProjectFile[V.ID].compiled = (ret == 0 ? true : false); return 0;}
-            ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
         } else if (!fs::exists(fModule)) {
-            print << fmt("compiling "_fmt.color(fmt::Green) , f_cmd , "\n");
+            // print << fmt("compiling "_fmt.color(fmt::Green) , f_cmd , "\n");
             ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
-        } else if (fs::last_write_time(K) > fs::last_write_time(fModule)) {
-            print << fmt("updated "_fmt.color(fmt::Green) , f_cmd , "\n");
+        } else if (fs::last_write_time(inFile.Path) > fs::last_write_time(fModule)) {
+            // print << fmt("updated "_fmt.color(fmt::Green) , f_cmd , "\n");
             l_rewrite();
             ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
         } 
-        print << "Status: "_fmt.color(fmt::Bold_Yellow) << std::to_string(ret) << "\n";
-        ProjectFile[V.ID].compiled = (ret == 0 ? true : false);
+        // print << "Status: "_fmt.color(fmt::Bold_Yellow) << std::to_string(ret) << "\n";
+        inFile.compiled = (ret == 0 ? true : false);
         return ret; 
     };
     
 
-    int compileCpp(std::pair<const std::string, File>& inPath)
+    int compileCpp(File& inFile)
     {
-        auto& [K,V] = inPath;
-        if(V.compiled) {return false;}
-        const bool f_isModule = (V.fileType == File::Module || V.fileType == File::SystemHeader);
+        if(inFile.compiled) {return false;}
+        const bool f_isModule = (inFile.fileType == File::Module || inFile.fileType == File::SystemHeader);
         if (f_isModule) return false;
-        
+        bool haveHeaderUnit = false;
         const auto& oPath = OutPath->objPath;
         const auto& mPath = OutPath->modulePath;
         
-        const std::string f_objOutput = fmt((oPath / V.Name).string(), file.objFile).str;
+        const std::string f_objOutput = fmt((oPath / inFile.Name).string(), file.objFile).str;
 
-        const std::string f_filein    = f_isModule ? fmt((mPath / V.Name).string(),file.pcmModule ).str : K;
+        const std::string f_filein    = f_isModule ? fmt((mPath / inFile.Name).string(),file.pcmModule ).str : inFile.Path.data();
 
         const std::string f_cppOutput = 
         fmt(f_isModule ?"" : "-c ",f_filein, 
-            V.dependencies.empty() ? "" : 
+            inFile.dependencies.empty() ? "" : 
             fmt(" -fprebuilt-module-path=", (mPath).string()," ")
         ).str;
             
-        for (const auto& I : V.dependencies) {
-            ProjectFile[V.ID].Flags.append(
-                ProjectFile[I].fileType == File::SystemHeader ? fmt(" -fmodule-file=",fmt((mPath / ProjectFile[I].Name).string(),file.pcmModule)) :
+        for (const auto& I : inFile.dependencies) {
+            bool isSystemHeader = ProjectFile[I].fileType == File::SystemHeader;
+            if(isSystemHeader) { haveHeaderUnit = true;}
+            inFile.Flags.append(
+                isSystemHeader ? fmt(" -fmodule-file=",fmt((mPath / ProjectFile[I].Name).string(),file.pcmModule)) :
                 fmt(" -fmodule-file=",ProjectFile[I].Name,"=",fmt((mPath / ProjectFile[I].Name).string(),file.pcmModule))
             );
         }
 
-        const std::string f_cmd = fmt(Compiler, Options ,f_cppOutput,V.Flags,f_isModule?" -c -o ":" -o ", f_objOutput).clean().str;
+        const std::string f_cmd = fmt(Compiler, Options,haveHeaderUnit ? "-Wno-experimental-header-units":"" ,f_cppOutput,inFile.Flags,f_isModule?" -c -o ":" -o ", f_objOutput).clean().str;
         
-        if(cmdJson != nullptr && !f_isModule) { cmdJson->addCompilecmd((Path / K).parent_path().string(),f_cmd,(Path / K).string(),f_objOutput);}
+        if(cmdJson != nullptr && !f_isModule) { cmdJson->addCompilecmd((Path / inFile.Path).parent_path().string(),f_cmd,(Path / inFile.Path).string(),f_objOutput);}
         
-        if (!V.objectPath.empty())
+        if (inFile.objectPath.empty())
         {
-            V.objectPath = f_objOutput;
+            inFile.objectPath = f_objOutput;
         } 
 
         int ret {};
         if (recompile) {
-            print << fmt("recompiling "_fmt.color(fmt::Bold_Green) , f_cmd , "\n");
+            // print << fmt("recompiling "_fmt.color(fmt::Bold_Green) , f_cmd , "\n");
             ret = cmd << f_cmd.c_str() >> "error compiling "_fmt.color(fmt::Bold_Red);
             
         } else if (!fs::exists(f_objOutput))
         {
-            print << fmt("compiling "_fmt.color(fmt::Bold_Green) , f_cmd , "\n");
+            // print << fmt("compiling "_fmt.color(fmt::Bold_Green) , f_cmd , "\n");
             ret = cmd << f_cmd.c_str() >> "error compiling "_fmt.color(fmt::Bold_Red);
             
-        } else if (fs::last_write_time(K) > fs::last_write_time(f_objOutput))
+        } else if (fs::last_write_time(inFile.Path) > fs::last_write_time(f_objOutput))
         {
-            print << fmt("updated "_fmt.color(fmt::Bold_Green) , f_cmd , "\n");
+            // print << fmt("updated "_fmt.color(fmt::Bold_Green) , f_cmd , "\n");
             ret = cmd << f_cmd.c_str() >> "error compiling "_fmt.color(fmt::Bold_Red);
         }
-        V.compiled = (ret == 0 ? true : false);
+        inFile.compiled = (ret == 0 ? true : false);
         return ret; 
     }
     
@@ -1273,15 +1239,14 @@ class Project
                 fs::rename(f_targetOut, fmt(f_targetOut, ".old").str);
             }
         }
-        print << "Is ProjectFile empty: " << (ProjectFile.hIter().container->empty() ? "Yes" : "NO") << "\n";
-        for (const auto* I : ProjectFile.VIter()) {
-            auto [N,F] = *I;
-            if(!F.ldFlags.empty()) {f_Object.append(F.ldFlags);}
-            f_Object.append(fmt(" ",F.objectPath));
+        // print << "Is ProjectFile empty: " << (ProjectFile.hIter().container->empty() ? "Yes" : "NO") << "\n";
+        for (const auto& I : ProjectFile.VIter()) {
+            if(!I->ldFlags.empty()) {f_Object.append(I->ldFlags);}
+            f_Object.append(fmt(" ",I->objectPath));
 
         }
         const std::string f_cmd = fmt(outFile == Project::staticLib ? fmt(file.libTool," /out:") : Compiler,Options,LdOptions,StaticLib,f_Object,f_Output).clean().str;
-        print << "Target Out:" << f_targetOut << "\n" << f_cmd << "\n";
+        // print << "Target Out:" << f_targetOut << "\n" << f_cmd << "\n";
 
         if (!ResPath.empty() && fs::exists(getMainPath() / ResPath)) {
             if (!fs::exists(OutPath->exePath/ResPath)) {
