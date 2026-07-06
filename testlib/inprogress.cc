@@ -28,60 +28,61 @@ template<typename T> struct is_ptr<T*> :true_t  {};
 
 struct variantBuffer{char buffer;};
 inline void* operator new (size_t size,variantBuffer* p) {return p;}
-inline constexpr void memcopy(void* to,const void* from,const size_t len) noexcept {
-    unsigned char* pto = static_cast<unsigned char*>(to);
-    const unsigned char* fptr = static_cast<const unsigned char*>(from);
-    const unsigned char* efptr = static_cast<const unsigned char*>(from) + len;
-    for (;fptr < efptr;){
-        *pto++ = *fptr++;
-    }
-}
 
 class string {
     struct small {
         char str[22]; 
         small() noexcept {str[0] = '\0';}
-        constexpr small& copy(const size_t to,const char* from,const size_t* len) noexcept {
-            char* tptr = str + to;
-            const char* efptr = from + *len;
-            for (;from < efptr;){
-                *tptr++ = *from++;
-            }*tptr++ = '\0';
-            return *this;
-        }
         ~small(){}
     };
     struct large {
         char* str;
         size_t cap;
-        large() noexcept : str(nullptr) , cap(0){}
-        large(const size_t* in) noexcept : cap(*in) {}
-        constexpr large& copy(size_t to,const char* from,const size_t len) {
-            char* tptr = str + to;
-            const char* efptr = from + len;
-            for (;from < efptr;){
-                *tptr++ = *from++;
-            }   *tptr++ = '\0';
+        
+        large() noexcept : str(nullptr), cap(0) {}
+        large(size_t capacity) noexcept : str(nullptr), cap(capacity) {}
+        
+        // Clean up properly
+        ~large() noexcept { deleteStr(); }
+
+        large& deleteStr() noexcept {
+            delete[] str;
+            str = nullptr;
             return *this;
         }
-        large& addCap   (const size_t* other) {cap += *other;return *this;}
-        large& move     (char*& temp)         {temp = str;str = nullptr;return *this;}
-        large& newCap   (const size_t* in)    {cap = *in; return *this;}
-        large& deleteStr() noexcept {
-            if (str != nullptr) {
-                delete[] str;
-                str = nullptr;
-            } return *this;
-        };
-        large& newStr() noexcept {str = new char[cap + 1]; return *this;}
-        large& newStr(const char* other,const size_t* len) noexcept {
-            str = new char[cap + 1];
-            return other ? copy(0, other, *len) : *this;
+
+        // Atomic allocation and copy. Replaces the broken state chaining.
+        large& allocate_and_copy(const char* source, size_t source_len, size_t new_cap) {
+            char* new_buffer = new char[new_cap + 1];
+            if (source && source_len > 0) {
+                // Manual inline copy to avoid dependency on unsafe loops
+                for (size_t i = 0; i < source_len; ++i) {
+                    new_buffer[i] = source[i];
+                }
+            }
+            new_buffer[source_len] = '\0';
+
+            // Safe swap-state transition
+            delete[] str;
+            str = new_buffer;
+            cap = new_cap;
+            return *this;
         }
-        large(large&& other) noexcept : cap(other.cap) {other.str = nullptr;}
-        ~large() noexcept {deleteStr();}
+        auto* begin() {
+            return (str+0);
+        }
+        auto* end() {
+            return (str+cap);
+        }
+
+        // Explicit move mechanics
+        large(large&& other) noexcept : str(other.str), cap(other.cap) {
+            other.str = nullptr;
+            other.cap = 0;
+        }
         large(const large&) = delete;
     };
+
 
     struct variant{
         template <typename T> using is_large = is_same<T, large>;
@@ -124,17 +125,24 @@ class string {
         for (;str[inlen] != '\0';inlen++){}
         return inlen;
     }
+
+    enum constValue {
+        smallSize = (sizeof(small::str) - 1)
+    };
+
     public:
 
     explicit constexpr string() noexcept : storage({.len = 0}) {}
 
     string(const char* instr) noexcept {
         const size_t len = getLen(instr);
-        if (len > 21) {
-            storage.set(large(&len)).get<large>().newStr(instr,&len);
+        if (len > smallSize) {
+            storage.set(large{}).get<large>().allocate_and_copy(instr, len, len+1);
         } else {
-            storage.set(small()).get<small>()
-            .copy(0,instr, &len);
+            auto& ptr = storage.set(small()).get<small>();
+            for (const auto& I : instr) {
+
+            }
         }
         storage.len = len;
     }
@@ -142,7 +150,7 @@ class string {
     constexpr string(const string& other) noexcept : storage({.len = other.storage.len}) {
         if (other.storage.type_index == 1) { // Large
             const large& o_large = other.storage.get<large>();
-            storage.set(large(&o_large.cap)).get<large>().newStr(o_large.str,&other.storage.len);
+            storage.set(large{}).get<large>().allocate_and_copy(o_large.str,other.storage.len,o_large.cap);
         } else { // Small
             storage.set(small()).get<small>()
             .copy(0,other.storage.get<small>().str, &other.storage.len);
@@ -150,17 +158,17 @@ class string {
     }
 
     constexpr string& operator=(const char* inStr) noexcept {
-        storage.len = getLen(inStr);
-    
+        std::size_t inLen = getLen(inStr);
+
             // Logic: Should we stay/become Large?
-        if (storage.len > 21 || (storage.type_index == 1 && !storage.autoshrink)) {
+        if (storage.len > smallSize || (storage.type_index == 1 && !storage.autoshrink)) {
             if (storage.type_index == 1) {
                 auto & stored = storage.get<large>();
                 if (stored.cap < storage.len) {
-                    stored.newCap(&storage.len).deleteStr().newStr(inStr,&storage.len);
-                } else stored.copy(0, inStr,storage.len);
+                    stored.allocate_and_copy(inStr, inLen, inLen + 1);
+                };
             } else {
-                storage.set(large(&storage.len)).get<large>().newStr(inStr,&storage.len);
+                storage.set(large{}).get<large>().allocate_and_copy(inStr,storage.len,storage.len);
             }
         } else {
             // Stay/become Small
@@ -170,51 +178,58 @@ class string {
             storage.get<small>()
             .copy(0,inStr,&storage.len);
         }
+        storage.len = inLen;
         return *this;
     }
 
-    string& reserve(size_t in) noexcept {
+    string& reserve(size_t in) {
         const size_t newSize = storage.len + in;
-        if ((newSize) > 21) 
-        {
-            if (storage.type_index == 1) 
-            {
+        if (newSize > smallSize) {
+            if (storage.type_index == 1) { // Large
                 auto& stored = storage.get<large>();
-                char* temp; 
-                stored.addCap(&newSize).move(temp).newStr(temp,&storage.len);
-                delete [] temp;
-            } else {
+                if (newSize > stored.cap) {
+                    // Safely reallocates without changing state prematurely
+                    stored.allocate_and_copy(stored.str, storage.len, newSize);
+                }
+            } else { // Small -> Large upgrade
                 small temp = storage.get<small>();
-                storage.set(large(&newSize)).get<large>().newStr(temp.str,&storage.len);
+                storage.set(large(newSize)).get<large>().allocate_and_copy(temp.str, storage.len, newSize);
             }
-            return *this;
-        } else {
-            return *this;
         }
+        return *this;
     }
 
-    string& append(const char* in) noexcept {
+    string& append(const char* in) {
         const size_t inlen = getLen(in);
+        if (inlen == 0) return *this;
         const size_t totalLen = storage.len + inlen;
 
-        if (totalLen > 21 || storage.type_index == 1) {
-            if (storage.type_index == 0) { // Upgrade Small to Large
+        if (totalLen > smallSize || storage.type_index == 1) {
+            if (storage.type_index == 0) { // Small -> Large
                 small old = storage.get<small>();
-                // Current storage is now large, copy the 'append' part
-                storage.set(large(&totalLen)).get<large>()
-                .newStr(old.str, &storage.len)
-                .copy(storage.len, in, inlen);
+                storage.set(large(totalLen)).get<large>().allocate_and_copy(old.str, storage.len, totalLen);
+                // Append the second string
+                for (size_t i = 0; i < inlen; ++i) {
+                    storage.get<large>().str[storage.len + i] = in[i];
+                }
+                storage.get<large>().str[totalLen] = '\0';
             } else { // Already Large
                 auto& stored = storage.get<large>();
                 if (totalLen > stored.cap) {
-                    char* temp;
-                    stored.move(temp).newCap(&totalLen).newStr(temp,&storage.len);
-                    delete [] temp;
-                } 
-                stored.copy(storage.len, in, inlen);
+                    stored.allocate_and_copy(stored.str, storage.len, totalLen);
+                }
+                // Append the string data safely
+                for (size_t i = 0; i < inlen; ++i) {
+                    stored.str[storage.len + i] = in[i];
+                }
+                stored.str[totalLen] = '\0';
             }
-        } else {// Stay Small
-            storage.get<small>().copy(storage.len, in, &inlen);
+        } else { // Stay Small
+            char* base = storage.get<small>().str + storage.len;
+            for (size_t i = 0; i < inlen; ++i) {
+                *base++ = in[i];
+            }
+            *base = '\0';
         }
         storage.len = totalLen;
         return *this;

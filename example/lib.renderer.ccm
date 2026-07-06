@@ -1,12 +1,15 @@
 
 module;
 #include <glad/glad.h>
+/*
+    #include "retard.h"
+*/
 
 export module lib.renderer;
-
-import lib.std;
+// import somethisng;
+import lib.std /* test */ ;
 import lib.RGFW;
-import lib.types;
+import lib.types; // test
 
 export
 {

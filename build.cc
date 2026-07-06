@@ -77,9 +77,9 @@ int test()
     #endif
     .setProjectPath(rootPath.string())
     .addSourcePath("testlib")
-    .setMain("inprogress.cc")
-    .addSource({(fs::path(test.getMainPath()) / "inprogress.cc").string()})
-    .getCppFile();
+    .addSource({(test.Path / test.getMainPath() / "inprogress.cc").string()})
+    .setMain("inprogress.cc");
+    // .getCppFile();
     
     #ifdef __unix__
     // test.addDependency("inprogress.cc",{"c++","c++abi"});
@@ -105,7 +105,7 @@ int selfCompile(bool recompile)
     .setExePath(rootPath)
     .setOutfolder(rootPath / ".build")
     .setOutpath(rootPath/".build" / "self");
-
+    
     Project rebuild("build",&outPath,Project::exe,recompile);
 
     #ifdef _WIN32
@@ -118,7 +118,7 @@ int selfCompile(bool recompile)
     #endif
     .setProjectPath(rootPath.string())
     .addSourcePath(rootPath.string())
-    .addSource({(fs::path(rebuild.getMainPath()) / "build.cc").string()});
+    .addSource({(rootPath/"build.cc")});
     rebuild.setMain("build.cc").dumpProject();
     #ifdef __unix__
     rebuild.addDependency("build.cc",{"c++","c++abi"});
@@ -147,6 +147,8 @@ int compileProject(bool recompile)
 
     
         cProject libGLAD(&outPath, cProject::staticLib,recompile);
+
+
         #ifdef _WIN32
         libGLAD.setCompiler("clang")
         #elif __unix__
@@ -161,11 +163,12 @@ int compileProject(bool recompile)
         .dumpProject()
         .setMain("glad.c")
         .scanInclude()
-        #ifdef _WIN32
-        .addDependency("glad.c", {"opengl32"});
-        #elif __unix__
-        .addDependency("glad.c", {"GL"});
-        #endif
+        // #ifdef _WIN32
+        // .addDependency("glad.c", {"opengl32"})
+        // #elif __unix__
+        // .addDependency("glad.c", {"GL"})
+        // #endif
+        ;
         for (auto& f : libGLAD.ProjectFile.VIter()) {
             libGLAD.compileC(*f);
         }
@@ -209,14 +212,14 @@ int compileProject(bool recompile)
     
         mainProj
         .setMain("main.cc").scanHeader().scanModule()
-        .dumpProject()
         #ifdef _WIN32
         .addDependency("lib.RGFW.ccm",{"gdi32","opengl32"})
         #elif __unix__
         .addDependency("lib.RGFW.ccm",{"X11", "Xrandr"})
         .addDependency("lib.std.ccm",{"c++","c++abi"})
         #endif
-        ;
+        .dumpProject();
+
         while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
         std::queue<std::reference_wrapper<File>> queue;
         for (auto& i : mainProj.ProjectFile) {
