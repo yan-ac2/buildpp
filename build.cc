@@ -55,44 +55,44 @@ public:
     bool stop_ = false;
 };
 
-// int test()
-// { 
-//     print << "compile test"_fmt.color(fmt::Bold_Green).endl();
-//     const fs::path rootPath = ".";
-//     const fs::path exePath = rootPath / "bin";
+int test()
+{ 
+    print << "compile test"_fmt.color(fmt::Bold_Green).endl();
+    const fs::path rootPath = ".";
+    const fs::path exePath = rootPath / "bin";
 
-//     outputPath outPath;
-//     outPath.setRootPath(rootPath)
-//     .setExePath(exePath)
-//     .setOutfolder(rootPath / ".build")
-//     .setOutpath(rootPath / ".build" / "test");
+    outputPath outPath;
+    outPath.setRootPath(rootPath)
+    .setExePath(exePath)
+    .setOutfolder(rootPath / ".build")
+    .setOutpath(rootPath / ".build" / "test");
 
-//     Project test("test",&outPath,Project::exe,true);
+    Project test("test",&outPath,Project::exe,true);
 
-//     #ifdef _WIN32
-//     test.setCompiler("clang++").setOptions("-Oz -s -flto -Wall -std=c++23")
-//     #elif __unix__
-//     test.setCompiler("clang++")
-//     .setOptions("-O0 -std=c++23 -nostdlib ")
-//     #endif
-//     .setProjectPath(rootPath.string())
-//     .addSourcePath("testlib")
-//     .setMain((fs::path(test.SourcePath[0]) / "inprogress.cc").string())
-//     .addSource({(fs::path(test.SourcePath[0]) / "inprogress.cc").string()})
-//     .getCppFile();
+    #ifdef _WIN32
+    test.setCompiler("clang++").setOptions("-Oz -s -flto -Wall -std=c++23")
+    #elif __unix__
+    test.setCompiler("clang++")
+    .setOptions("-O0 -std=c++23 -nostdlib ")
+    #endif
+    .setProjectPath(rootPath.string())
+    .addSourcePath("testlib")
+    .setMain("inprogress.cc")
+    .addSource({(fs::path(test.getMainPath()) / "inprogress.cc").string()})
+    .getCppFile();
     
-//     #ifdef __unix__
-//     // test.addDependency("inprogress.cc",{"c++","c++abi"});
-//     #endif
-//     for (auto& i : test.ProjectFile)
-//     {
-//         test.compileCpp(i);
-//     }
+    #ifdef __unix__
+    // test.addDependency("inprogress.cc",{"c++","c++abi"});
+    #endif
+    for (auto& i : test.ProjectFile.VIter())
+    {
+        test.compileCpp(*i);
+    }
 
-//     test.link("test");
-//     return 0;
+    test.link(test.ProjectFile.getMain());
+    return 0;
     
-// }
+}
 
 
 int selfCompile(bool recompile)
@@ -118,9 +118,8 @@ int selfCompile(bool recompile)
     #endif
     .setProjectPath(rootPath.string())
     .addSourcePath(rootPath.string())
-    .addSource({"build.cc"})
-    .getCppFile();
-    rebuild.dumpProject().setMain("build.cc");
+    .addSource({(fs::path(rebuild.getMainPath()) / "build.cc").string()});
+    rebuild.setMain("build.cc").dumpProject();
     #ifdef __unix__
     rebuild.addDependency("build.cc",{"c++","c++abi"});
     #endif
@@ -167,8 +166,8 @@ int compileProject(bool recompile)
         #elif __unix__
         .addDependency("glad.c", {"GL"});
         #endif
-        for (auto& f : libGLAD.ProjectFile) {
-            libGLAD.compileC(f);
+        for (auto& f : libGLAD.ProjectFile.VIter()) {
+            libGLAD.compileC(*f);
         }
     
         // Project meshoptimizer("meshoptimizer",&outPath,Project::staticLib,false);
@@ -209,8 +208,8 @@ int compileProject(bool recompile)
         .getCppFile();
     
         mainProj
+        .setMain("main.cc").scanHeader()
         .dumpProject()
-        .setMain("main.cc").scanHeader().scanModule()
         #ifdef _WIN32
         .addDependency("lib.RGFW.ccm",{"gdi32","opengl32"})
         #elif __unix__
@@ -264,7 +263,7 @@ auto main(int argc, const char* argv[]) -> int
         if (inputLine == "-recompile") {compileProject(true); return 0;}
         if (inputLine == "-self") {selfCompile(false); return 0;}
         if (inputLine == "-recompileself") {selfCompile(true); return 0;}
-        // if (inputLine == "-test") {test(); return 0;}
+        if (inputLine == "-test") {test(); return 0;}
         else return 0;    
     }
 

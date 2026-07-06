@@ -1,16 +1,10 @@
 
 module;
-#include <array>
-#include <chrono>
-#include <iostream>
-#include <filesystem>
-#include <numeric>
-#include <unordered_map>
-
 #include <glad/glad.h>
 
 export module lib.renderer;
 
+import lib.std;
 import lib.RGFW;
 import lib.types;
 

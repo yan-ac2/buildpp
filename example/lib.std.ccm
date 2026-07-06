@@ -1,5 +1,28 @@
 module;
 export module lib.std;
-export import <iostream>;
+export import <array>;
+
+export import <cstdint>;
 export import <chrono>;
+
+export import <filesystem>;
+
+export import <fstream>;
+export import <sstream>;
+export import <iostream>;
+
+export import <random>;
+
 export import <tuple>;
+export import <thread>;
+
+export import <numeric>;
+export import <unordered_map>;
+
+export import <vector>;
+
+
+// #include <array>
+// #include <chrono>
+// #include <iostream>
+// #include <filesystem>
