@@ -70,15 +70,17 @@ int test()
     Project test("test",&outPath,Project::exe,true);
 
     #ifdef _WIN32
-    test.setCompiler("clang++").setOptions("-Oz -s -flto -Wall -std=c++23")
+    test.setCompiler("clang++")
+    .setOptions("-O2 -ffreestanding -flto -Wall -std=c++23 -fno-rtti")
+    .setLdOptions("-s ")
     #elif __unix__
     test.setCompiler("clang++")
     .setOptions("-O0 -std=c++23 -nostdlib ")
     #endif
     .setProjectPath(rootPath.string())
     .addSourcePath("testlib")
-    .addSource({(test.Path / test.getMainPath() / "inprogress.cc").string()})
-    .setMain("inprogress.cc");
+    .addSource({(test.Path / test.getMainPath() / "staticMap.cc").string()})
+    .setMain("staticMap.cc");
     // .getCppFile();
     
     #ifdef __unix__
