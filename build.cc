@@ -169,7 +169,7 @@ int compileProject(bool recompile)
         for (auto& f : libGLAD.ProjectFile.VIter()) {
             libGLAD.compileC(*f);
         }
-    
+        libGLAD.link(libGLAD.ProjectFile.getMain());
         // Project meshoptimizer("meshoptimizer",&outPath,Project::staticLib,false);
         // meshoptimizer.setCompiler("clang++")
         // .setOptions("-O3 -std=c++23")
@@ -208,7 +208,7 @@ int compileProject(bool recompile)
         .getCppFile();
     
         mainProj
-        .setMain("main.cc").scanHeader()
+        .setMain("main.cc").scanHeader().scanModule()
         .dumpProject()
         #ifdef _WIN32
         .addDependency("lib.RGFW.ccm",{"gdi32","opengl32"})
