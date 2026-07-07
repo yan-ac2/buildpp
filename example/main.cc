@@ -16,11 +16,19 @@ concept TupleLike = requires {
     typename std::tuple_size<std::remove_cvref_t<T>>::type;
 };
 
-template<Key V>
-struct keyData {
+template<Key V,typename Fn>
+class keyData {
+    public:
     auto getType() -> typename remove_ptr<decltype(this)>::type;
-    enum val {value = V};
+    static constexpr size_t Value = V;
     bool Pressed = false;
+    void* fn = nullptr;
+    keyData(auto&& f) : fn(f) {}
+    void operator ()() {
+        auto ptr = *static_cast<Fn>(fn);
+        ptr();
+    }
+
 };
 template<auto... V>
 struct StaticMap {
@@ -76,8 +84,13 @@ class App
 
 int main ()
 {
-    keyData<Key::key_0> s;
-    decltype(s.getType()) sw;
+    const char* str = "world"; 
+    auto test = [&str]() {
+        std::cout << "hello " << str << "\n";
+    };
+    keyData<Key::key_0,decltype(test)*> ssw (&test);
+    ssw();
+
     vec2<int> ss {2,5};
     vec3<int> ss2 {2,5,10};
     vec<int,4> ss3 {2,5,10,15};
