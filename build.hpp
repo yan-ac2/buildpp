@@ -956,7 +956,7 @@ class Project
     }
     
     Project& scanHeader() {
-        print << "Scanning Files"_fmt.color(fmt::Bold_Green).endl();
+        // print << "Scanning Files"_fmt.color(fmt::Bold_Green).endl();
         auto singleLineComment = [](const std::string* line, const std::size_t* ipos) -> bool {
             // 1. Safety check for null pointers
             if (!line || !ipos) return false;
@@ -1003,9 +1003,11 @@ class Project
             return false;
         };
 
-        for (const auto& [K, V] : ProjectFile) {
-            auto& modFile = ProjectFile[V.ID];
-            print << "scan " << V.Path << "\n";
+        for (auto& [K, V] : ProjectFile) {
+            // auto& modFile = ProjectFile[V.ID];
+            
+            // print << "scan " << V.Path << "\n";
+
             if (V.Path.empty()) {err(true,"Error: Empty project path"_fmt.color(fmt::Bold_Red));}
             
             std::ifstream files(V.Path.data());
@@ -1015,20 +1017,24 @@ class Project
             std::string includeFound;
             std::string moduleName;
             bool inBlockComment = false;
+            bool exportModuleFound = false;
+
             while (std::getline(files,line)) {
-                size_t epos = line.find(file.exportToken);
-
-                if(singleLineComment(&line, &epos)) {continue;}
+                
                 if(blockedComment(&inBlockComment, &line)) {continue;}
-
-                if (epos != std::string::npos) {
+                
+                if (!exportModuleFound) {
+                    size_t epos = line.find(file.exportToken);
+                    if(singleLineComment(&line, &epos)) {continue;}
+                    if(epos != std::string::npos) {
                         moduleName = line.substr(epos + file.exportToken.length() + 1);
                         moduleName.erase(moduleName.find(';'));
                         // print << fmt("export module "_fmt.color(fmt::Yellow), moduleName ," found in " , V.Path ).endl();
                         
-                        modFile.Name = moduleName;
-                        modFile.fileType = File::Module;
-                        break; // only one export module per file is allowed 
+                        V.Name = moduleName;
+                        V.fileType  = File::Module;
+                        exportModuleFound = true; // only one export module per file is allowed 
+                    }
                 }
 
                 size_t pos = line.find(file.includeToken);
@@ -1041,14 +1047,15 @@ class Project
                     for(const auto& [KI,VI] : ProjectFile.hIter()) {
                         for(const auto& I : VI) {
                             if (includeFound == I) {
-                                print << fmt("Include dependency Found: "_fmt.color(fmt::Blue), includeFound, " " , I , " in " , V.Path).endl();
-                                modFile.Flags.append(fmt(" -I",KI));
+                                // print << fmt("Include dependency Found: "_fmt.color(fmt::Blue), includeFound, " " , I , " in " , V.Path).endl();
+                                V.Flags.append(fmt(" -I",KI));
                                 break;
                             }
                         }
                     }
                 }
             }
+
             files.clear();
             files.seekg(0);
             
@@ -1108,7 +1115,7 @@ class Project
             if (V.fileType == File::SystemHeader) { 
                 continue;
             }
-            print << fmt("Scan module " , V.Path ).endl();
+            // print << fmt("Scan module " , V.Path ).endl();
 
             err(V.Path.empty() ,"Error: Empty project path"_fmt.color(fmt::Bold_Red)); 
 
