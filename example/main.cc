@@ -3,7 +3,10 @@
 // #include <tuple>
 // #include <iostream>
 
+#include <cstddef>
+#include <functional>
 #include <glad/glad.h>
+#include <utility>
 
 import lib;
 import lib.std;
@@ -11,6 +14,24 @@ import lib.std;
 template <typename T>
 concept TupleLike = requires {
     typename std::tuple_size<std::remove_cvref_t<T>>::type;
+};
+
+template<Key V>
+struct keyData {
+    auto getType() -> typename remove_ptr<decltype(this)>::type;
+    enum val {value = V};
+    bool Pressed = false;
+};
+template<auto... V>
+struct StaticMap {
+    static_assert(!has_duplicates<typename decltype(V)::type...>(), 
+                  "StaticMap Error: Duplicate types are not allowed!");
+    static constexpr const char* getID(std::size_t IDX) {
+        // C++17 Fold Expression to search through the template pack at compile time
+        // ((is_same<T, typename decltype(V)::type>::value ? (result = decltype(V)::name) : nullptr), ...);
+        
+        // return result;
+    } 
 };
 
 class App
@@ -26,39 +47,37 @@ class App
         ren.init(4,6,&win);
         return *this;
     }
-    
-    template<auto... F,typename... Tuples> requires (sizeof...(F) == sizeof...(Tuples))
+    template<typename... Tuples>
     App& update(Tuples&&... args)
     {
-        for (;ShouldClose(&this->win) == 0;) 
+        for (; ShouldClose(&this->win) == 0;) 
         {
             ren.swapbuffer();
-            [&]<std::size_t... Is>(std::index_sequence<Is...>) {
             
-                auto process = [this]<auto Func, typename T>(T&& arg) {
-
-                    if constexpr (TupleLike<T>) {
-
-                        std::apply([this](auto&&... unpacked) {
-                            Func(this, std::forward<decltype(unpacked)>(unpacked)...);
-                        }, std::forward<T>(arg));
+            // A simple fold expression over the passed tuples
+            ([this](auto&& tuple) {
+                // Unpack the tuple into its individual components
+                std::apply([this](auto&& func, auto&&... params) {
+                    // func is the function pointer (e.g., &inputUpdate)
+                    // params... are the remaining arguments (e.g., &shader, &x, &y)
+                    
+                    if constexpr (sizeof...(params) > 0) {
+                        func(this, std::forward<decltype(params)>(params)...);
                     } else {
-                
-                        Func(this, std::forward<T>(arg));
+                        func(this);
                     }
-                };
-
-                (process.template operator()<F>(std::forward<decltype(args)>(args)), ...);
-
-            }(std::index_sequence_for<decltype(F)...>{});
-            // (std::invoke(*F,this),...);
+                }, std::forward<decltype(tuple)>(tuple));
+            }(std::forward<Tuples>(args)), ...);
         }   
         return *this;
     }
+    
 };
 
 int main ()
 {
+    keyData<Key::key_0> s;
+    decltype(s.getType()) sw;
     vec2<int> ss {2,5};
     vec3<int> ss2 {2,5,10};
     vec<int,4> ss3 {2,5,10,15};
@@ -150,7 +169,7 @@ int main ()
         }
     };
     
-    auto renderUpd = [](App* ptr,
+    auto renderUpd = [&](App* ptr,
         std::chrono::time_point<std::chrono::high_resolution_clock>* start,
         Shader* shader
     ){
@@ -173,11 +192,13 @@ int main ()
         // glDrawElements(GL_TRIANGLES,6,GL_UNSIGNED_INT,0);
 
     };
-
-    app.update<inputUpdate,renderUpd> (
-        std::tuple{&shader,&x,&y},
-        std::tuple{&start,&shader}
+    // app.update<inputUpdate,renderUpd> (
+    //     std::tuple{&shader,&x,&y},
+    //     std::tuple{&start,&shader}
+    // );
+    app.update (
+        std::tuple{inputUpdate,&shader,&x,&y},
+        std::tuple{renderUpd,&start,&shader}
     );
-    
     return 0;
 }
