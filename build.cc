@@ -110,7 +110,7 @@ int selfCompile(bool recompile)
 
     #ifdef _WIN32
     rebuild.setCompiler("clang++")
-    .setOptions("-O2 -flto=thin -fno-rtti -fuse-ld=lld -Wall -std=c++23")
+    .setOptions("-O0 -flto=thin -fno-rtti -fuse-ld=lld -Wall -std=c++23")
     .setLdOptions("-s")
     #elif __unix__
     rebuild.setCompiler("clang++")
@@ -155,7 +155,7 @@ int compileProject(bool recompile)
         libGLAD.setCompiler("clang")
         #endif
         .addCompileCommand(&cmdJson)
-        .setOptions("-O0")
+        .setOptions("-O3")
         .setProjectPath(rootPath / "example"/ "lib" / "glad")
         .setSourcePath("src")
         .addIncludefile((libGLAD.Path / "include").string())
@@ -193,7 +193,7 @@ int compileProject(bool recompile)
     
         #ifdef _WIN32
         mainProj.setCompiler("clang++")
-        .setOptions(" -O2 -flto=thin -fno-rtti -fno-exceptions -fuse-ld=lld -std=c++23")
+        .setOptions(" -O3 -flto=thin -fno-rtti -fno-exceptions -fuse-ld=lld -std=c++23 -ftime-trace")
         .setLdOptions("-s ")
         #elif __unix__
         mainProj.setCompiler("clang++")

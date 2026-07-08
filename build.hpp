@@ -125,14 +125,15 @@ struct fmt {
 };
 constexpr fmt operator""_fmt(const char* str,size_t) { return fmt(str);}
 
-inline struct implPrint
+struct implPrint
 {
     constexpr implPrint& operator <<(std::string_view in) {
-        std::printf("%s",in.data());
+        std::printf("%.*s",static_cast<int>(in.size()),in.data());
         return *this;
     }
     void operator <<(implPrint& f) {f = *this;}
-}print;
+};
+inline implPrint print;
 
 class cmdImpl {
     using pipe = std::unique_ptr<FILE, decltype(&pclose)>;
@@ -1208,14 +1209,14 @@ class Project
         
         int ret {};
         if (recompile && !isSystemHeader) {
-            print << fmt("recompiling "_fmt.color(fmt::Green) , f_cmd , "\r\n");
+            print << fmt("recompiling "_fmt.color(fmt::Green) , f_cmd) << "\r" ;
             l_rewrite();
             ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
         } else if (!fs::exists(fModule)) {
-            print << fmt("compiling "_fmt.color(fmt::Green) , f_cmd , "\r\n");
+            print << fmt("compiling "_fmt.color(fmt::Green) , f_cmd) << "\r" ;
             ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
         } else if (inFile.fileType != File::SystemHeader && fs::last_write_time(inFile.Path) > fs::last_write_time(fModule)) {
-            print << fmt("updated "_fmt.color(fmt::Green) , f_cmd , "\r\n");
+            print << fmt("updated "_fmt.color(fmt::Green) , f_cmd) << "\r" ;
             l_rewrite();
             ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
         } 
@@ -1234,15 +1235,15 @@ class Project
         const auto& oPath = OutPath->objPath;
         const auto& mPath = OutPath->modulePath;
         
-        const std::string f_objOutput = fmt((oPath / inFile.Name).string(), file.objFile).str;
+        const std::string f_objOutput {fmt((oPath / inFile.Name).string(), file.objFile)};
 
-        const std::string f_filein    = f_isModule ? fmt((mPath / inFile.Name).string(),file.pcmModule ).str : inFile.Path.data();
+        const std::string f_filein    {f_isModule ? fmt((mPath / inFile.Name).string(),file.pcmModule ) : inFile.Path};
 
-        const std::string f_cppOutput = 
+        const std::string f_cppOutput { 
         fmt(f_isModule ?"" : "-c ",f_filein, 
             inFile.dependencies.empty() ? "" : 
             fmt(" -fprebuilt-module-path=", (mPath).string()," ")
-        ).str;
+        )};
             
         for (const auto& I : inFile.dependencies) {
             bool isSystemHeader = ProjectFile[I].fileType == File::SystemHeader;
@@ -1252,7 +1253,7 @@ class Project
             );
         }
 
-        const std::string f_cmd = fmt(Compiler, Options,inFile.haveHeaderUnit ? "-Wno-experimental-header-units":"" ,f_cppOutput,inFile.Flags,f_isModule?" -c -o ":" -o ", f_objOutput).clean().str;
+        const std::string f_cmd {fmt(Compiler, Options,inFile.haveHeaderUnit ? "-Wno-experimental-header-units":"" ,f_cppOutput,inFile.Flags,f_isModule?" -c -o ":" -o ", f_objOutput).clean()};
         
         if(cmdJson != nullptr && !f_isModule) { cmdJson->addCompilecmd((Path / inFile.Path).parent_path().string(),f_cmd,(Path / inFile.Path).string(),f_objOutput);}
         
@@ -1263,17 +1264,17 @@ class Project
 
         int ret {};
         if (recompile) {
-            print << fmt("recompiling "_fmt.color(fmt::Bold_Green) , f_cmd , "\r\n");
+            print << fmt("recompiling "_fmt.color(fmt::Bold_Green) , f_cmd) << "\n" ;
             ret = cmd << f_cmd.c_str() >> "Error compiling "_fmt.color(fmt::Bold_Red);
             
         } else if (!fs::exists(f_objOutput))
         {
-            print << fmt("compiling "_fmt.color(fmt::Bold_Green) , f_cmd , "\r\n");
+            print << fmt("compiling "_fmt.color(fmt::Bold_Green) , f_cmd) << "\n" ;
             ret = cmd << f_cmd.c_str() >> "Error compiling "_fmt.color(fmt::Bold_Red);
             
         } else if (fs::last_write_time(inFile.Path) > fs::last_write_time(f_objOutput))
         {
-            print << fmt("updated "_fmt.color(fmt::Bold_Green) , f_cmd , "\r\n");
+            print << fmt("updated "_fmt.color(fmt::Bold_Green) , f_cmd) << "\n" ;
             ret = cmd << f_cmd.c_str() >> "Error compiling "_fmt.color(fmt::Bold_Red);
         }
         inFile.compiled = (ret == 0 ? true : false);
@@ -1283,7 +1284,6 @@ class Project
     
     void link(File& inPath) {
         
-        print << fmt("linking"_fmt.color(fmt::Bold_Green).endl());
         const std::string f_targetOut = fmt((OutPath->exePath / inPath.Name).string(), outFile == staticLib ? file.libFile : file.executable).str;
         const std::string f_Output    = fmt(outFile == staticLib ? " " : " -o ", f_targetOut).str;
         
@@ -1295,7 +1295,7 @@ class Project
         } else if (outFile == Project::exe) {
             f_Object = fmt(inPath.dependencies.empty() ? "" : fmt(" -fprebuilt-module-path=", (OutPath->modulePath / ".").string()));
             if (fs::exists(f_targetOut)) {
-                print << f_targetOut << "\n";
+                // print << f_targetOut << "\n";
                 fs::rename(f_targetOut, fmt(f_targetOut, ".old").str);
             }
         }
@@ -1315,7 +1315,7 @@ class Project
                 fs::copy(getMainPath() / ResPath,OutPath->exePath/ResPath,fs::copy_options::recursive | fs::copy_options::skip_existing);
             }
         }
-        print << f_cmd << "\n";
+        print << "Linking "_fmt.color(fmt::Bold_Green) << f_cmd << "\n";
         cmd << f_cmd.c_str() >> "linking error"_fmt.color(fmt::Bold_Red);
     }
 

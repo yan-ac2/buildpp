@@ -175,8 +175,8 @@ int main ()
     };
 
     app.update<inputUpdate,renderUpd> (
-        std::tuple(&shader,&x,&y),
-        std::tuple(&start,&shader)
+        std::tuple{&shader,&x,&y},
+        std::tuple{&start,&shader}
     );
     
     return 0;
