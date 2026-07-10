@@ -4,6 +4,7 @@
 // #include <iostream>
 
 #include <cstddef>
+#include <bit>
 #include <functional>
 #include <glad/glad.h>
 #include <utility>
@@ -16,30 +17,29 @@ concept TupleLike = requires {
     typename std::tuple_size<std::remove_cvref_t<T>>::type;
 };
 
-template<Key V,typename Fn>
+template<Key V, typename Fn>
 class keyData {
-    public:
-    auto getType() -> typename remove_ptr<decltype(this)>::type;
-    static constexpr size_t Value = V;
+public:
+    // Fixed: remove_ptr needs std::remove_pointer_t, and this is a pointer type inside the class
+    constexpr auto getType() -> typename std::remove_pointer<decltype(this)>::type;
+    
+    static constexpr uint8 Value = V; // Changed type to Key to match template parameter
     bool Pressed = false;
-    void* fn = nullptr;
-    keyData(auto&& f) : fn(f) {}
-    void operator ()() {
-        auto ptr = *static_cast<Fn>(fn);
-        ptr();
-    }
+    void (*fn)()  = nullptr;                // Storing actual type Fn instead of void* makes constexpr trivial
 
-};
-template<auto... V>
-struct StaticMap {
-    static_assert(!has_duplicates<typename decltype(V)::type...>(), 
-                  "StaticMap Error: Duplicate types are not allowed!");
-    static constexpr const char* getID(std::size_t IDX) {
-        // C++17 Fold Expression to search through the template pack at compile time
-        // ((is_same<T, typename decltype(V)::type>::value ? (result = decltype(V)::name) : nullptr), ...);
-        
-        // return result;
-    } 
+    // Constexpr constructor
+    constexpr keyData(Fn&& f) : fn(*std::bit_cast<void(*)()>(f)) {}
+
+    // Made operator() constexpr
+    constexpr void operator()() const {
+        // auto ptr = *std::bit_cast<Fn>(fn);
+        if (Pressed && fn) {
+            fn();
+        }
+        // if(fn) {
+        //     fn();
+        // }
+    }
 };
 
 class App
@@ -82,14 +82,31 @@ class App
     
 };
 
+template<typename... KeyDataTypes>
+struct StaticMap {
+    std::tuple<KeyDataTypes...> keys;
+
+    constexpr StaticMap(KeyDataTypes&&... args) 
+        : keys(std::forward<KeyDataTypes>(args)...) {}
+
+    constexpr void handleEvent(uint8 event, uint8 key) {
+        std::apply([&](auto&... item) {
+            ((item.Value == key ? item.Pressed = (event == eventType::keyPressed) : false),...);
+        },keys);
+    }
+
+    constexpr void isPressed() {
+        bool result = false;
+        std::apply([&](auto&&... item) {
+            ((item.Pressed ? item() : void()),...);
+            // ((item.Pressed ? std::cout << "input\n" : std::cout << "noinput\n"),...);
+        }, keys);
+    }
+
+};
+
 int main ()
 {
-    const char* str = "world"; 
-    auto test = [&str]() {
-        std::cout << "hello " << str << "\n";
-    };
-    keyData<Key::key_0,decltype(test)*> ssw (&test);
-    ssw();
 
     vec2<int> ss {2,5};
     vec3<int> ss2 {2,5,10};
@@ -115,8 +132,8 @@ int main ()
     auto* ren = &app.ren;
     auto start = std::chrono::high_resolution_clock::now();
     Shader shader("res");
-
     float x = 0,y = 0;
+    
 
     app.init();
 
@@ -156,32 +173,48 @@ int main ()
     auto inputUpdate = [](App* app,
         Shader* shader,
         float* x,float* y) {
+            
+        auto key_Escape = [&]() { CloseWindow(&app->win);};
+        auto key_W = [&]() {++y; std::cout << x << "," << y <<"\n"; };
+        auto key_A = [&]() {--x; std::cout << x << "," << y <<"\n"; };
+        auto key_S = [&]() {--y; std::cout << x << "," << y <<"\n"; };
+        auto key_D = [&]() {++x; std::cout << x << "," << y <<"\n"; };
+
+        StaticMap myMap{
+            keyData<Key::key_escape,decltype(key_Escape)*>(&key_Escape),
+            keyData<Key::key_w,decltype(key_W)*>(&key_W),
+            keyData<Key::key_a,decltype(key_A)*>(&key_A),
+            keyData<Key::key_s,decltype(key_S)*>(&key_S),
+            keyData<Key::key_d,decltype(key_D)*>(&key_D)
+        };
         int32 b = 0;
         PollEvent(16);
         for (;CheckEvent(&app->win,&app->ev);) {
-            switch (app->ev.type)
-            {
-                case eventType::keyPressed:
-                {
-                    b = getKey(&app->ev);
-                    switch(b)
-                    {
-                        case Key::key_escape: {CloseWindow(&app->win); continue;}
-                        case Key::key_a: { shader->CompileShader(),shader->CompileProgram(); continue;}
-                        case Key::key_b: { continue;}
-                        case Key::key_c: { continue;}
-                        case Key::key_k: {*x+=0.01f, shader->setFloat("x", x); continue;}
-                        case Key::key_h: {*x-=0.01f, shader->setFloat("x", x); continue;}
-                        case Key::key_u: {*y+=0.01f, shader->setFloat("y", y); continue;}
-                        case Key::key_j: {*y-=0.01f, shader->setFloat("y", y); continue;}
-                        default: break;
-                    }
-                }
-                default: break;
-            }
+            myMap.handleEvent(app->ev.type, getKey(&app->ev));
         }
+        myMap.isPressed();
     };
     
+    // switch (app->ev.type)
+    // {
+    //     case eventType::keyPressed:
+    //     {
+    //         b = getKey(&app->ev);
+    //         switch(b)
+    //         {
+    //             case Key::key_escape: {CloseWindow(&app->win); continue;}
+    //             case Key::key_a: { shader->CompileShader(),shader->CompileProgram(); continue;}
+    //             case Key::key_b: { continue;}
+    //             case Key::key_c: { continue;}
+    //             case Key::key_k: {*x+=0.01f, shader->setFloat("x", x); continue;}
+    //             case Key::key_h: {*x-=0.01f, shader->setFloat("x", x); continue;}
+    //             case Key::key_u: {*y+=0.01f, shader->setFloat("y", y); continue;}
+    //             case Key::key_j: {*y-=0.01f, shader->setFloat("y", y); continue;}
+    //             default: break;
+    //         }
+    //     }
+    //     default: break;
+    // }
     auto renderUpd = [&](App* ptr,
         std::chrono::time_point<std::chrono::high_resolution_clock>* start,
         Shader* shader

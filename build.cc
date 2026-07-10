@@ -71,7 +71,7 @@ int test()
 
     #ifdef _WIN32
     test.setCompiler("clang++")
-    .setOptions("-O2 -ffreestanding -flto -Wall -std=c++23 -fno-rtti")
+    .setOptions("-O2 -ffreestanding -flto -Wall -std=c++26 -fno-rtti")
     .setLdOptions("-s ")
     #elif __unix__
     test.setCompiler("clang++")
@@ -116,7 +116,7 @@ int selfCompile(bool recompile)
     .setLdOptions("-s")
     #elif __unix__
     rebuild.setCompiler("clang++")
-    .setOptions("-O3 -Wall -std=c++23 -stdlib=libc++ ")
+    .setOptions("-O3 -Wall -std=c++26 -stdlib=libc++ ")
     #endif
     .setProjectPath(rootPath.string())
     .addSourcePath(rootPath.string())
@@ -195,11 +195,11 @@ int compileProject(bool recompile)
     
         #ifdef _WIN32
         mainProj.setCompiler("clang++")
-        .setOptions(" -O2 -flto=thin -fno-rtti -fno-exceptions -fuse-ld=lld -std=c++23 -ftime-trace")
+        .setOptions(" -O2 -flto=thin -fno-rtti -fno-exceptions -fuse-ld=lld -std=c++26 -ftime-trace")
         .setLdOptions("-s ")
         #elif __unix__
         mainProj.setCompiler("clang++")
-        .setOptions("-O3 -fno-exceptions  -stdlib=libc++ -std=c++23")
+        .setOptions("-O3 -fno-exceptions  -stdlib=libc++ -std=c++26")
         #endif
         .addCompileCommand(&cmdJson)
         .setProjectPath((rootPath).string())
