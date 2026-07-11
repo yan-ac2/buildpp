@@ -1195,7 +1195,7 @@ class Project
         const std::string f_srcInput = 
         // f_isUserHeader ? fmt("-Wno-pragma-system-header-outside-header -fmodule-header=user --precompile ",fPath.string()," -o ",f_module).str :
         isSystemHeader ? fmt("-Wno-pragma-system-header-outside-header -x c++-system-header --precompile ",inFile.Name," -o ",fModule).str :
-        fmt("-c ",(Path / inFile.Path).string()," -fno-modules-reduced-bmi -fmodule-output=",fModule," -fprebuilt-module-path=",(mPath).string()).str;
+        fmt("-c ",(Path / inFile.Path).string()," -fmodules-reduced-bmi -fmodule-output=",fModule," -fprebuilt-module-path=",(mPath).string()).str;
         
         for (const auto& I : inFile.dependencies) {
             

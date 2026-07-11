@@ -195,7 +195,7 @@ int compileProject(bool recompile)
     
         #ifdef _WIN32
         mainProj.setCompiler("clang++")
-        .setOptions(" -O2 -flto=thin -fno-rtti -fno-exceptions -fuse-ld=lld -std=c++26 -ftime-trace")
+        .setOptions(" -O2 -flto=thin -fno-rtti -fno-exceptions -fuse-ld=lld -std=c++26")
         .setLdOptions("-s ")
         #elif __unix__
         mainProj.setCompiler("clang++")

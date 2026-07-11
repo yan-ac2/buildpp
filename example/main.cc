@@ -17,28 +17,22 @@ concept TupleLike = requires {
     typename std::tuple_size<std::remove_cvref_t<T>>::type;
 };
 
-template<Key V, typename Fn>
+template<Key V>
 class keyData {
 public:
-    // Fixed: remove_ptr needs std::remove_pointer_t, and this is a pointer type inside the class
-    constexpr auto getType() -> typename std::remove_pointer<decltype(this)>::type;
-    
-    static constexpr uint8 Value = V; // Changed type to Key to match template parameter
-    bool Pressed = false;
-    void (*fn)()  = nullptr;                // Storing actual type Fn instead of void* makes constexpr trivial
+    static constexpr Key Value = V;
+    bool isDown = false;
+    bool wasDown = false;
+    bool changed = false;
 
-    // Constexpr constructor
-    constexpr keyData(Fn&& f) : fn(*std::bit_cast<void(*)()>(f)) {}
-
-    // Made operator() constexpr
-    constexpr void operator()() const {
-        // auto ptr = *std::bit_cast<Fn>(fn);
-        if (Pressed && fn) {
-            fn();
-        }
-        // if(fn) {
-        //     fn();
-        // }
+    using ActionFunc = std::function<void()>;
+    ActionFunc action = []{}; 
+    constexpr bool toggle() {
+        return changed;
+    }
+    constexpr void update() {
+        changed = (isDown != wasDown);
+        wasDown = isDown;
     }
 };
 
@@ -89,52 +83,50 @@ struct StaticMap {
     constexpr StaticMap(KeyDataTypes&&... args) 
         : keys(std::forward<KeyDataTypes>(args)...) {}
 
-    constexpr void handleEvent(uint8 event, uint8 key) {
-        std::apply([&](auto&... item) {
-            ((item.Value == key ? item.Pressed = (event == eventType::keyPressed) : false),...);
-        },keys);
+    // constexpr void newFrame() {
+    //     ((),...);
+    // }
+    constexpr void update() {
+        ((isPressed<KeyDataTypes::Value>(),get<KeyDataTypes::Value>().update()),...);
     }
-
+    template<Key K>
     constexpr void isPressed() {
-        bool result = false;
-        std::apply([&](auto&&... item) {
-            ((item.Pressed ? item() : void()),...);
-            // ((item.Pressed ? std::cout << "input\n" : std::cout << "noinput\n"),...);
-        }, keys);
+        auto& data = std::get<keyData<K>>(keys);
+        data.isDown = isKeyDown(data.Value);
+        if(data.isDown && data.wasDown) {
+            data.action();
+        }
+    }
+    template<Key K>
+    constexpr auto& get() {
+        return std::get<keyData<K>>(keys);
     }
 
+    template<Key K>
+    constexpr auto& set() {
+        return std::get<keyData<K>>(keys).action;
+    }
 };
+
 
 int main ()
 {
-
-    vec2<int> ss {2,5};
-    vec3<int> ss2 {2,5,10};
-    vec<int,4> ss3 {2,5,10,15};
-    for (const auto& i : ss.get<"yyyxx">()) {
-        std::cout << i << " ";
-    }
-    std::cout << "\n";
-    for (const auto& i : ss2.get<"yyyxxz">()) {
-        std::cout << i << " ";
-    }
-    std::cout << "\n";
-    for (const auto& i : ss3.get<"wyyxxzw">()) {
-        std::cout << i << " ";
-    }
-    std::cout << "\n";
-    for (const auto& i : ss3.get<"wyywxzw">()) {
-        std::cout << i << " ";
-    }
-    std::cout << "\n";
-
     App app;
     auto* ren = &app.ren;
     auto start = std::chrono::high_resolution_clock::now();
     Shader shader("res");
-    float x = 0,y = 0;
+    StaticMap keyMap{
+        keyData<Key::key_escape>{},
+        keyData<Key::key_w>{},
+        keyData<Key::key_a>{},
+        keyData<Key::key_s>{},
+        keyData<Key::key_d>{},
+        keyData<Key::key_q>{},
+        keyData<Key::key_controlL>{},
+    };
     
-
+    
+    float x = 0,y = 0;
     app.init();
 
     float vertices[] {
@@ -169,52 +161,32 @@ int main ()
     // ren->pushVertices(box,32);
     shader.CompileShader();
     shader.CompileProgram();
+
     
-    auto inputUpdate = [](App* app,
+    
+    
+    keyMap.set<Key::key_escape>() = [&]() { CloseWindow(&app.win);};
+    keyMap.set<Key::key_w>() = [&]() {++(y); std::cout << x << "," << y <<"\n"; };
+    keyMap.set<Key::key_a>() = [&]() {--(x); std::cout << x << "," << y <<"\n"; };
+    keyMap.set<Key::key_s>() = [&]() {--(y); std::cout << x << "," << y <<"\n"; };
+    keyMap.set<Key::key_d>() = [&]() {
+        keyMap.get<Key::key_controlL>().wasDown ? x += 10 : ++(x); 
+            std::cout << x << "," << y <<"\n"; 
+    };
+
+    auto inputUpdate = [&](App* app,
         Shader* shader,
         float* x,float* y) {
             
-        auto key_Escape = [&]() { CloseWindow(&app->win);};
-        auto key_W = [&]() {++y; std::cout << x << "," << y <<"\n"; };
-        auto key_A = [&]() {--x; std::cout << x << "," << y <<"\n"; };
-        auto key_S = [&]() {--y; std::cout << x << "," << y <<"\n"; };
-        auto key_D = [&]() {++x; std::cout << x << "," << y <<"\n"; };
 
-        StaticMap myMap{
-            keyData<Key::key_escape,decltype(key_Escape)*>(&key_Escape),
-            keyData<Key::key_w,decltype(key_W)*>(&key_W),
-            keyData<Key::key_a,decltype(key_A)*>(&key_A),
-            keyData<Key::key_s,decltype(key_S)*>(&key_S),
-            keyData<Key::key_d,decltype(key_D)*>(&key_D)
-        };
-        int32 b = 0;
-        PollEvent(16);
-        for (;CheckEvent(&app->win,&app->ev);) {
-            myMap.handleEvent(app->ev.type, getKey(&app->ev));
-        }
-        myMap.isPressed();
+            int32 b = 0;
+            // keyMap.newFrame();
+            PollEvent(16);
+            for (;CheckEvent(&app->win,&app->ev);) {
+                keyMap.update();
+            }
     };
     
-    // switch (app->ev.type)
-    // {
-    //     case eventType::keyPressed:
-    //     {
-    //         b = getKey(&app->ev);
-    //         switch(b)
-    //         {
-    //             case Key::key_escape: {CloseWindow(&app->win); continue;}
-    //             case Key::key_a: { shader->CompileShader(),shader->CompileProgram(); continue;}
-    //             case Key::key_b: { continue;}
-    //             case Key::key_c: { continue;}
-    //             case Key::key_k: {*x+=0.01f, shader->setFloat("x", x); continue;}
-    //             case Key::key_h: {*x-=0.01f, shader->setFloat("x", x); continue;}
-    //             case Key::key_u: {*y+=0.01f, shader->setFloat("y", y); continue;}
-    //             case Key::key_j: {*y-=0.01f, shader->setFloat("y", y); continue;}
-    //             default: break;
-    //         }
-    //     }
-    //     default: break;
-    // }
     auto renderUpd = [&](App* ptr,
         std::chrono::time_point<std::chrono::high_resolution_clock>* start,
         Shader* shader
@@ -238,10 +210,7 @@ int main ()
         // glDrawElements(GL_TRIANGLES,6,GL_UNSIGNED_INT,0);
 
     };
-    // app.update<inputUpdate,renderUpd> (
-    //     std::tuple{&shader,&x,&y},
-    //     std::tuple{&start,&shader}
-    // );
+    
     app.update (
         std::tuple{inputUpdate,&shader,&x,&y},
         std::tuple{renderUpd,&start,&shader}

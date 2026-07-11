@@ -30,18 +30,21 @@ export
 	mSurface* createSurface (uint8* buff,int32 w,int32 h,surfaceFlags f) {
 		return RGFW_createSurface(buff,w,h,static_cast<uint8>(f));
 	};
-	auto& glGetProcAddr = RGFW_getProcAddress_OpenGL;
+	auto glGetProcAddr = RGFW_getProcAddress_OpenGL;
 	void BlitSurface (mWindow* win,mSurface* surface) {return RGFW_window_blitSurface(win,surface);};
-	void (&surfaceFree)(mSurface*) = RGFW_surface_free;
-	auto& PollEvent = RGFW_waitForEvent; 
+	auto surfaceFree = RGFW_surface_free;
+	auto PollEvent = RGFW_waitForEvent; 
+	int32 waitEventNext = RGFW_eventWaitNext; 
 	auto swapBuffer = RGFW_window_swapBuffers_OpenGL;
 	auto showWindow = RGFW_window_show;
 	auto setglHints = RGFW_setGlobalHints_OpenGL; 
 	auto makeCtxOpengl = RGFW_window_createContext_OpenGL;
-	auto getglHints = RGFW_getGlobalHints_OpenGL;
+	auto* getglHints = RGFW_getGlobalHints_OpenGL;
+	auto isKeyDown = RGFW_isKeyDown;
+	auto isKeyReleased = RGFW_isKeyReleased;
 	
 	inline int32 getKey(const mEvent* ev) {
-	return ev->key.value;
+		return ev->key.value;
 	}
 }
 
