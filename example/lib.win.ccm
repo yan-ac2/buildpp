@@ -1,0 +1,285 @@
+module;
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
+export module lib.win;
+
+import lib.std;
+import lib.types;
+
+export  {
+    struct input {
+        enum Key : unsigned char {
+            keyNULL = 0,
+            escape = '\033',
+            backtick = '`',
+            k0 = '0', k1 = '1', k2 = '2', k3 = '3', k4 = '4',
+            k5 = '5', k6 = '6', k7 = '7', k8 = '8', k9 = '9',
+            minus = '-',
+            equal = '=',
+            equals =  equal,
+            backSpace = '\b',
+            tab = '\t',
+            space = ' ',
+            a = 'a', b = 'b', c = 'c', d = 'd', e = 'e', f = 'f', g = 'g', h = 'h', i = 'i', j = 'j', k = 'k', l = 'l',
+            m = 'm', n = 'n', o = 'o', p = 'p', q = 'q', r = 'r', s = 's', T = 't', u = 'u', v = 'v', w = 'w', x = 'x',
+            y = 'y', z = 'z',        
+            period = '.',
+            comma = ',',
+            slash = '/',
+            bracket = '[',
+            closeBracket = ']',
+            semicolon = ';',
+            apostrophe = '\'',
+            backSlash = '\\',
+            kReturn = '\n',
+            enter =  kReturn,
+            kDelete = '\177', /* 127 */
+            F1,F2,F3,F4,F5,F6,F7,F8,F9,F10,F11,F12,F13,F14,F15,F16,F17,F18,F19,F20,F21,F22,F23,F24,F25,
+            capsLock,shiftL,controlL,altL,superL,shiftR,controlR,altR,superR,
+            up,down,left,right,
+            insert,menu,end,home,pageUp,pageDown,numLock,
+            kpSlash,kpMultiply,kpPlus,kpMinus,kpEqual,
+            kpEquals =  kpEqual,
+            kp1,kp2,kp3,kp4,kp5,kp6,kp7,kp8,kp9,kp0,
+            kpPeriod,kpReturn,
+            scrollLock,printScreen,pause,
+            world1,world2,
+            keyLast = 255 /* padding for alignment ~(175 by default) */
+        };
+        enum Mouse : unsigned int {
+            mNull = 0,
+            primary,secondary,middle,
+            Xbutton1,Xbutton2,
+            mLast
+        };
+        operator size_t () {
+            return static_cast<size_t>(*this);
+        }
+    };
+
+    template<input::Key V>
+    class keyData {
+    public:
+        static constexpr input::Key Value = V;
+        bool isDown = false;
+        bool wasDown = false;
+        bool changed = false;
+
+        using invoke = void(*)(void*,bool);
+        invoke action = nullptr; 
+        void* ptr = nullptr;
+        
+        template<typename F>
+        constexpr void setFn(F&& inFN) {
+            using decay = std::decay_t<F>;
+            static_assert(sizeof(decay) <= 24, "Callable too large for in-place buffer");
+            static_assert(alignof(decay) <= alignof(std::max_align_t), "Alignment mismatch");
+            ptr = new (buffer) decay(std::forward<F>(inFN));
+            
+            action = [](void* ptr,bool destroy) -> void {
+                if (destroy) {
+                    return static_cast<decay*>(ptr)->~decay();
+                }
+                return (*static_cast<decay*>(ptr))();
+            };
+        }
+        ~keyData() {
+            if(action) {
+                action(ptr,true);
+            }
+        }
+        constexpr bool toggle() {
+            return changed;
+        }
+        void operator ()() {
+            return action(ptr,false);
+        }
+        constexpr void update() {
+            changed = (isDown != wasDown);
+            wasDown = isDown;
+        }
+        alignas(std::max_align_t) char buffer[24];
+    };
+
+    template<typename... KeyDataTypes>
+    struct KeyMap {
+        std::tuple<KeyDataTypes...> keys;
+
+        constexpr KeyMap(KeyDataTypes&&... args) 
+            : keys(std::forward<KeyDataTypes>(args)...) {}
+
+        constexpr void update() {
+            ((isPressed<KeyDataTypes::Value>(),get<KeyDataTypes::Value>().update()),...);
+        }
+        template<input::Key K>
+        constexpr void isPressed() {
+            auto& data = std::get<keyData<K>>(keys);
+            data.isDown = isKeyDown(data.Value);
+            if(data.isDown && data.wasDown) {
+                data();
+            }
+        }
+        template<input::Key K>
+        constexpr auto& get() {
+            return std::get<keyData<K>>(keys);
+        }
+    };
+
+
+    struct InputState {
+        bool Keys  [input::keyLast] {};
+        bool Mouse [input::mLast] {};
+        int mouseX = 0;
+        int mouseY = 0;
+
+    };
+
+    inline InputState* gInput = nullptr;
+
+    LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+        HDC hdc;
+        switch (uMsg) {
+            case WM_DESTROY:
+                PostQuitMessage(0); // Signals the message loop to stop
+                return 0;
+                // --- Keyboard Input ---
+            case WM_KEYDOWN:
+                if (gInput && wParam < 256) gInput->Keys[wParam] = true;
+                return 0;
+
+            case WM_KEYUP:
+                if (gInput && wParam < 256) gInput->Keys[wParam] = false;
+                return 0;
+            // --- Mouse Movement ---
+            case WM_MOUSEMOVE:
+                if (gInput) {
+                    gInput->mouseX = LOWORD(lParam); // X coordinate relative to window
+                    gInput->mouseY = HIWORD(lParam); // Y coordinate relative to window
+                }
+                return 0;
+
+            // --- Mouse Buttons ---
+            case WM_LBUTTONDOWN:
+                if (gInput) gInput->Mouse[input::primary] = true;
+                return 0;
+            case WM_LBUTTONUP:
+                if (gInput) gInput->Mouse[input::primary] = false;
+                return 0;
+            case WM_RBUTTONDOWN:
+                if (gInput) gInput->Mouse[input::secondary] = true;
+                return 0;
+            case WM_RBUTTONUP:
+                if (gInput) gInput->Mouse[input::secondary] = false;
+                return 0;
+            case WM_XBUTTONDOWN:
+                if (gInput) gInput->Mouse[input::Xbutton1] = true;
+                return 0;
+            case WM_XBUTTONUP:
+                if (gInput) gInput->Mouse[input::Xbutton1] = false;
+                return 0;
+            case WM_MBUTTONDOWN:
+                if (gInput) gInput->Mouse[input::middle] = true;
+                return 0;
+            case WM_MBUTTONUP:
+                if (gInput) gInput->Mouse[input::middle] = false;
+                return 0;
+            // --- Mouse Wheels ---
+
+            case WM_PAINT: {
+                PAINTSTRUCT ps;
+                hdc = BeginPaint(hwnd, &ps);
+                TextOut(hdc,5,5,"learn windows",15);
+                // Custom drawing code goes here if needed
+                EndPaint(hwnd, &ps);
+                return 0;
+            }
+        }
+        return DefWindowProcA(hwnd, uMsg, wParam, lParam);
+    }
+    
+    class Platform {
+        HINSTANCE hInstance = nullptr;
+        HWND hWnd = nullptr;
+        WNDCLASSA wca = {};
+        InputState input; 
+
+        public:
+        Platform(const char* szWindowClass) {
+            
+            hInstance = GetModuleHandleA(nullptr);
+            gInput = &input;
+
+
+            wca.style          = CS_HREDRAW | CS_VREDRAW;
+            wca.lpfnWndProc    = WndProc;
+            wca.cbClsExtra     = 0;
+            wca.cbWndExtra     = 0;
+            wca.hInstance      = hInstance;
+            wca.hIcon          = LoadIcon(wca.hInstance, IDI_APPLICATION);
+            wca.hCursor        = LoadCursor(NULL, IDC_ARROW);
+            wca.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
+            wca.lpszMenuName   = NULL;
+            wca.lpszClassName  = szWindowClass;
+            if (!RegisterClassA(&wca))
+            {
+                MessageBox(nullptr,
+                    "Call to RegisterClassA failed!",
+                    "Windows Desktop Guided Tour",
+                    MB_ICONERROR | MB_OK);
+                
+                    // static_assert(true, "Call to RegisterClassA failed!");
+            }
+        }
+        bool CreateAppWindow(const char* szTitle, int width = 800, int height = 600) {
+            hWnd = CreateWindowExA(
+                0,
+                wca.lpszClassName,   // Must match the registered class name
+                szTitle,
+                WS_OVERLAPPEDWINDOW, // Standard window decor (Minimize, Maximize, Close)
+                CW_USEDEFAULT, CW_USEDEFAULT, // Initial x, y positions
+                width, height,                // Dimensions
+                nullptr, nullptr, hInstance, nullptr
+            );
+
+            if (!hWnd) {
+                MessageBoxA(nullptr, "Window Creation Failed!", "Error", MB_ICONERROR | MB_OK);
+                return false;
+            }
+
+            ShowWindow(hWnd, SW_SHOW);
+            UpdateWindow(hWnd);
+            return true;
+        }
+
+        // 3. The engine room: keeps the window alive and responsive
+        int RunMessageLoop() {
+            MSG msg = {};
+            // GetMessage returns 0 when it encounters WM_QUIT
+            while (GetMessageA(&msg, nullptr, 0, 0)) {
+                TranslateMessage(&msg);
+                DispatchMessageA(&msg); // Sends the message to our WndProc
+            }
+            return (int)msg.wParam;
+        }
+
+        bool ProcessEvents() {
+            MSG msg = {};
+            // PM_REMOVE tells the OS to clear the message from the queue after reading it
+            while (PeekMessageA(&msg, nullptr, 0, 0, PM_REMOVE)) {
+                if (msg.message == WM_QUIT) {
+                    return false; 
+                }
+                TranslateMessage(&msg);
+                DispatchMessageA(&msg);
+            }
+            return true;
+        }
+
+        // Optional helper to access the underlying window handle
+        HWND GetWindowHandle() const { return hWnd; }
+        const InputState& GetInput() const { return input; }
+    };
+
+}
+

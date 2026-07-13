@@ -1,15 +1,5 @@
 module;
 
-// #include <cstdint>
-// #include <iostream>
-// #include <fstream>
-// #include <sstream>
-// #include <array>
-// #include <vector>
-// #include <random>
-// #include <filesystem>
-// #include <thread>
-
 export module lib.types;
 import lib.std;
 
@@ -23,8 +13,20 @@ struct integral_constant {
     consteval value_type operator()() const noexcept {return static_cast<value_type>(value);}
 };
 template <bool Val> struct bool_constant : integral_constant<bool,Val> {};
+
 export
 {
+    
+    using ptrdiff = decltype([]{char ptr[2]; return ptr - (ptr + 1);}());
+    using size_t    = decltype(sizeof(0));
+    using f32       = float;
+    using f64       = double;
+    using int8      = char;
+    using uint8     = unsigned char;
+    using uint32    = decltype(0);
+    using int64     = std::int64_t;
+    using uint64    = std::uint64_t;
+    
     using false_t = bool_constant<false>;
     using true_t  = bool_constant<true>;
     template<class T,class U> struct isSame_t      : false_t{};
@@ -78,16 +80,6 @@ export
     static_assert(int32_v::id == 1, "");
     static_assert(sizeof(int32) == 4, "");
     
-    using f32       = float;
-    using f64       = double;
-    using int8      = char;
-    using uint8     = std::uint8_t;
-    using uint32    = std::uint32_t;
-    using int64     = std::int64_t;
-    using uint64    = std::uint64_t;
-    using size_t    = std::size_t;
-    using cstr      = const char*;
-    
     struct buffer {char buff;};
     inline void* operator new(size_t size,buffer* Buff) {return Buff;} 
 
@@ -108,7 +100,7 @@ export
         template <size_t Num>
         struct vecutl {
             // void compilation_failed_invalid_swizzle_character();
-            std::size_t num[Num];
+            size_t num[Num];
             
             constexpr vecutl(const char (&input)[Num + 1]) : num{} {
                 for (size_t i = 0; i < N; ++i) {
@@ -120,7 +112,7 @@ export
                             c == 'w' ? 3 : 4);                
                 }
             }
-            constexpr std::size_t operator[](std::size_t i) const {
+            constexpr size_t operator[](size_t i) const {
                 return num[i];
             }
             // constexpr std::size_t err(int i) {

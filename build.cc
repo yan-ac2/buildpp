@@ -148,33 +148,34 @@ int compileProject(bool recompile)
         .setOutpath(rootPath / ".build" / "project");
 
     
-        cProject libGLAD(&outPath, cProject::staticLib,recompile);
+        // cProject libGLAD(&outPath, cProject::staticLib,recompile);
 
 
-        #ifdef _WIN32
-        libGLAD.setCompiler("clang")
-        #elif __unix__
-        libGLAD.setCompiler("clang")
-        #endif
-        .addCompileCommand(&cmdJson)
-        .setOptions("-O2 -flto=thin")
-        .setProjectPath(rootPath / "example"/ "lib" / "glad")
-        .setSourcePath("src")
-        .addIncludefile((libGLAD.Path / "include").string())
-        .getCFile()
-        .dumpProject()
-        .setMain("glad.c")
-        .scanInclude()
         // #ifdef _WIN32
-        // .addDependency("glad.c", {"opengl32"})
+        // libGLAD.setCompiler("clang")
         // #elif __unix__
-        // .addDependency("glad.c", {"GL"})
+        // libGLAD.setCompiler("clang")
         // #endif
-        ;
-        for (auto& f : libGLAD.ProjectFile.VIter()) {
-            libGLAD.compileC(*f);
-        }
-        libGLAD.link(libGLAD.ProjectFile.getMain());
+        // .addCompileCommand(&cmdJson)
+        // .setOptions("-O2 -flto=thin")
+        // .setProjectPath(rootPath / "example"/ "lib" / "glad")
+        // .setSourcePath("src")
+        // .addIncludefile((libGLAD.Path / "include").string())
+        // .getCFile()
+        // .dumpProject()
+        // .setMain("glad.c")
+        // .scanInclude()
+        // // #ifdef _WIN32
+        // // .addDependency("glad.c", {"opengl32"})
+        // // #elif __unix__
+        // // .addDependency("glad.c", {"GL"})
+        // // #endif
+        // ;
+        // for (auto& f : libGLAD.ProjectFile.VIter()) {
+        //     libGLAD.compileC(*f);
+        // }
+        // libGLAD.link(libGLAD.ProjectFile.getMain());
+
         // Project meshoptimizer("meshoptimizer",&outPath,Project::staticLib,false);
         // meshoptimizer.setCompiler("clang++")
         // .setOptions("-O3 -std=c++23")
@@ -206,19 +207,20 @@ int compileProject(bool recompile)
         .addSourcePath((mainProj.Path / "example").string());
         // .getLib(&meshoptimizer)
         print << fmt("Source Path: "_fmt.color(fmt::Red),mainProj.getMainPath()," root path: "_fmt.color(fmt::Blue),mainProj.Path.string(),"\n");
-        mainProj.getLib(&libGLAD)
-        .addIncludefile((mainProj.Path / mainProj.getMainPath() / "lib" / "RGFW").string())
-        .addIncludefile((mainProj.Path / mainProj.getMainPath() / "lib" / "glad" / "include").string())
+        mainProj
+        // .getLib(&libGLAD)
+        // .addIncludefile((mainProj.Path / mainProj.getMainPath() / "lib" / "RGFW").string())
+        // .addIncludefile((mainProj.Path / mainProj.getMainPath() / "lib" / "glad" / "include").string())
         .setResourcePath("res")
         .getCppFile();
     
         mainProj
         .setMain("main.cc").scanHeader().scanModule()
         #ifdef _WIN32
-        .addDependency("lib.RGFW.ccm",{"gdi32","opengl32"})
-        #elif __unix__
-        .addDependency("lib.RGFW.ccm",{"X11", "Xrandr"})
-        .addDependency("lib.std.ccm",{"c++","c++abi"})
+        .addDependency("lib.win.ccm",{"gdi32","user32"})
+        // #elif __unix__
+        // .addDependency("lib.RGFW.ccm",{"X11", "Xrandr"})
+        // .addDependency("lib.std.ccm",{"c++","c++abi"})
         #endif
         .dumpProject();
 
