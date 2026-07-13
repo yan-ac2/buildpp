@@ -1,48 +1,45 @@
 
 // #include <chrono>
 // #include <tuple>
-// #include <iostream>
-
-#include <cstddef>
-#include <bit>
-#include <functional>
-#include <type_traits>
-#include <utility>
+#include <synchapi.h>
 
 // import lib;
 import lib.std;
 import lib.win;
 
 int main() {
+    using et = EventType;
     Platform app ("Shit");
+    KeyMap keyMap(&app.GetInput(),
+        keyData<et::escape>{},
+        keyData<et::E>{},
+        keyData<et::W>{},
+        keyData<et::A>{},
+        keyData<et::S>{},
+        keyData<et::D>{},
+        keyData<et::Q>{},
+        keyData<et::controlL>{});
     if (!app.CreateAppWindow("Modern C++20 Module Window", 1024, 768)) {
         return -1;
     }
     const auto& input = app.GetInput();
-    bool running = true;
-    while (running) {
+
+    float x = 0 ,y = 0;
+
+    keyMap.get<et::escape>().setFn([&]() { std::cout << "Hello\n";app.CloseApp();});
+    keyMap.get<et::W>().setFn([&]() {++(y); std::cout << x << "," << y <<"\n"; });
+    keyMap.get<et::A>().setFn([&]() {--(x); std::cout << x << "," << y <<"\n"; });
+    keyMap.get<et::S>().setFn([&]() {--(y); std::cout << x << "," << y <<"\n"; });
+    keyMap.get<et::D>().setFn([&]() {
+        keyMap.get<et::controlL>().wasDown ? x += 10 : ++(x); 
+            std::cout << x << "," << y <<"\n";
+    });
+
+    while (app.isRunning()) {
         // 1. Process OS messages & update inputs
-        if (!app.ProcessEvents()) {
-            running = false; // User closed the window
-        }
-
-        // 2. Fetch the updated input snapshot
-
-        // 3. Act on inputs
-        if (input.Keys[input::escape]) {
-            running = false; // Exit on ESC key
-        }
-        
-        if (input.Keys[input::w]) {
-            // Move player forward...
-        }
-
-        if (input.Mouse[input::primary]) {
-            // Fire! (Coordinates available at input.mouseX, input.mouseY)
-        }
-
-        // 4. Render your frame here
-        // SwapBuffers / Present...
+        app.ProcessEvents();
+        keyMap.update();
+        Sleep(16);
     }
     return 0;
 }
