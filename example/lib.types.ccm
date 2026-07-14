@@ -95,68 +95,150 @@ export
         
     };
     
-    template <typename T,int N>
-    class vec {
-        template <size_t Num>
-        struct vecutl {
-            // void compilation_failed_invalid_swizzle_character();
-            size_t num[Num];
-            
-            constexpr vecutl(const char (&input)[Num + 1]) : num{} {
-                for (size_t i = 0; i < N; ++i) {
-                    char c = input[i];
+    template <size_t Num>
+    struct vecutl {
+        // void compilation_failed_invalid_swizzle_character();
+        size_t num[Num];
+        
+        constexpr vecutl(const char (&input)[Num + 1]) : num{} {
+            for (size_t i = 0; i < Num; ++i) {
+                char c = input[i];
 
-                    num[i] = (c == 'x' ? 0 :
-                            c == 'y' ? 1 : 
-                            c == 'z' ? 2 :
-                            c == 'w' ? 3 : 4);                
-                }
+                num[i] = (c == 'x' ? 0 :
+                        c == 'y' ? 1 : 
+                        c == 'z' ? 2 :
+                        c == 'w' ? 3 : 4);                
             }
-            constexpr size_t operator[](size_t i) const {
-                return num[i];
+        }
+        constexpr size_t operator[](size_t i) const {
+            return num[i];
+        }
+        // constexpr std::size_t err(int i) {
+        // }
+        constexpr size_t getSize() const { return Num; }
+        constexpr bool max(int m) const { 
+            for (const int& i : num) {
+                if (i > m - 1) return false;
             }
-            // constexpr std::size_t err(int i) {
-            // }
-            constexpr size_t getSize() const { return N; }
-            constexpr bool max(int m) const { 
-                for (const int& i : num) {
-                    if (i > m - 1) return false;
-                }
-                return true;
-            }
-        };
-
-        template <size_t Num>
-        vecutl(const char(&)[Num]) -> vecutl<Num - 1>;
+            return true;
+        }
+    };
+    template <size_t Num>
+    vecutl(const char(&)[Num]) -> vecutl<Num - 1>;
+    
+    template <typename T>
+    class Vec2 {
+        void idxErr() {
+            std::cerr << "index > 1 \n";
+            std::exit(1);
+        }
     public:
-        T _vec[N] {};
+        T x {};
+        T y {};
 
         T& operator [](int idx) {
-            return _vec[idx];
+            switch(idx) {
+                case 0: return x;
+                case 1: return y;
+                default: {
+                    idxErr();
+                    return x;
+                }
+            }
         }
-        template <vecutl s> requires (s.getSize() > 1 && s.max(N))
-        std::array<T, s.getSize()> get() {
+
+        template <vecutl s> requires (s.getSize() > 1 && s.max(2))
+        constexpr std::array<T, s.getSize()> swizzle() {
             std::array<T, s.getSize()> buffer;
             
             for (size_t i = 0; i < s.getSize(); ++i) {
-                buffer[i] = _vec[s.num[i]];
+                buffer[i] = (*this)[s.num[i]];
             }
             
             return buffer; 
         
         }
+    };
 
-        template <vecutl s> requires (s.getSize() == 1) 
-        T& get() {
-            return _vec[s[0]];
+    template <typename T>
+    class Vec3 {
+        void idxErr() {
+            std::cerr << "index > 1 \n";
+            std::exit(1);
+        }
+    public:
+        T x {};
+        T y {};
+        T z {};
+
+        constexpr T& operator [](size_t idx) {
+            switch(idx) {
+                case 0: return x;
+                case 1: return y;
+                case 2: return z;
+                default: {
+                    idxErr();
+                    return x;
+                }
+            }
+        }
+
+        template <vecutl s> requires (s.getSize() > 1 && s.max(3))
+        constexpr std::array<T, s.getSize()> swizzle() {
+            std::array<T, s.getSize()> buffer;
+            
+            for (size_t i = 0; i < s.getSize(); ++i) {
+                buffer[i] = (*this)[s.num[i]];
+            }
+            return buffer;
         }
     };
 
-    template<typename T> using vec3 = vec<T,3> ;
-    template<typename T> using vec2 = vec<T,2> ;
+    template <typename T>
+    class Vec4 {
+        void idxErr() {
+            std::cerr << "index > 1 \n";
+            std::exit(1);
+        }
+    public:
+        T x {};
+        T y {};
+        T z {};
+        T w {};
+
+        T& operator [](int idx) {
+            switch(idx) {
+                case 0: return x;
+                case 1: return y;
+                case 2: return z;
+                case w: return z;
+                default: {
+                    idxErr();
+                    return x;
+                }
+            }
+        }
+
+        template <vecutl s> requires (s.getSize() > 1 && s.max(4))
+        constexpr std::array<T, s.getSize()> swizzle() {
+            std::array<T, s.getSize()> buffer;
+            
+            for (size_t i = 0; i < s.getSize(); ++i) {
+                buffer[i] = (*this)[s.num[i]];
+            }
+            return buffer;
+        }
+    };
+
+    static_assert( []{
+        Vec3<int> i {4,2,1};
+        auto sw = i.swizzle<"zzz">();
+        std::array<int,3> ws {1,1,1};
+        return sw == ws ;
+    }() == true,"test");
 
     class model {
-        std::vector<vec3<double>> verts = {};
+        std::vector<Vec3<double>> verts = {};
         std::vector<int> faces = {};
         public: 
         model(const fs::path file) {
@@ -172,7 +254,7 @@ export
                 char trash;
                 if (!line.compare(0,2,vert)) {
                     iss >> trash;
-                    vec3<double> v;
+                    Vec3<double> v;
                     for(int i :{0,1,2}) iss >> v[i];
                     verts.push_back(v);
                 } else if (!line.compare(0,2,face)) {
@@ -192,8 +274,8 @@ export
         }
         int nverts() const {return verts.size();}
         int nfaces() const {return faces.size()/3;}
-        vec3<double> vert(const int i) const {return verts[i];}
-        vec3<double> vert(const int iface,const int nthvert) const {return verts[faces[iface*3+nthvert]];}
+        Vec3<double> vert(const int i) const {return verts[i];}
+        Vec3<double> vert(const int iface,const int nthvert) const {return verts[faces[iface*3+nthvert]];}
     };
 
     class FastBoolGenerator {

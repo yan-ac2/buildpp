@@ -9,17 +9,17 @@ import lib.win;
 
 int main() {
     using et = EventType;
-    Platform app ("Shit");
+    Window app;
     KeyMap keyMap(&app.GetInput(),
         keyData<et::escape>{},
-        keyData<et::E>{},
-        keyData<et::W>{},
-        keyData<et::A>{},
-        keyData<et::S>{},
-        keyData<et::D>{},
-        keyData<et::Q>{},
+        keyData<et::e>{},
+        keyData<et::w>{},
+        keyData<et::a>{},
+        keyData<et::s>{},
+        keyData<et::d>{},
+        keyData<et::q>{},
         keyData<et::controlL>{});
-    if (!app.CreateAppWindow("Modern C++20 Module Window", 1024, 768)) {
+    if (!app.CreateAppWindow("Modern C++20 Module Window", 800, 600)) {
         return -1;
     }
     const auto& input = app.GetInput();
@@ -27,22 +27,25 @@ int main() {
     float x = 0 ,y = 0;
 
     keyMap.get<et::escape>().setFn([&]() { std::cout << "Hello\n";app.CloseApp();});
-    keyMap.get<et::W>().setFn([&]() {++(y); std::cout << x << "," << y <<"\n"; });
-    keyMap.get<et::A>().setFn([&]() {--(x); std::cout << x << "," << y <<"\n"; });
-    keyMap.get<et::S>().setFn([&]() {--(y); std::cout << x << "," << y <<"\n"; });
-    keyMap.get<et::D>().setFn([&]() {
+    keyMap.get<et::w>().setFn([&]() {++(y); std::cout << "\r" << x << "," << y ; });
+    keyMap.get<et::a>().setFn([&]() {--(x); std::cout << "\r" << x << "," << y ; });
+    keyMap.get<et::s>().setFn([&]() {--(y); std::cout << "\r" << x << "," << y ; });
+    keyMap.get<et::d>().setFn([&]() {
         keyMap.get<et::controlL>().wasDown ? x += 10 : ++(x); 
-            std::cout << x << "," << y <<"\n";
+            std::cout << "\r" << x << "," << y ;
     });
 
     while (app.isRunning()) {
         // 1. Process OS messages & update inputs
-        app.ProcessEvents();
+        app.ProcessEvents(16);
+        if(app.GetInput().scrollDirection > 0) {
+            std::cout << "Scroll dir: "<< app.GetInput().scrollDirection << "\n";   
+        }
         keyMap.update();
-        Sleep(16);
     }
     return 0;
 }
+
 // template <typename T>
 // concept TupleLike = requires {
 //     typename std::tuple_size<std::remove_cvref_t<T>>::type;
