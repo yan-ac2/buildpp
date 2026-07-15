@@ -315,14 +315,14 @@ export
         using ms = std::chrono::milliseconds;
         clock::time_point start;
         clock::time_point end;
-        int before {0};
+        int32 before {0};
         public:
         void tstart() {start = clock::now();}
         void tend() {end = clock::now();}
         void sleep(int target) {
             auto d = std::chrono::duration_cast<ms>(end - start);
-            int count = d.count() > target ? before? before : 0 : target - d.count();
-            before = count;
+            int count = d.count() > target ? before ? before : 0 : target - d.count();
+            before = count < 0 ? 0 : count;
             std::this_thread::sleep_for(ms(count));
         }
     };

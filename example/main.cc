@@ -5,11 +5,15 @@
 
 // import lib;
 import lib.std;
+import lib.types;
 import lib.win;
 
 int main() {
     using et = EventType;
+    DisplayManager disp;
     Window app;
+    timeutl times;
+    app.addDisplayManager(&disp);
     KeyMap keyMap(&app.GetInput(),
         keyData<et::escape>{},
         keyData<et::e>{},
@@ -19,7 +23,8 @@ int main() {
         keyData<et::d>{},
         keyData<et::q>{},
         keyData<et::controlL>{});
-    if (!app.CreateAppWindow("Modern C++20 Module Window", 800, 600)) {
+
+    if (!app.CreateAppWindow("Modern C++20 Module Window", 800, 600,WindowFlags::WinCenter)) {
         return -1;
     }
     const auto& input = app.GetInput();
@@ -36,12 +41,16 @@ int main() {
     });
 
     while (app.isRunning()) {
+        times.tstart();
+        std::cout << "sleep count: " << times.sleep(16) << "\n"; 
         // 1. Process OS messages & update inputs
-        app.ProcessEvents(16);
+        app.ProcessEvents();
         if(app.GetInput().scrollDirection > 0) {
-            std::cout << "Scroll dir: "<< app.GetInput().scrollDirection << "\n";   
+            auto monitor = disp.GetPrimaryMonitor();
+            std::cout << "Monitor \n"<< "X: "<< monitor->x << " Y: " << monitor->y << " Res: " << monitor->width  << "x" << monitor->height << " Is Primary: " << monitor->isPrimary << "\n";   
         }
         keyMap.update();
+        times.tstart();
     }
     return 0;
 }

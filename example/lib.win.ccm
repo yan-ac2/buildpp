@@ -124,7 +124,7 @@ export  {
                 case 'R': return r;
                 case 'S': return s;
                 case 'T': return t;
-                case 'U': return v;
+                case 'U': return u;
                 case 'V': return v;
                 case 'W': return w;
                 case 'X': return x;
@@ -445,15 +445,12 @@ export  {
             }
         }
         void operator ()() {
-            if (isDown && wasDown) {
-                return action(ptr,false);
-            }
+            return action(ptr,false);
         }
         constexpr void update(bool update) {
             isDown = update; 
             changed = (isDown != wasDown);
             wasDown = isDown;
-            this->operator()();
         }
         alignas(std::max_align_t) char buffer[24];
     };
@@ -468,13 +465,18 @@ export  {
 
         constexpr void update() {
             if (state->keyInput) {
-                ((isPressed<KeyDataTypes::value>()),...);
+                ((isPressed<KeyDataTypes::value>()) ,...);
             }
         }
         template<EventType::Key K>
-        constexpr void isPressed() {
+        constexpr bool isPressed() {
             auto& data = std::get<keyData<K>>(keys);
-            data.update(state->Keys[data.value]);
+            bool pressed = state->Keys[data.value]; 
+            data.update(pressed);
+            if (pressed) {
+                data();
+            }
+            return pressed;
         }
         template<EventType::Key K>
         constexpr auto& get() {
@@ -553,15 +555,81 @@ export  {
         }
         return DefWindowProcA(hwnd, uMsg, wParam, lParam);
     }
-    class Monitor {
-        uint32 x;
-        uint32 y;
+
+    struct MonitorConfig {
+        int x = 0;
+        int y = 0;
+        int width = 0;
+        int height = 0;
+        bool isPrimary = false;
+    };
+
+    class DisplayManager {
         public:
-        Monitor() = default;
-        static Monitor& init () {
+        DisplayManager() {
+            Refresh();
+            m_PreviousCount = m_Monitors.size();
+        }
+        ~DisplayManager() = default;
+
+        // Forces a refresh of the connected displays
+        void Refresh() {
+            m_Monitors.clear();
             
+            // We pass 'this' pointer to the callback so it can access our private vector
+            EnumDisplayMonitors(
+                nullptr, 
+                nullptr, 
+                MonitorEnumProc, 
+                reinterpret_cast<LPARAM>(this)
+            );
         }
 
+        // Fast, lightweight getters
+        size_t GetMonitorCount() const noexcept { return m_Monitors.size(); }
+        const std::vector<MonitorConfig>& GetMonitors() const noexcept { return m_Monitors; }
+
+        const MonitorConfig* GetPrimaryMonitor() const noexcept {
+            for (const auto& monitor : m_Monitors) {
+                if (monitor.isPrimary) {
+                    return &monitor;
+                }
+            }
+            return m_Monitors.empty() ? nullptr : &m_Monitors[0];
+        }
+        // Helper checks
+        bool HasTopologyChanged() {
+            Refresh();
+            if (m_Monitors.size() != m_PreviousCount) {
+                m_PreviousCount = m_Monitors.size();
+                return true;
+            }
+            return false;
+        }
+        private:
+        std::vector<MonitorConfig> m_Monitors;
+        size_t m_PreviousCount = 0;
+
+        // The hidden Win32 callback function
+        static int CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) {
+            auto* instance = reinterpret_cast<DisplayManager*>(dwData);
+            
+            MONITORINFOEXA mi = {};
+            mi.cbSize = sizeof(MONITORINFOEXA);
+            
+            if (GetMonitorInfoA(hMonitor, &mi)) {
+                MonitorConfig config;
+                config.x = mi.rcMonitor.left;
+                config.y = mi.rcMonitor.top;
+                config.width = mi.rcMonitor.right - mi.rcMonitor.left;
+                config.height = mi.rcMonitor.bottom - mi.rcMonitor.top;
+                config.isPrimary = (mi.dwFlags & MONITORINFOF_PRIMARY) != 0;
+                
+                instance->m_Monitors.push_back(config);
+            }
+            
+            return true; // Continue enumerating
+        }
     };
     
     class Window {
@@ -569,6 +637,7 @@ export  {
         HWND hWnd = nullptr;
         WNDCLASSA wca = {};
         InputState input; 
+        DisplayManager* disp = nullptr; 
         bool running;
 
         public:
@@ -597,14 +666,22 @@ export  {
                     MB_ICONERROR | MB_OK);
             }
         }
+
         bool CreateAppWindow(const char* szTitle, int32 width = 800, int32 height = 600,uint32 flags = WindowFlags::None) {
             auto [style,exStyle] = WindowFlags::calculateWindowStyles(flags);
+            bool haveDisplayManager = (disp != nullptr);
+            int x = CW_USEDEFAULT;
+            int y = CW_USEDEFAULT;
+            if (haveDisplayManager && (flags & WindowFlags::WinCenter)) {
+                x = (disp->GetPrimaryMonitor()->width - width) * 0.5;
+                y = (disp->GetPrimaryMonitor()->height - height) * 0.5;
+            }
             hWnd = CreateWindowExA(
                 exStyle,
                 wca.lpszClassName,   // Must match the registered class name
                 szTitle,
                 style, // Standard window decor (Minimize, Maximize, Close)
-                CW_USEDEFAULT, CW_USEDEFAULT, // Initial x, y positions
+                x , y, // Initial x, y positions
                 width, height,                // Dimensions
                 nullptr, nullptr, hInstance, nullptr
             );
@@ -618,7 +695,9 @@ export  {
             UpdateWindow(hWnd);
             return true;
         }
-
+        void addDisplayManager(DisplayManager* disp) {
+            this->disp = disp;
+        }
         // 3. The engine room: keeps the window alive and responsive
         int RunMessageLoop() {
             MSG msg = {};
@@ -630,30 +709,34 @@ export  {
             return (int)msg.wParam;
         }
 
-        void ProcessEvents(uint32 delayMS) {
+        void ProcessEvents() {
             MSG msg = {};
-            DWORD result = MsgWaitForMultipleObjects(
-                0,                  // 1 custom handle to watch
-                nullptr,            // our handle array
-                FALSE,              // wake up if ANY condition is met
-                delayMS,           // no timeout
-                QS_ALLINPUT         // wake up for any Windows message/input
-            );
-            if (result == WAIT_OBJECT_0) {
-            // 1. The custom handle was signaled! 
-            // Do internal engine logic or update data from a background thread here.
-                input.keyInput = false;
-                input.scrollDirection = 0;
-            }
+            // DWORD result = MsgWaitForMultipleObjects(
+            //     0,                  // 1 custom handle to watch
+            //     nullptr,            // our handle array
+            //     TRUE,              // wake up if ANY condition is met
+            //     delayMS,           // no timeout
+            //     QS_ALLINPUT         // wake up for any Windows message/input
+            // );
+            
+            input.scrollDirection = 0;
+            input.keyInput = false;
+            
             // PM_REMOVE tells the OS to clear the message from the queue after reading it
             while (PeekMessageA(&msg, nullptr, 0, 0, PM_REMOVE)) {
                 auto inMsg = EventType::parseMessage(msg.message,msg.wParam,msg.lParam);
                 switch (inMsg) {
                     case EventType::keyPressed: {
                         input.keyInput = true;
-                    }
+                        break;
+                    };
+                    case EventType::keyReleased: {
+                        input.keyInput = false;
+                        break;
+                    };
                     case EventType::quit: {
                         running = false;
+                        break;
                     }; 
                     default:
                     // std::cout << "msg : " << inMsg << "\n";
