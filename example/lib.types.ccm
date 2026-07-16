@@ -5,12 +5,12 @@ import lib.std;
 
 template <class Ty, Ty Val>
 struct integral_constant {
-    enum : Ty {value = Val};
+    Ty value = Val;
     using value_type = Ty;
     using type       = integral_constant;
     
-    consteval operator value_type() const noexcept   {return static_cast<value_type>(value);}
-    consteval value_type operator()() const noexcept {return static_cast<value_type>(value);}
+    consteval operator value_type() const noexcept   {return value;}
+    consteval value_type operator()() const noexcept {return value;}
 };
 template <bool Val> struct bool_constant : integral_constant<bool,Val> {};
 
@@ -129,7 +129,7 @@ export
     template <typename T>
     class Vec2 {
         void idxErr() {
-            std::cerr << "index > 1 \n";
+            // std::cerr << "index > 1 \n";
             std::exit(1);
         }
     public:
@@ -163,7 +163,7 @@ export
     template <typename T>
     class Vec3 {
         void idxErr() {
-            std::cerr << "index > 1 \n";
+            // std::cerr << "index > 1 \n";
             std::exit(1);
         }
     public:
@@ -197,7 +197,7 @@ export
     template <typename T>
     class Vec4 {
         void idxErr() {
-            std::cerr << "index > 1 \n";
+            // std::cerr << "index > 1 \n";
             std::exit(1);
         }
     public:
@@ -246,7 +246,9 @@ export
             static const char* face = "f ";
             static const fs::path path = fs::current_path();
             std::ifstream in; in.open( path / file);
-            if (!in) {std::cerr << "failed " << path / file <<"\n"; return;}
+            if (!in) {
+                // std::cerr << "failed " << path / file <<"\n"; 
+                return;}
             std::string line;
             while(!in.eof()) {
                 std::getline(in,line);
@@ -265,12 +267,12 @@ export
                         cnt++;
                     } 
                     if (3 != cnt) {
-                        std::cerr <<  "Error: the obj file is supposed to be triangulated \n"; 
+                        // std::cerr <<  "Error: the obj file is supposed to be triangulated \n"; 
                         return;
                     }
                 }
             }
-            std::cerr << "# v# " << nverts() << " f# "  << nfaces() << std::endl;
+            // std::cerr << "# v# " << nverts() << " f# "  << nfaces() << std::endl;
         }
         int nverts() const {return verts.size();}
         int nfaces() const {return faces.size()/3;}
@@ -310,21 +312,49 @@ export
     template<typename T>
     constexpr T min(T a,T b) {return a < b ? a : b;}
 
-    class timeutl {
+    class Clock {
         using clock = std::chrono::high_resolution_clock;
         using ms = std::chrono::milliseconds;
-        clock::time_point start;
-        clock::time_point end;
-        int32 before {0};
-        public:
-        void tstart() {start = clock::now();}
-        void tend() {end = clock::now();}
-        void sleep(int target) {
-            auto d = std::chrono::duration_cast<ms>(end - start);
-            int count = d.count() > target ? before ? before : 0 : target - d.count();
-            before = count < 0 ? 0 : count;
-            std::this_thread::sleep_for(ms(count));
+        
+        clock::time_point m_start = clock::now();
+        clock::time_point m_end   = clock::now();
+        int32_t frame_debt= 0; 
+        int32_t dt_ms     = 16;
+        Clock() = default;
+    public:
+        static Clock& get() {
+            static Clock instance;
+            return instance;
         }
+        void start() { 
+            m_start = clock::now(); 
+        }
+        
+        int32_t end(int32_t target_ms) { 
+            m_end = clock::now(); 
+            auto duration = std::chrono::duration_cast<ms>(m_end - m_start);
+            int32_t frame_time = static_cast<int32_t>(duration.count());
+    
+            int32_t sleep_time = (target_ms - frame_time) - frame_debt;
+    
+            if (sleep_time > 0) {
+                frame_debt = 0;
+                dt_ms = frame_time + sleep_time;
+                return sleep_time;
+            } else {
+                frame_debt = static_cast<int32_t>((-sleep_time) * 0.25f);
+                if (frame_debt > target_ms * 2) {
+                    frame_debt = target_ms * 2;
+                }
+                dt_ms = frame_time;
+                return 0;
+            }
+        }
+        
+        int32_t delta_time() const {
+            return dt_ms;
+        }
+        
     };
 
     

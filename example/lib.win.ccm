@@ -414,9 +414,8 @@ export  {
    inline InputState* gInput = nullptr;
 
    template<EventType::Key V>
-    class keyData {
-    public:
-        static constexpr auto value = V;
+    struct keyData {
+        static constexpr unsigned char value = V;
         bool isDown = false;
         bool wasDown = false;
         bool changed = false;
@@ -455,33 +454,67 @@ export  {
         alignas(std::max_align_t) char buffer[24];
     };
 
-    template<typename... KeyDataTypes>
+    template <typename T>
+    struct isKeyData_t : false_t {};
+
+    template <EventType::Key K>
+    struct isKeyData_t<keyData<K>> : true_t {};
+
+    template <typename T>
+    concept IsKeyData_c = isKeyData_t<std::decay_t<T>>()();
+
+    template<IsKeyData_c... KeyDataTypes> 
     struct KeyMap {
+        template <typename T>
+        using decay = std::decay_t<T>;
+
         const InputState* state = nullptr;
-        std::tuple<KeyDataTypes...> keys;
+        std::tuple<decay<KeyDataTypes>...> keys;
+        static constexpr auto indices = std::make_index_sequence<sizeof...(KeyDataTypes)>{};
+        int32_t inputAccumulator = 0;
+        static consteval bool UniqueKeyError() {
+            constexpr size_t numKeys = sizeof...(KeyDataTypes);
+            constexpr size_t keys[numKeys] = { static_cast<size_t>(KeyDataTypes::value)... };
+                for (size_t i = 0; i < numKeys; ++i) {
+                for (size_t j = i + 1; j < numKeys; ++j) {
+                    if (keys[i] == keys[j]) return false; // Found a duplicate!
+                }
+            }
+            return true;
+        }
+
+        static_assert(UniqueKeyError(),"KeyMap Error: You cannot bind the same key to multiple actions!");
 
         constexpr KeyMap(const InputState* is,KeyDataTypes&&... args) 
             : state(is), keys(std::forward<KeyDataTypes>(args)...) {}
 
-        constexpr void update() {
-            if (state->keyInput) {
-                ((isPressed<KeyDataTypes::value>()) ,...);
+        constexpr void update(int32_t tickMS, int32_t dtimeMS) {
+            inputAccumulator += dtimeMS;
+            if (inputAccumulator >= tickMS) {
+                inputAccumulator -= tickMS;
+                
+                updateKeysHelper(indices);
             }
         }
-        template<EventType::Key K>
-        constexpr bool isPressed() {
-            auto& data = std::get<keyData<K>>(keys);
-            bool pressed = state->Keys[data.value]; 
+        template<typename K>
+        constexpr void isPressed(K& data) {
+            bool pressed = state->Keys[static_cast<size_t>(K::value)]; 
             data.update(pressed);
             if (pressed) {
-                data();
+                data(); 
             }
-            return pressed;
         }
         template<EventType::Key K>
         constexpr auto& get() {
             return std::get<keyData<K>>(keys);
         }
+
+        private:
+        template<size_t... Is>
+        constexpr void updateKeysHelper(std::index_sequence<Is...>) {
+            (isPressed(std::get<Is>(keys)), ...);
+        }
+        
     };
 
     LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -711,27 +744,30 @@ export  {
 
         void ProcessEvents() {
             MSG msg = {};
+            DWORD dwStatus = GetQueueStatus(QS_KEY);
             // DWORD result = MsgWaitForMultipleObjects(
             //     0,                  // 1 custom handle to watch
             //     nullptr,            // our handle array
             //     TRUE,              // wake up if ANY condition is met
             //     delayMS,           // no timeout
-            //     QS_ALLINPUT         // wake up for any Windows message/input
+                // QS_ALLINPUT         // wake up for any Windows message/input
             // );
             
             input.scrollDirection = 0;
-            input.keyInput = false;
+            if (dwStatus & QS_KEY) {
+                input.keyInput = true;
+            } else input.keyInput = false;
             
             // PM_REMOVE tells the OS to clear the message from the queue after reading it
             while (PeekMessageA(&msg, nullptr, 0, 0, PM_REMOVE)) {
                 auto inMsg = EventType::parseMessage(msg.message,msg.wParam,msg.lParam);
                 switch (inMsg) {
                     case EventType::keyPressed: {
-                        input.keyInput = true;
+                        // input.keyInput = true;
                         break;
                     };
                     case EventType::keyReleased: {
-                        input.keyInput = false;
+                        // input.keyInput = false;
                         break;
                     };
                     case EventType::quit: {
@@ -747,7 +783,7 @@ export  {
         }
         
         ~Window() {
-            std::cout << "close\n";
+            // std::cout << "close\n";
             running = false;
         }
 

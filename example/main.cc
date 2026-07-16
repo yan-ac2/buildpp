@@ -7,12 +7,10 @@
 import lib.std;
 import lib.types;
 import lib.win;
-
 int main() {
     using et = EventType;
     DisplayManager disp;
     Window app;
-    timeutl times;
     app.addDisplayManager(&disp);
     KeyMap keyMap(&app.GetInput(),
         keyData<et::escape>{},
@@ -22,7 +20,8 @@ int main() {
         keyData<et::s>{},
         keyData<et::d>{},
         keyData<et::q>{},
-        keyData<et::controlL>{});
+        keyData<et::controlL>{}
+    );
 
     if (!app.CreateAppWindow("Modern C++20 Module Window", 800, 600,WindowFlags::WinCenter)) {
         return -1;
@@ -31,26 +30,47 @@ int main() {
 
     float x = 0 ,y = 0;
 
-    keyMap.get<et::escape>().setFn([&]() { std::cout << "Hello\n";app.CloseApp();});
-    keyMap.get<et::w>().setFn([&]() {++(y); std::cout << "\r" << x << "," << y ; });
-    keyMap.get<et::a>().setFn([&]() {--(x); std::cout << "\r" << x << "," << y ; });
-    keyMap.get<et::s>().setFn([&]() {--(y); std::cout << "\r" << x << "," << y ; });
+    keyMap.get<et::escape>().setFn([&]() { std::print("Hello\n");app.CloseApp();});
+    keyMap.get<et::w>().setFn([&]() {++(y); std::print("{} {} \n", x , y); });
+    keyMap.get<et::a>().setFn([&]() {--(x); std::print("{} {} \n", x , y) ; });
+    keyMap.get<et::s>().setFn([&]() {--(y); std::print("{} {} \n", x , y) ; });
     keyMap.get<et::d>().setFn([&]() {
-        keyMap.get<et::controlL>().wasDown ? x += 10 : ++(x); 
-            std::cout << "\r" << x << "," << y ;
+        keyMap.get<et::controlL>().isDown ? x += 10 : ++(x); 
+        std::print("{} {} \n", x , y) ;
     });
+    // auto print_status_stream = [](int32_t work_time, int32_t dt) {
+    //     // 1. Save the cursor's current position down where the inputs are scrolling
+    //     std::cout << "\033[s\033[H";
 
+
+    //     // 3. Overwrite the top line with your live timing data
+    //     // (We add spaces at the end to clean up any leftover text if the numbers shrink)
+        
+    //     // 4. Restore the cursor back to the scrolling area below
+    //     std::cout << "\033[u";
+    //     std::cout << "Time: " << work_time << "ms dt: " << dt << "    \033[K" << std::flush;
+        
+    //     // 5. Print the new input logs normally (they will scroll naturally down the console)
+    //     // std::cout << input_log << "\n";
+        
+    //     // Flush the stream immediately so the frame ticks look perfectly live
+    //     // std::cout << std::flush;
+    // };
+    auto& times = Clock::get();
     while (app.isRunning()) {
-        times.tstart();
-        std::cout << "sleep count: " << times.sleep(16) << "\n"; 
+        // std::cout << "\033[2J\033[H\n";
+        times.start();
         // 1. Process OS messages & update inputs
         app.ProcessEvents();
         if(app.GetInput().scrollDirection > 0) {
             auto monitor = disp.GetPrimaryMonitor();
-            std::cout << "Monitor \n"<< "X: "<< monitor->x << " Y: " << monitor->y << " Res: " << monitor->width  << "x" << monitor->height << " Is Primary: " << monitor->isPrimary << "\n";   
+            // std::cout << "\nMonitor \n"<< "X: "<< monitor->x << " Y: " << monitor->y << " Res: " << monitor->width  << "x" << monitor->height << " Is Primary: " << monitor->isPrimary << "\n";   
         }
-        keyMap.update();
-        times.tstart();
+        keyMap.update(16,times.delta_time());
+        int timeSleep = times.end(16);
+        std::print("\rTime Sleep: {} dt: {}  \033[6n\n",timeSleep,times.delta_time());
+        // std::cout << "\rTime: " << timeSleep << "ms dt: " << times.delta_time();
+        Sleep(timeSleep);
     }
     return 0;
 }
