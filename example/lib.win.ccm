@@ -244,6 +244,140 @@ export  {
             }
             return EventType::mNull;
         }
+        static size_t toPlatform(size_t engineKey) {
+            // 1. Convert our internal engine punctuation enums back to ASCII characters
+            UINT asciiChar = 0;
+            switch (engineKey) {
+                case space:        asciiChar = ' ';  break;
+                case minus:        asciiChar = '-';  break;
+                case equal:        asciiChar = '=';  break;
+                case backtick:     asciiChar = '`';  break;
+                case bracket:      asciiChar = '[';  break;
+                case closeBracket: asciiChar = ']';  break;
+                case semicolon:    asciiChar = ';';  break;
+                case apostrophe:   asciiChar = '\''; break;
+                case comma:        asciiChar = ',';  break;
+                case period:       asciiChar = '.';  break;
+                case slash:        asciiChar = '/';  break;
+                case backSlash:    asciiChar = '\\'; break;
+            }
+
+            // If it matched a dynamic keyboard layout punctuation mark, find its VK code
+            if (asciiChar != 0) {
+                HKL currentLayout = GetKeyboardLayout(0);
+                // Map type 1 translates an ASCII character into a Virtual Key code
+                UINT vk = MapVirtualKeyExA(asciiChar, 1, currentLayout);
+                if (vk != 0) return vk;
+            }
+
+            // 2. Map standard alpha-numeric, control, function, and numpad keys directly
+            switch (engineKey) {
+                // --- Char ---
+                case a: return 'A';
+                case b: return 'B';
+                case c: return 'C';
+                case d: return 'D';
+                case e: return 'E';
+                case f: return 'F';
+                case g: return 'G';
+                case h: return 'H';
+                case i: return 'I';
+                case j: return 'J';
+                case k: return 'K';
+                case l: return 'L';
+                case m: return 'M';
+                case n: return 'N';
+                case o: return 'O';
+                case p: return 'P';
+                case q: return 'Q';
+                case r: return 'R';
+                case s: return 'S';
+                case t: return 'T';
+                case u: return 'U';
+                case v: return 'V';
+                case w: return 'W';
+                case x: return 'X';
+                case y: return 'Y';
+                case z: return 'Z';
+
+                // --- Control Keys ---
+                case backSpace:   return VK_BACK;
+                case tab:         return VK_TAB;
+                case enter:       return VK_RETURN;
+                case pause:       return VK_PAUSE;
+                case escape:      return VK_ESCAPE;
+                case pageUp:      return VK_PRIOR;  
+                case pageDown:    return VK_NEXT;   
+                case end:         return VK_END;  
+                case home:        return VK_HOME;  
+                case left:        return VK_LEFT;  
+                case up:          return VK_UP;  
+                case right:       return VK_RIGHT;  
+                case down:        return VK_DOWN;
+                case printScreen: return VK_SNAPSHOT;  
+                case insert:      return VK_INSERT;  
+                case kDelete:     return VK_DELETE;
+
+                // --- Numpad ---
+                case kp0:         return VK_NUMPAD0;  
+                case kp1:         return VK_NUMPAD1;  
+                case kp2:         return VK_NUMPAD2;  
+                case kp3:         return VK_NUMPAD3;  
+                case kp4:         return VK_NUMPAD4;  
+                case kp5:         return VK_NUMPAD5;  
+                case kp6:         return VK_NUMPAD6;  
+                case kp7:         return VK_NUMPAD7;  
+                case kp8:         return VK_NUMPAD8;  
+                case kp9:         return VK_NUMPAD9;  
+                case kpMultiply:  return VK_MULTIPLY;
+                case kpPlus:      return VK_ADD;
+                case kpMinus:     return VK_SUBTRACT;  
+                case kpPeriod:    return VK_DECIMAL; 
+                case kpSlash:     return VK_DIVIDE;  
+
+                // --- Function Keys ---
+                case F1:  return VK_F1;  
+                case F2:  return VK_F2;  
+                case F3:  return VK_F3;  
+                case F4:  return VK_F4;  
+                case F5:  return VK_F5;  
+                case F6:  return VK_F6;  
+                case F7:  return VK_F7;  
+                case F8:  return VK_F8;  
+                case F9:  return VK_F9;  
+                case F10: return VK_F10;  
+                case F11: return VK_F11;  
+                case F12: return VK_F12;  
+                case F13: return VK_F13;  
+                case F14: return VK_F14;  
+                case F15: return VK_F15;  
+                case F16: return VK_F16;  
+                case F17: return VK_F17;  
+                case F18: return VK_F18;  
+                case F19: return VK_F19;  
+                case F20: return VK_F20;  
+                case F21: return VK_F21;  
+                case F22: return VK_F22;  
+                case F23: return VK_F23;  
+                case F24: return VK_F24;  
+
+                // --- Modifiers & Locks ---
+                case numLock:    return VK_NUMLOCK;  
+                case scrollLock: return VK_SCROLL;
+                case capsLock:   return VK_CAPITAL;  
+                case shiftL:     return VK_LSHIFT;  
+                case shiftR:     return VK_RSHIFT; 
+                case controlL:   return VK_LCONTROL;  
+                case controlR:   return VK_RCONTROL;  
+                case altR:       return VK_RMENU;
+                case altL:       return VK_LMENU;  
+                case superL:     return VK_LWIN;  
+                case superR:     return VK_RWIN;
+                case menu:       return VK_APPS;  
+
+                default:         return 0; // Equivalent to keyNULL / unmapped
+            }
+        }
 
         static event parseMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             switch (message) {
@@ -321,9 +455,6 @@ export  {
             }
             return eventNone;
         }
-        // operator size_t () {
-        //     return castPlatform(*this);
-        // }
     };
 
     struct WindowFlags {
@@ -352,7 +483,7 @@ export  {
             CaptureRawMouse    = 1 << 20
         };
 
-        static std::tuple<uint32,uint32> calculateWindowStyles(uint32 flags) {
+        static std::tuple<uint32,uint32> WindowStyles(uint32 flags) {
             uint32 outStyle = WS_OVERLAPPEDWINDOW;
             uint32 outExStyle = 0;
             if (flags == WindowFlags::None) 
@@ -396,12 +527,11 @@ export  {
         }
     };
 
-
     struct InputState {
         using et =  EventType;
         bool Keys  [et::keyLast] {};
         bool Mouse [et::mLast] {};
-        bool keyInput = false;
+        bool KeyInput = false;
         int32 zDelta = 0;
         int32 scrollDirection = 0;
         int32 mouseX = 0;
@@ -411,9 +541,46 @@ export  {
         } 
     };
 
-   inline InputState* gInput = nullptr;
+    void SyncPlatformInputToEngine(InputState* targetState) {
+        if (!targetState) return;
 
-   template<EventType::Key V>
+        // 1. Grab the entire keyboard matrix from Windows in a single operation
+        BYTE win32KeyboardState[256];
+        if (!GetKeyboardState(win32KeyboardState)) {
+            return; // Windows API failed, bypass update safely
+        }
+
+        bool clearKeyInputFlag = true;
+
+        // 2. Loop through your engine's keys up to keyLast
+        for (size_t i = 0; i < static_cast<size_t>(EventType::keyLast); ++i) {
+            // Find out what native Windows VK code maps to your engine's enum value index
+            size_t vk = EventType::toPlatform(i);
+            if (vk == 0) continue;
+
+            // Safely adjust for generic modifiers so left/right variations catch properly
+            switch (vk) {
+                case VK_LSHIFT:   case VK_RSHIFT:   vk = VK_SHIFT;   break;
+                case VK_LCONTROL: case VK_RCONTROL: vk = VK_CONTROL; break;
+                case VK_LMENU:    case VK_RMENU:    vk = VK_MENU;    break; 
+            }
+
+            // Win32 sets the high-order bit (0x80) if the physical key is down
+            bool isPhysicalKeyDown = (win32KeyboardState[vk] & 0x80) != 0;
+            
+            targetState->Keys[i] = isPhysicalKeyDown;
+
+            if (isPhysicalKeyDown) {
+                clearKeyInputFlag = false;
+            }
+        }
+
+        // 3. Keep your global input event broad-phase state updated
+        // (If any key is held down, KeyInput remains true)
+        targetState->KeyInput = !clearKeyInputFlag;
+    }
+
+    template<EventType::Key V>
     struct keyData {
         static constexpr unsigned char value = V;
         bool isDown = false;
@@ -471,6 +638,17 @@ export  {
         const InputState* state = nullptr;
         std::tuple<decay<KeyDataTypes>...> keys;
         static constexpr auto indices = std::make_index_sequence<sizeof...(KeyDataTypes)>{};
+
+        template <EventType::Key K>
+        static consteval size_t GetPosition() {
+            // static constexpr auto indices = std::make_index_sequence<sizeof...(KeyDataTypes)>{};
+            size_t index = 0;
+            bool found = false;
+
+            ((!found && (decay<KeyDataTypes>::value == K ? (found = true) : (++index, true))), ...);
+
+            return found ? index : static_cast<size_t>(-1);
+        }
         int32_t inputAccumulator = 0;
         static consteval bool UniqueKeyError() {
             constexpr size_t numKeys = sizeof...(KeyDataTypes);
@@ -500,13 +678,14 @@ export  {
         constexpr void isPressed(K& data) {
             bool pressed = state->Keys[static_cast<size_t>(K::value)]; 
             data.update(pressed);
-            if (pressed) {
+            if (pressed && state->KeyInput) {
                 data(); 
             }
         }
         template<EventType::Key K>
         constexpr auto& get() {
-            return std::get<keyData<K>>(keys);
+            constexpr size_t position = GetPosition<K>();
+            return std::get<position>(keys);
         }
 
         private:
@@ -516,78 +695,6 @@ export  {
         }
         
     };
-
-    LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-        HDC hdc;
-        size_t keyboard = EventType::castPlatform(wParam);
-        size_t mouse = EventType::castMouse(uMsg,wParam);
-        EventType::parseMessage(uMsg,wParam,lParam);
-        // std::cout << "param : " << param << "\n";
-        switch (uMsg) {
-            case WM_DESTROY:
-                PostQuitMessage(0); // Signals the message loop to stop
-                return 0;
-                // --- Keyboard Input ---
-            case WM_KEYDOWN:
-                if (gInput && keyboard < 256) gInput->Keys[keyboard] = true;
-                return 0;
-
-            case WM_KEYUP:
-                if (gInput && keyboard < 256) gInput->Keys[keyboard] = false;
-                return 0;
-            // --- Mouse Movement ---
-            case WM_MOUSEMOVE:
-                if (gInput) {
-                    gInput->mouseX = LOWORD(lParam); // X coordinate relative to window
-                    gInput->mouseY = HIWORD(lParam); // Y coordinate relative to window
-                }
-                return 0;
-
-            // --- Mouse Buttons ---
-            case WM_LBUTTONDOWN:
-                if (gInput) gInput->Mouse[mouse] = true;
-                return 0;
-            case WM_LBUTTONUP:
-                if (gInput) gInput->Mouse[mouse] = false;
-                return 0;
-            case WM_RBUTTONDOWN:
-                if (gInput) gInput->Mouse[mouse] = true;
-                return 0;
-            case WM_RBUTTONUP:
-                if (gInput) gInput->Mouse[mouse] = false;
-                return 0;
-            case WM_XBUTTONDOWN:
-                if (gInput) gInput->Mouse[mouse] = true;
-                return 0;
-            case WM_XBUTTONUP:
-                if (gInput) gInput->Mouse[mouse] = false;
-                return 0;
-            case WM_MBUTTONDOWN:
-                if (gInput) gInput->Mouse[mouse] = true;
-                return 0;
-            case WM_MBUTTONUP:
-                if (gInput) gInput->Mouse[mouse] = false;
-                return 0;
-            // --- Mouse Wheels ---
-            case WM_MOUSEWHEEL: {
-                gInput->mouseScroll([](int32* delta,int32* sdir,void* inParam){
-                    auto in = static_cast<WPARAM*>(inParam) ;
-                    *delta = GET_WHEEL_DELTA_WPARAM(*in);
-                    *sdir = *delta / WHEEL_DELTA;
-                },&wParam);
-                return 0;
-            }
-            case WM_PAINT: {
-                PAINTSTRUCT ps;
-                hdc = BeginPaint(hwnd, &ps);
-                TextOut(hdc,5,5,"learn windows",15);
-                // Custom drawing code goes here if needed
-                EndPaint(hwnd, &ps);
-                return 0;
-            }
-        }
-        return DefWindowProcA(hwnd, uMsg, wParam, lParam);
-    }
 
     struct MonitorConfig {
         int x = 0;
@@ -605,11 +712,9 @@ export  {
         }
         ~DisplayManager() = default;
 
-        // Forces a refresh of the connected displays
         void Refresh() {
             m_Monitors.clear();
             
-            // We pass 'this' pointer to the callback so it can access our private vector
             EnumDisplayMonitors(
                 nullptr, 
                 nullptr, 
@@ -618,7 +723,6 @@ export  {
             );
         }
 
-        // Fast, lightweight getters
         size_t GetMonitorCount() const noexcept { return m_Monitors.size(); }
         const std::vector<MonitorConfig>& GetMonitors() const noexcept { return m_Monitors; }
 
@@ -665,33 +769,44 @@ export  {
         }
     };
     
+    
     class Window {
-        HINSTANCE hInstance = nullptr;
-        HWND hWnd = nullptr;
-        WNDCLASSA wca = {};
-        InputState input; 
-        DisplayManager* disp = nullptr; 
-        bool running;
-
+        DisplayManager* mDispMgr = nullptr; 
+        HINSTANCE mHInstance = nullptr;
+        HWND mHWND = nullptr;
+        WNDCLASSA mWCA = {};
+        InputState mInput; 
+        std::string mClassName;
+        bool mRunning;
+        friend class ChildWindow;
+        inline static Window* sRootWindow = nullptr;
+        
         public:
+        const char* title = "Application Window";
+        int32 width = 800;
+        int32 height = 600;
+        uint32 flags = 0;
+        Window* parent = nullptr; // nullptr implies this could be a root candidate
+        
+
+        Window(const Window&) = delete;
+        Window& operator=(const Window&) = delete;
         Window() {
             
-            hInstance = GetModuleHandleA(nullptr);
-            gInput = &input;
-            running = true;
+            mHInstance = GetModuleHandleA(nullptr);
+            mClassName = "Win32Class_" + std::to_string(reinterpret_cast<uintptr_t>(this));
 
-
-            wca.style          = CS_HREDRAW | CS_VREDRAW;
-            wca.lpfnWndProc    = WndProc;
-            wca.cbClsExtra     = 0;
-            wca.cbWndExtra     = 0;
-            wca.hInstance      = hInstance;
-            wca.hIcon          = LoadIcon(wca.hInstance, IDI_APPLICATION);
-            wca.hCursor        = LoadCursor(NULL, IDC_ARROW);
-            wca.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
-            wca.lpszMenuName   = NULL;
-            wca.lpszClassName  = "MainWindow";
-            if (!RegisterClassA(&wca))
+            mWCA.style          = CS_HREDRAW | CS_VREDRAW;
+            mWCA.lpfnWndProc    = WndProc;
+            mWCA.cbClsExtra     = 0;
+            mWCA.cbWndExtra     = 0;
+            mWCA.hInstance      = mHInstance;
+            mWCA.hIcon          = LoadIcon(mWCA.hInstance, IDI_APPLICATION);
+            mWCA.hCursor        = LoadCursor(NULL, IDC_ARROW);
+            mWCA.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
+            mWCA.lpszMenuName   = NULL;
+            mWCA.lpszClassName  = mClassName.c_str();
+            if (!RegisterClassA(&mWCA))
             {
                 MessageBox(nullptr,
                     "Call to RegisterClassA failed!",
@@ -700,70 +815,64 @@ export  {
             }
         }
 
-        bool CreateAppWindow(const char* szTitle, int32 width = 800, int32 height = 600,uint32 flags = WindowFlags::None) {
-            auto [style,exStyle] = WindowFlags::calculateWindowStyles(flags);
-            bool haveDisplayManager = (disp != nullptr);
-            int x = CW_USEDEFAULT;
-            int y = CW_USEDEFAULT;
-            if (haveDisplayManager && (flags & WindowFlags::WinCenter)) {
-                x = (disp->GetPrimaryMonitor()->width - width) * 0.5;
-                y = (disp->GetPrimaryMonitor()->height - height) * 0.5;
-            }
-            hWnd = CreateWindowExA(
-                exStyle,
-                wca.lpszClassName,   // Must match the registered class name
-                szTitle,
-                style, // Standard window decor (Minimize, Maximize, Close)
-                x , y, // Initial x, y positions
-                width, height,                // Dimensions
-                nullptr, nullptr, hInstance, nullptr
-            );
+        bool createWindow(const char* title,int32 width,int32 height,uint32 flags,Vec2<int32> pos = {CW_USEDEFAULT,CW_USEDEFAULT}) {
+            auto [style,exStyle] = WindowFlags::WindowStyles(flags);
+            bool haveDisplayManager = (mDispMgr != nullptr);
+            pos.x = (haveDisplayManager && (flags & WindowFlags::WinCenter)) ? (mDispMgr->GetPrimaryMonitor()->width - width) * 0.5 : pos.x;
+            pos.y = (haveDisplayManager && (flags & WindowFlags::WinCenter)) ? (mDispMgr->GetPrimaryMonitor()->height - height) * 0.5 : pos.y;
 
-            if (!hWnd) {
+            mHWND = CreateWindowExA(
+                exStyle,
+                mWCA.lpszClassName,   // Must match the registered class name
+                title,
+                style, // Standard window decor (Minimize, Maximize, Close)
+                pos.x , pos.y, // Initial x, y positions
+                width, height,                // Dimensions
+                nullptr, nullptr, mHInstance, this
+            );
+            if (!sRootWindow) sRootWindow = this;
+            if (!mHWND) {
                 MessageBoxA(nullptr, "Window Creation Failed!", "Error", MB_ICONERROR | MB_OK);
                 return false;
             }
-
-            ShowWindow(hWnd, SW_SHOW);
-            UpdateWindow(hWnd);
+            sRootWindow = this;
+            ShowWindow(mHWND, SW_SHOW);
+            UpdateWindow(mHWND);
+            mRunning = true;
             return true;
         }
-        void addDisplayManager(DisplayManager* disp) {
-            this->disp = disp;
+
+        ~Window() {
+            if (mHWND)  DestroyWindow(mHWND);
+            UnregisterClassA(mClassName.c_str(), mHInstance);
         }
-        // 3. The engine room: keeps the window alive and responsive
-        int RunMessageLoop() {
-            MSG msg = {};
-            // GetMessage returns 0 when it encounters WM_QUIT
-            while (GetMessageA(&msg, nullptr, 0, 0)) {
-                TranslateMessage(&msg);
-                DispatchMessageA(&msg); // Sends the message to our WndProc
-            }
-            return (int)msg.wParam;
+
+        [[nodiscard]] const InputState& GetInput() const noexcept { return mInput; }
+        [[nodiscard]] InputState&       GetInputMutable() noexcept { return mInput; }
+        [[nodiscard]] static Window&    GetRoot() { return *sRootWindow; }
+        [[nodiscard]] bool IsRunning() const noexcept { return mRunning; }
+        [[nodiscard]] HWND GetNativeHandle() const noexcept { return mHWND; }
+        void CloseApp() noexcept { mRunning = false; }
+
+        void addDisplayManager(DisplayManager* disp) {
+            this->mDispMgr = disp;
         }
 
         void ProcessEvents() {
             MSG msg = {};
-            DWORD dwStatus = GetQueueStatus(QS_KEY);
-            // DWORD result = MsgWaitForMultipleObjects(
-            //     0,                  // 1 custom handle to watch
-            //     nullptr,            // our handle array
-            //     TRUE,              // wake up if ANY condition is met
-            //     delayMS,           // no timeout
-                // QS_ALLINPUT         // wake up for any Windows message/input
-            // );
-            
-            input.scrollDirection = 0;
-            if (dwStatus & QS_KEY) {
-                input.keyInput = true;
-            } else input.keyInput = false;
-            
+            mInput.scrollDirection = 0;
+            mInput.KeyInput = false;
+            // DWORD status = GetQueueStatus(QS_KEY);
+            // if (status & QS_KEY) {
+            //     mInput.KeyInput = true;
+            // }
             // PM_REMOVE tells the OS to clear the message from the queue after reading it
             while (PeekMessageA(&msg, nullptr, 0, 0, PM_REMOVE)) {
                 auto inMsg = EventType::parseMessage(msg.message,msg.wParam,msg.lParam);
+                
                 switch (inMsg) {
                     case EventType::keyPressed: {
-                        // input.keyInput = true;
+                        mInput.KeyInput = true;
                         break;
                     };
                     case EventType::keyReleased: {
@@ -771,7 +880,7 @@ export  {
                         break;
                     };
                     case EventType::quit: {
-                        running = false;
+                        mRunning = false;
                         break;
                     }; 
                     default:
@@ -781,18 +890,165 @@ export  {
                 DispatchMessageA(&msg);
             }
         }
-        
-        ~Window() {
-            // std::cout << "close\n";
-            running = false;
+        private:
+        static LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+            HDC hdc;
+            Window* pWindow = nullptr;
+
+            if (uMsg == WM_NCCREATE) {
+                CREATESTRUCTA* pCreate = reinterpret_cast<CREATESTRUCTA*>(lParam);
+                pWindow = reinterpret_cast<Window*>(pCreate->lpCreateParams);
+                SetWindowLongPtrA(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pWindow));
+            } else {
+                pWindow = reinterpret_cast<Window*>(GetWindowLongPtrA(hwnd, GWLP_USERDATA));
+            }
+            if (!pWindow) return DefWindowProcA(hwnd, uMsg, wParam, lParam);
+            
+            auto& gInput = pWindow->GetInputMutable();
+            size_t keyboard = EventType::castPlatform(wParam);
+            size_t mouse = EventType::castMouse(uMsg,wParam);
+            EventType::parseMessage(uMsg,wParam,lParam);
+            // std::cout << "param : " << param << "\n";
+            switch (uMsg) {
+                case WM_DESTROY:
+                    PostQuitMessage(0); // Signals the message loop to stop
+                    return 0;
+                    // --- Keyboard Input ---
+                case WM_KEYDOWN:
+                    if (keyboard < 256) gInput.Keys[keyboard] = true;
+                    return 0;
+
+                case WM_KEYUP:
+                    if (keyboard < 256) gInput.Keys[keyboard] = false;
+                    return 0;
+                // --- Mouse Movement ---
+                case WM_MOUSEMOVE:
+                    gInput.mouseX = LOWORD(lParam); // X coordinate relative to window
+                    gInput.mouseY = HIWORD(lParam); // Y coordinate relative to window
+                
+                    return 0;
+
+                // --- Mouse Buttons ---
+                case WM_LBUTTONDOWN:
+                    gInput.Mouse[mouse] = true;
+                    return 0;
+                case WM_LBUTTONUP:
+                    gInput.Mouse[mouse] = false;
+                    return 0;
+                case WM_RBUTTONDOWN:
+                    gInput.Mouse[mouse] = true;
+                    return 0;
+                case WM_RBUTTONUP:
+                    gInput.Mouse[mouse] = false;
+                    return 0;
+                case WM_XBUTTONDOWN:
+                    gInput.Mouse[mouse] = true;
+                    return 0;
+                case WM_XBUTTONUP:
+                    gInput.Mouse[mouse] = false;
+                    return 0;
+                case WM_MBUTTONDOWN:
+                    gInput.Mouse[mouse] = true;
+                    return 0;
+                case WM_MBUTTONUP:
+                    gInput.Mouse[mouse] = false;
+                    return 0;
+                // --- Mouse Wheels ---
+                case WM_MOUSEWHEEL: {
+                    gInput.mouseScroll([](int32* delta,int32* sdir,void* inParam){
+                        auto in = static_cast<WPARAM*>(inParam) ;
+                        *delta = GET_WHEEL_DELTA_WPARAM(*in);
+                        *sdir = *delta / WHEEL_DELTA;
+                    },&wParam);
+                    return 0;
+                }
+                case WM_PAINT: {
+                    PAINTSTRUCT ps;
+                    hdc = BeginPaint(hwnd, &ps);
+                    TextOut(hdc,5,5,"learn windows\0",15);
+                    // Custom drawing code goes here if needed
+                    EndPaint(hwnd, &ps);
+                    return 0;
+                }
+            }
+            return DefWindowProcA(hwnd, uMsg, wParam, lParam);
         }
 
-        bool isRunning() {return running;}
-        void CloseApp() {running = false;}
-        // Optional helper to access the underlying window handle
-        HWND GetWindowHandle() const { return hWnd; }
-        const InputState& GetInput() const { return input; }
+    
     };
+
+    // class ChildWindow {
+    // public:
+    //     ChildWindow(Window& parent, const char* title, int32 x, int32 y, int32 width, int32 height) {
+    //         m_hInstance = GetModuleHandleA(nullptr);
+    //         m_ClassName = "ModernChildWinClass_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+
+    //         WNDCLASSA wca{};
+    //         wca.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+    //         wca.lpfnWndProc   = ChildWndProc; // Dedicated child wndproc
+    //         wca.hInstance     = m_hInstance;
+    //         wca.hCursor       = LoadCursor(nullptr, IDC_ARROW);
+    //         wca.lpszClassName = m_ClassName.c_str();
+
+    //         RegisterClassA(&wca);
+
+    //         // Enforce WS_CHILD and link directly to parent HWND
+    //         m_hWnd = CreateWindowExA(
+    //             0, m_ClassName.c_str(), title, 
+    //             WS_CHILD | WS_VISIBLE | WS_BORDER,
+    //             x, y, width, height,
+    //             parent.GetNativeHandle(), nullptr, m_hInstance, this
+    //         );
+    //     }
+
+    //     ~ChildWindow() {
+    //         if (m_hWnd) DestroyWindow(m_hWnd);
+    //         UnregisterClassA(m_ClassName.c_str(), m_hInstance);
+    //     }
+
+    //     [[nodiscard]] HWND GetNativeHandle() const noexcept { return m_hWnd; }
+
+    //     private:
+    //         static LRESULT CALLBACK ChildWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    //             ChildWindow* childPtr = nullptr;
+    //             if (uMsg == WM_NCCREATE) {
+    //                 auto* createStruct = reinterpret_cast<CREATESTRUCTA*>(lParam);
+    //                 childPtr = static_cast<ChildWindow*>(createStruct->lpCreateParams);
+    //                 SetWindowLongPtrA(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(childPtr));
+    //                 childPtr->m_hWnd = hwnd;
+    //             } else {
+    //                 childPtr = reinterpret_cast<ChildWindow*>(GetWindowLongPtrA(hwnd, GWLP_USERDATA));
+    //             }
+
+    //             if (childPtr) {
+    //                 // Route input directly to the single root instance!
+    //                 InputState& rootInput = Window::GetRoot().GetInputMutable();
+    //                 size_t keyboard = EventType::castPlatform(wParam);
+    //                 size_t mouse = EventType::castMouse(uMsg, wParam);
+
+    //                 switch (uMsg) {
+    //                     case WM_KEYDOWN: case WM_SYSKEYDOWN:
+    //                         if (keyboard < 256) rootInput.Keys[keyboard] = true;
+    //                         return 0;
+    //                     case WM_KEYUP: case WM_SYSKEYUP:
+    //                         if (keyboard < 256) rootInput.Keys[keyboard] = false;
+    //                         return 0;
+    //                     case WM_LBUTTONDOWN: case WM_RBUTTONDOWN:
+    //                         rootInput.Mouse[mouse] = true;
+    //                         return 0;
+    //                     case WM_LBUTTONUP: case WM_RBUTTONUP:
+    //                         rootInput.Mouse[mouse] = false;
+    //                         return 0;
+    //                 }
+    //             }
+    //             return DefWindowProcA(hwnd, uMsg, wParam, lParam);
+    //         }
+
+    //         HWND m_hWnd = nullptr;
+    //         HINSTANCE m_hInstance = nullptr;
+    //         std::string m_ClassName;
+    //     };
+    // }
 
 }
 

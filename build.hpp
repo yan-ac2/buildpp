@@ -1195,7 +1195,7 @@ class Project
         const std::string f_srcInput = 
         // f_isUserHeader ? fmt("-Wno-pragma-system-header-outside-header -fmodule-header=user --precompile ",fPath.string()," -o ",f_module).str :
         isSystemHeader ? fmt("-Wno-pragma-system-header-outside-header -x c++-system-header --precompile ",inFile.Name," -o ",fModule).str :
-        fmt("-c ",(Path / inFile.Path).string()," -fmodule-output=",fModule," -fprebuilt-module-path=",(mPath).string()).str;
+        fmt("-c ",(Path / inFile.Path).string()," -fmodules-reduced-bmi -fmodule-output=",fModule," -fprebuilt-module-path=",(mPath).string()).str;
         
         for (const auto& I : inFile.dependencies) {
             
@@ -1216,14 +1216,14 @@ class Project
         
         int ret {};
         if (recompile && !isSystemHeader) {
-            print << fmt("recompiling "_fmt.color(fmt::Green) , f_cmd) << "\r" ;
+            print << fmt("recompiling "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
             l_rewrite();
             ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
         } else if (!fs::exists(fModule)) {
-            print << fmt("compiling "_fmt.color(fmt::Green) , f_cmd) << "\r" ;
+            print << fmt("compiling "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
             ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
         } else if (inFile.fileType != File::SystemHeader && fs::last_write_time(inFile.Path) > fs::last_write_time(fModule)) {
-            print << fmt("updated "_fmt.color(fmt::Green) , f_cmd) << "\r" ;
+            print << fmt("updated "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
             l_rewrite();
             ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
         } 
