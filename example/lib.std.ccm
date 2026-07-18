@@ -20,6 +20,8 @@ export import <thread>;
 export import <numeric>;
 export import <unordered_map>;
 
+export import <memory>;
+
 export import <vector>;
 
 // #include <array>

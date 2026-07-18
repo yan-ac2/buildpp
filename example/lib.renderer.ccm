@@ -4,6 +4,28 @@ module;
 /*
     #include "retard.h"
 */
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <GL/gl.h>
+
+#ifndef WGL_CONTEXT_MAJOR_VERSION_ARB
+#define WGL_DRAW_TO_WINDOW_ARB            0x2001
+#define WGL_SUPPORT_OPENGL_ARB            0x2010
+#define WGL_DOUBLE_BUFFER_ARB             0x2011
+#define WGL_PIXEL_TYPE_ARB                0x2013
+#define WGL_TYPE_RGBA_ARB                 0x202B
+#define WGL_COLOR_BITS_ARB                0x2014
+#define WGL_DEPTH_BITS_ARB                0x2022
+#define WGL_STENCIL_BITS_ARB              0x2023
+#define WGL_CONTEXT_MAJOR_VERSION_ARB     0x2091
+#define WGL_CONTEXT_MINOR_VERSION_ARB     0x2092
+#define WGL_CONTEXT_FLAGS_ARB             0x2094
+#define WGL_CONTEXT_PROFILE_MASK_ARB      0x9126
+#define WGL_CONTEXT_CORE_PROFILE_BIT_ARB  0x00000001
+#define WGL_CONTEXT_DEBUG_BIT_ARB         0x00000001
+#endif
+
+
 
 export module lib.renderer;
 // import somethisng;
@@ -11,12 +33,185 @@ import lib.std /* test */ ;
 import lib.win;
 import lib.types; // test
 
+
+typedef BOOL(WINAPI* PFNWGLCHOOSEPIXELFORMATARBPROC)(HDC hdc, const int* piAttribIList, const FLOAT* pfAttribFList, UINT nMaxFormats, int* piFormats, UINT* nNumFormats);
+typedef HGLRC(WINAPI* PFNWGLCREATECONTEXTATTRIBSARBPROC)(HDC hdc, HGLRC hShareContext, const int* attribList);
+
+inline PFNWGLCHOOSEPIXELFORMATARBPROC wglChoosePixelFormatARB = nullptr;
+inline PFNWGLCREATECONTEXTATTRIBSARBPROC wglCreateContextAttribsARB = nullptr;
+
+// template<StaticString str>
+// class Renderer : IRenderer;
 export
 {
-    template<StaticString str>
-    class Renderer {static_assert(str.getSize() != 0, "Please enter renderer type");};
+    template<>
+    class Renderer<"GL"> : public IRenderer {
+        static bool InitOpenGLExtensions() {
+            // Create a temporary, minimal background window layout
+            HINSTANCE hInst = GetModuleHandle(nullptr);
+            HWND dummyHWND = CreateWindowExA(
+                0, "STATIC", "DummyWGL", WS_OVERLAPPEDWINDOW, 
+                0, 0, 1, 1, nullptr, nullptr, hInst, nullptr
+            );
+            if (!dummyHWND) return false;
+
+            HDC dummyHDC = GetDC(dummyHWND);
+            
+            // Setup a legacy pixel format just to get OpenGL initialized
+            PIXELFORMATDESCRIPTOR pfd = {};
+            pfd.nSize = sizeof(pfd);
+            pfd.nVersion = 1;
+            pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+            pfd.iPixelType = PFD_TYPE_RGBA;
+            pfd.cColorBits = 32;
+
+            int pf = ChoosePixelFormat(dummyHDC, &pfd);
+            SetPixelFormat(dummyHDC, pf, &pfd);
+            
+            // Spin up a legacy context
+            HGLRC dummyHGLRC = wglCreateContext(dummyHDC);
+            if (!dummyHGLRC) {
+                ReleaseDC(dummyHWND, dummyHDC);
+                DestroyWindow(dummyHWND);
+                return false;
+            }
+
+            wglMakeCurrent(dummyHDC, dummyHGLRC);
+
+            // Fetch the modern ARB functions from the GPU driver
+            wglChoosePixelFormatARB = (PFNWGLCHOOSEPIXELFORMATARBPROC)wglGetProcAddress("wglChoosePixelFormatARB");
+            wglCreateContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)wglGetProcAddress("wglCreateContextAttribsARB");
+
+            // Clean up the temporary window and context immediately
+            wglMakeCurrent(nullptr, nullptr);
+            wglDeleteContext(dummyHGLRC);
+            ReleaseDC(dummyHWND, dummyHDC);
+            DestroyWindow(dummyHWND);
+
+            // Return true only if both modern functions were successfully bound
+            return (wglChoosePixelFormatARB && wglCreateContextAttribsARB);
+        }
+    public:
+        Renderer() = default;
+        Renderer(const Renderer&) = delete;
+        Renderer& operator=(const Renderer&) = delete;
+        Renderer(Renderer&& other) = delete;
+        Renderer& operator=(Renderer&& other) noexcept {
+            if (this != &other) {
+                Shutdown();
+                m_HDC = other.m_HDC;
+                m_HGLRC = other.m_HGLRC;
+                other.m_HDC = nullptr;
+                other.m_HGLRC = nullptr;
+            }
+            return *this;
+        }
+
+        ~Renderer() {
+            Shutdown();
+        }
+        bool Initialize(HWND hwnd, int width, int height) override {
+            m_HDC = GetDC(hwnd);
+            if (!m_HDC) return false;
+            return true;
+        }
+        bool init(int major, int minor, bool enableDebug = false)  {
+            if (!m_HDC) return false;
+
+            // 1. Ensure our extensions are ready (via the dummy pass method)
+            if (!wglChoosePixelFormatARB || !wglCreateContextAttribsARB) {
+                if (!InitOpenGLExtensions()) {
+                    std::print("Error: Could not load modern WGL extensions from the GPU driver.\n");
+                    return false;
+                } 
+            }
+
+            // 2. Query pixel format attributes
+            const int pixelAttribs[] = {
+                WGL_DRAW_TO_WINDOW_ARB, 1,
+                WGL_SUPPORT_OPENGL_ARB, 1,
+                WGL_DOUBLE_BUFFER_ARB,  1,
+                WGL_PIXEL_TYPE_ARB,     WGL_TYPE_RGBA_ARB,
+                WGL_COLOR_BITS_ARB,     32,
+                WGL_DEPTH_BITS_ARB,     24,
+                WGL_STENCIL_BITS_ARB,    8,
+                0
+            };
+
+            int format;
+            UINT numFormats;
+            if (!wglChoosePixelFormatARB(m_HDC, pixelAttribs, nullptr, 1, &format, &numFormats) || numFormats == 0) {
+                std::print("Failed to find a matching pixel format.\n");
+                return false;
+            }
+
+            PIXELFORMATDESCRIPTOR pfd;
+            DescribePixelFormat(m_HDC, format, sizeof(pfd), &pfd);
+            SetPixelFormat(m_HDC, format, &pfd);
+
+            // 3. Set up context attributes
+            int contextFlags = 0;
+            if (enableDebug) contextFlags |= WGL_CONTEXT_DEBUG_BIT_ARB;
+
+            const int contextAttribs[] = {
+                WGL_CONTEXT_MAJOR_VERSION_ARB, major,
+                WGL_CONTEXT_MINOR_VERSION_ARB, minor,
+                WGL_CONTEXT_PROFILE_MASK_ARB,  WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+                WGL_CONTEXT_FLAGS_ARB,         contextFlags,
+                0
+            };
+
+            // 4. Create the high-performance context
+            m_HGLRC = wglCreateContextAttribsARB(m_HDC, nullptr, contextAttribs);
+            if (!m_HGLRC) {
+                std::print("Failed to create modern WGL context.\n");
+                return false;
+            }
+
+            return MakeCurrent();
+        }
+
+        bool MakeCurrent() override {
+            return wglMakeCurrent(m_HDC, m_HGLRC);
+        }
+
+        void SwapBuffers() const noexcept {
+            if (m_HDC) ::SwapBuffers(m_HDC);
+        }
+
+        void Present() override {
+            SwapBuffers();
+        }
+
+        void Shutdown() noexcept {
+            if (wglGetCurrentContext() == m_HGLRC) {
+                wglMakeCurrent(nullptr, nullptr);
+            }
+            if (m_HGLRC) {
+                wglDeleteContext(m_HGLRC);
+                m_HGLRC = nullptr;
+            }
+            // Note: ReleaseDC is omitted here if you used CS_OWNDC in your Window Class.
+            // Since your window class uses CS_HREDRAW | CS_VREDRAW, we release it safely:
+            if (m_HDC) {
+                // We'd need the HWND to safely call ReleaseDC. If you change your class 
+                // style to include CS_OWNDC, you don't ever need to release this HDC!
+            }
+        }
+        const char* GetName() final override {
+            return "GL";
+        }
+
+        void Resize(int width, int height) override {
+            if (m_HGLRC) {
+                glViewport(0, 0, width, height);
+            }
+        }
+    private:
+        HDC m_HDC = nullptr;
+        HGLRC m_HGLRC = nullptr;
+    };
     
-    constexpr RGBA cl {0,0,0,0};
 
     // template<>
     // class Renderer<"GL"> {

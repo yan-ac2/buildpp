@@ -2,19 +2,22 @@
 // #include <chrono>
 // #include <tuple>
 #include <synchapi.h>
+#include <GL/gl.h>
 
 // import lib;
 import lib.std;
 import lib.types;
 import lib.win;
+import lib.renderer;
 
 int main() {
     using et = EventType;
     DisplayManager disp;
+    Renderer<"GL"> glCtx;
     Window app;
     app.addDisplayManager(&disp);
-    app.createWindow("MainWindow",800,600,WindowFlags::WinCenter,{10,22});
-
+    app.createWindow("MainWindow",800,600,WindowFlags::WinCenter,nullptr,{10,22});
+    glCtx.Initialize(4,3);
     KeyMap keyMap(&app.GetInput(),
         keyData<et::escape>{},
         keyData<et::e>{},
@@ -22,8 +25,8 @@ int main() {
         keyData<et::a>{},
         keyData<et::s>{},
         keyData<et::d>{},
-        keyData<et::q>{},
-        keyData<et::controlL>{}
+        keyData<et::q>{}
+        // keyData<et::controlL>{}
     );
 
     auto& input = app.GetInputMutable();
@@ -34,6 +37,7 @@ int main() {
     keyMap.get<et::w>().setFn([&]() {++(y); std::print("{} {} \n", x , y); });
     keyMap.get<et::a>().setFn([&]() {--(x); std::print("{} {} \n", x , y) ; });
     keyMap.get<et::s>().setFn([&]() {--(y); std::print("{} {} \n", x , y) ; });
+    // keyMap.get<et::controlL>().setFn([&]() {std::print("ctrlL pressed \n") ; });
     keyMap.get<et::d>().setFn([&]() {
         input.Keys[et::controlL] ? x += 10 : ++(x); 
         std::print("{} {} \n", x , y) ;
@@ -43,16 +47,21 @@ int main() {
     while (app.IsRunning()) {
         
         times.start();
-        SyncPlatformInputToEngine(input);
-        // 1. Process OS messages & update inputs
         app.ProcessEvents();
+
         if(app.GetInput().scrollDirection > 0) {
             auto monitor = disp.GetPrimaryMonitor();
-            std::print( "Monitor\n X: {} Y: {} {}x{} isPrimary: {}\n" ,monitor->x, monitor->y, monitor->width  , monitor->height, monitor->isPrimary);   
+            std::print( 
+                "Monitor\n X: {} Y: {} {}x{} isPrimary: {} Renderer: {}\n" ,monitor->x, monitor->y, monitor->width  , monitor->height, monitor->isPrimary,app.gfxCtx->GetName());   
             // std::cout << "\nMonitor \n"<< "X: "<< monitor->x << " Y: " << monitor->y << " Res: " << monitor->width  << "x" << monitor->height << " Is Primary: " << monitor->isPrimary << "\n";   
         }
-        keyMap.update(1,times.delta_time());
+
+        glClearColor(0.1f, 0.15f, 0.2f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        keyMap.update(16,times.delta_time());
         int timeSleep = times.end(16);
+        // std::print("ms: {} dt: {} \n", timeSleep , times.delta_time());
         Sleep(timeSleep);
     }
     return 0;

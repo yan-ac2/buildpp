@@ -218,6 +218,7 @@ int compileProject(bool recompile)
         .setMain("main.cc").scanHeader().scanModule()
         #ifdef _WIN32
         .addDependency("lib.win.ccm",{"gdi32","user32"})
+        .addDependency("lib.renderer.ccm",{"opengl32"})
         // #elif __unix__
         // .addDependency("lib.RGFW.ccm",{"X11", "Xrandr"})
         // .addDependency("lib.std.ccm",{"c++","c++abi"})

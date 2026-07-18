@@ -1146,6 +1146,7 @@ class Project
                         F.second.Name = rawHeader;
                         F.second.objectPath = fmt((OutPath->modulePath / rawHeader).string(),file.pcmModule);
                         F.second.fileType = File::SystemHeader;
+                        F.second.compiled = fs::exists(F.second.objectPath);
                     }
                     for (const auto& [M,MV] : ProjectFile) {
                         if (((MV.fileType != File::Module) ? M : MV.Name) == moduleName) {
@@ -1160,7 +1161,7 @@ class Project
     }
 
     int compileModule(File& inFile) {
-        if(inFile.compiled) {return -1;}
+        if(inFile.compiled) {return 1;}
         if(!inFile.dependencies.empty()) {
             for (const auto& I : inFile.dependencies) {
                 auto& dep = ProjectFile[I];
@@ -1173,12 +1174,12 @@ class Project
             }
         }
         const bool isSystemHeader = (inFile.fileType == File::SystemHeader);
-
+        
         const auto& mPath = OutPath->modulePath;
         const auto& oPath = OutPath->objPath;
         
         const std::string fModule    = fmt((mPath / inFile.Name).string(), file.pcmModule).str;
-
+        
         const std::string fObjOutput = fmt((oPath / inFile.Name).string(), file.objFile).str;
         
         const auto l_rewrite = [&isSystemHeader,&fModule] -> void {
@@ -1215,29 +1216,37 @@ class Project
         if(cmdJson != nullptr && !isSystemHeader) { cmdJson->addCompilecmd((Path / inFile.Path).parent_path().string(),f_cmd,(Path / inFile.Path).string(),fObjOutput);}
         
         int ret {};
-        if (recompile && !isSystemHeader) {
-            print << fmt("recompiling "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
-            l_rewrite();
-            ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
-        } else if (!fs::exists(fModule)) {
+        // if (recompile && !) {
+        //     print << fmt("recompiling "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
+        //     l_rewrite();
+        //     ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
+        // } else if (!fs::exists(fModule)) {
+        //     print << fmt("compiling "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
+        //     ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
+        // } else if (inFile.fileType != File::SystemHeader && fs::last_write_time(inFile.Path) > fs::last_write_time(fModule)) {
+        //     print << fmt("updated "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
+        //     ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
+        // } 
+        
+        // module use reduced bmi        
+        if (isSystemHeader) {
             print << fmt("compiling "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
             ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
-        } else if (inFile.fileType != File::SystemHeader && fs::last_write_time(inFile.Path) > fs::last_write_time(fModule)) {
-            print << fmt("updated "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
+        } else {
             l_rewrite();
+            print << fmt("compiling "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
             ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
-        } 
-        // print << "Status: "_fmt.color(fmt::Bold_Yellow) << std::to_string(ret) << "\n";
+        }
         inFile.compiled = (ret == 0 ? true : false);
         return ret; 
     };
     
     int compileCpp(File& inFile)
     {
-        if(inFile.fileType == File::SystemHeader) {return false;}
-        if(inFile.compiled) {return false;}
+        if(inFile.fileType == File::SystemHeader) {return 1;}
+        if(inFile.compiled) {return 1;}
         const bool f_isModule = (inFile.fileType == File::Module || inFile.fileType == File::SystemHeader);
-        if (f_isModule) return false;
+        if (f_isModule) return 1;
         
         const auto& oPath = OutPath->objPath;
         const auto& mPath = OutPath->modulePath;
