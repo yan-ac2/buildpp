@@ -8,17 +8,20 @@
 import lib.std;
 import lib.types;
 import lib.win;
-import lib.renderer;
 
 int main() {
     using et = EventType;
-    DisplayManager disp;
-    Renderer<"GL"> glCtx;
     Window app;
+    InputState input;
+    Renderer<"GL"> glCtx;
+    DisplayManager disp;
+
     app.addDisplayManager(&disp);
-    app.createWindow("MainWindow",800,600,WindowFlags::WinCenter,nullptr,{10,22});
-    glCtx.Initialize(4,3);
-    KeyMap keyMap(&app.GetInput(),
+    app.addInputState(&input);
+    app.createWindow("MainWindow",800,600,WindowFlags::None,nullptr,{10,22});
+    // auto GL = static_cast<Renderer<"GL">*>(app.GetGfxCtx());
+    // GL->init();
+    KeyMap keyMap(&input,
         keyData<et::escape>{},
         keyData<et::e>{},
         keyData<et::w>{},
@@ -28,8 +31,6 @@ int main() {
         keyData<et::q>{}
         // keyData<et::controlL>{}
     );
-
-    auto& input = app.GetInputMutable();
 
     float x = 0 ,y = 0;
 
@@ -52,7 +53,7 @@ int main() {
         if(app.GetInput().scrollDirection > 0) {
             auto monitor = disp.GetPrimaryMonitor();
             std::print( 
-                "Monitor\n X: {} Y: {} {}x{} isPrimary: {} Renderer: {}\n" ,monitor->x, monitor->y, monitor->width  , monitor->height, monitor->isPrimary,app.gfxCtx->GetName());   
+                "Monitor\n X: {} Y: {} {}x{} isPrimary: {} \n" ,monitor->x, monitor->y, monitor->width  , monitor->height, monitor->isPrimary);   
             // std::cout << "\nMonitor \n"<< "X: "<< monitor->x << " Y: " << monitor->y << " Res: " << monitor->width  << "x" << monitor->height << " Is Primary: " << monitor->isPrimary << "\n";   
         }
 

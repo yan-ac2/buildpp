@@ -344,9 +344,15 @@ class compileCommand {
 
 
 struct File {
+    using fStr = std::string;
+    using fStrView = std::string_view;
+    using IDx = std::size_t;
+
     mutable bool compiled = false;
     mutable bool haveHeaderUnit = false;
     mutable bool onArchive = false;
+    mutable bool isPartition = false;
+    mutable bool isMainPartition = false;
     mutable enum fTypes : char {
         Source,
         Module, 
@@ -355,13 +361,22 @@ struct File {
         none
     } fileType = none;
 
-    std::size_t ID          {};
-    std::string Name        {};
-    std::string Path        {};
-    std::string Flags       {};
-    std::string ldFlags     {};
-    std::string objectPath  {};
-    std::vector<std::size_t> dependencies {};
+    IDx ID          {};
+    fStr Name        {};
+    fStr Path        {};
+    fStr Flags       {};
+    fStr ldFlags     {};
+    fStr objectPath  {};
+    std::vector<IDx> dependencies {};
+
+    fStr getName() {
+        if (isPartition) {
+            fStr temp = Name;
+            temp.replace(temp.find(':'),1,"-");
+            return temp;
+        }
+        return Name;
+    }
 };
 
 class FileManager {
@@ -456,7 +471,15 @@ class FileManager {
         IDMap.emplace_back(&ref->second);
         return ref->second.ID;
     }
-    
+    File* getByName(std::string_view id) {
+        for (auto& I : Files) {
+            if (I.second.Name == id) {
+                return &I.second;
+            }
+        }
+        err(true,fmt("Error: "_fmt.color(fmt::Red),"Name " ,id, " doesn't exists"));
+        return nullptr;
+    }
     File* operator [](std::string_view id) {
         auto it = Files.find(id); 
         if (it != Files.end()) {
@@ -800,7 +823,6 @@ class Project
     
     outputPath* OutPath;
     compileCommand* cmdJson;
-
    
 
     fs::path Path       {};
@@ -1023,14 +1045,18 @@ class Project
                 
                 if(blockedComment(&inBlockComment, &line)) {continue;}
                 
+                size_t epos = line.find(file.exportToken);
+                if(singleLineComment(&line, &epos)) {continue;}
                 if (!exportModuleFound) {
-                    size_t epos = line.find(file.exportToken);
-                    if(singleLineComment(&line, &epos)) {continue;}
                     if(epos != std::string::npos) {
                         moduleName = line.substr(epos + file.exportToken.length() + 1);
                         moduleName.erase(moduleName.find(';'));
+                        size_t partition = moduleName.find(':');
                         // print << fmt("export module "_fmt.color(fmt::Yellow), moduleName ," found in " , V.Path ).endl();
-                        
+                        if (partition != std::string::npos) {
+                            // moduleName = moduleName.substr(partition);
+                            V.isPartition = true;
+                        }
                         V.Name = moduleName;
                         V.fileType  = File::Module;
                         exportModuleFound = true; // only one export module per file is allowed 
@@ -1055,9 +1081,6 @@ class Project
                     }
                 }
             }
-
-            files.clear();
-            files.seekg(0);
             
             files.close();
         }
@@ -1115,7 +1138,7 @@ class Project
             if (V.fileType == File::SystemHeader) { 
                 continue;
             }
-            // print << fmt("Scan module " , V.Path ).endl();
+            print << fmt("Scan module " , V.Path ).endl();
 
             err(V.Path.empty() ,"Error: Empty project path"_fmt.color(fmt::Bold_Red)); 
 
@@ -1126,19 +1149,32 @@ class Project
             bool inBlockComment = false;
 
             while (std::getline(files, line)) {
+                if(blockedComment(&inBlockComment, &line)) {continue;}
+                
                 size_t ipos = line.find(file.importToken);
                 
                 if(singleLineComment(&line, &ipos)) {continue;}
-                if(blockedComment(&inBlockComment, &line)) {continue;}
-                
                 size_t epos = line.find(';');
 
                 if (ipos != std::string::npos && epos != std::string::npos) {
-                    size_t startPos = ipos + file.importToken.length() + 1; 
-                    if (startPos >= epos) continue;
-                    std::string moduleName = line.substr(startPos,epos - startPos);
+                    size_t searchStart = ipos + file.importToken.length();
+        
+                    // Find the first non-whitespace character after "import"
+                    size_t startPos = line.find_first_not_of(" \t", searchStart);
                     
-                    // print << fmt("import module "_fmt.color(fmt::Bold_Blue) , moduleName , " found in " , V.Path).endl();
+                    if (startPos == std::string::npos || startPos >= epos) {
+                        continue;
+                    }
+
+                    // Find the end of the module name string before trailing whitespaces or semicolon
+                    size_t endPos = line.find_last_not_of(" \t", epos - 1);
+                    if (endPos == std::string::npos || endPos < startPos) {
+                        continue;
+                    }
+
+                    std::string moduleName = line.substr(startPos, (endPos - startPos) + 1);
+                    print << fmt("import module "_fmt.color(fmt::Bold_Blue) , moduleName , " found in " , V.Path).endl();
+                    
                     
                     if (moduleName.front() == '<' || moduleName.front() == '"') {
                         std::string rawHeader = moduleName.substr(1, moduleName.size() - 2);
@@ -1149,7 +1185,8 @@ class Project
                         F.second.compiled = fs::exists(F.second.objectPath);
                     }
                     for (const auto& [M,MV] : ProjectFile) {
-                        if (((MV.fileType != File::Module) ? M : MV.Name) == moduleName) {
+                        // print << "checking "_fmt.color(fmt::Red) << (MV.isPartition ? moduleName.substr(moduleName.find(':')) : moduleName)<< "\n";
+                        if (((MV.fileType != File::Module) ? M : MV.isPartition ? MV.Name.substr(MV.Name.find(':')) : MV.Name) == moduleName) {
                             ProjectFile[V.ID].dependencies.emplace_back(MV.ID);
                         }
                     }
@@ -1173,14 +1210,17 @@ class Project
                 }
             }
         }
+        if(inFile.isPartition) {
+            ProjectFile.getByName(inFile.Name.substr(0,inFile.Name.find(':')))->isMainPartition = true;
+        }
         const bool isSystemHeader = (inFile.fileType == File::SystemHeader);
         
         const auto& mPath = OutPath->modulePath;
         const auto& oPath = OutPath->objPath;
         
-        const std::string fModule    = fmt((mPath / inFile.Name).string(), file.pcmModule).str;
+        const std::string fModule    = fmt((mPath / inFile.getName()).string(), file.pcmModule).str;
         
-        const std::string fObjOutput = fmt((oPath / inFile.Name).string(), file.objFile).str;
+        const std::string fObjOutput = fmt((oPath / inFile.getName()).string(), file.objFile).str;
         
         const auto l_rewrite = [&isSystemHeader,&fModule] -> void {
             if (!isSystemHeader) {
@@ -1199,10 +1239,11 @@ class Project
         fmt("-c ",(Path / inFile.Path).string()," -fmodules-reduced-bmi -fmodule-output=",fModule," -fprebuilt-module-path=",(mPath).string()).str;
         
         for (const auto& I : inFile.dependencies) {
-            
+            auto& depFile = ProjectFile[I];
             inFile.Flags.append(
-                ProjectFile[I].fileType == File::SystemHeader ? fmt(" -fmodule-file=",fmt((mPath / ProjectFile[I].Name).string(),file.pcmModule)) :
-                fmt(" -fmodule-file=",ProjectFile[I].Name,"=",fmt((mPath / ProjectFile[I].Name).string(),file.pcmModule))
+                depFile.fileType == File::SystemHeader ? fmt(" -fmodule-file=",fmt((mPath / depFile.Name).string(),file.pcmModule)) :
+                // depFile.isPartition ? fmt(" -fmodule-file=",depFile.Name.substr(1),"=",fmt((mPath / depFile.Name.substr(1)).string(),file.pcmModule)):
+                fmt(" -fmodule-file=",depFile.Name,"=",fmt((mPath / depFile.getName()).string(),file.pcmModule))
             );
         }
         
@@ -1250,10 +1291,10 @@ class Project
         
         const auto& oPath = OutPath->objPath;
         const auto& mPath = OutPath->modulePath;
-        
-        const std::string f_objOutput {fmt((oPath / inFile.Name).string(), file.objFile)};
 
-        const std::string f_filein    {f_isModule ? fmt((mPath / inFile.Name).string(),file.pcmModule ) : inFile.Path};
+        const std::string f_objOutput {fmt((oPath / inFile.getName()).string(), file.objFile)};
+
+        const std::string f_filein    {f_isModule ? fmt((mPath / inFile.getName()).string(),file.pcmModule ) : inFile.Path};
 
         const std::string f_cppOutput { 
         fmt(f_isModule ?"" : "-c ",f_filein, 
@@ -1262,11 +1303,25 @@ class Project
         )};
             
         for (const auto& I : inFile.dependencies) {
-            bool isSystemHeader = ProjectFile[I].fileType == File::SystemHeader;
+            auto& depFile = ProjectFile[I];
+            bool isSystemHeader = depFile.fileType == File::SystemHeader;
+            bool isMainPartition = depFile.isMainPartition;
             inFile.Flags.append(
-                isSystemHeader ? fmt(" -fmodule-file=",fmt((mPath / ProjectFile[I].Name).string(),file.pcmModule)) :
-                fmt(" -fmodule-file=",ProjectFile[I].Name,"=",fmt((mPath / ProjectFile[I].Name).string(),file.pcmModule))
+                isSystemHeader ? fmt(" -fmodule-file=",fmt((mPath / depFile.getName()).string(),file.pcmModule)) :
+                fmt(" -fmodule-file=",depFile.Name,"=",fmt((mPath / depFile.getName()).string(),file.pcmModule))
             );
+            if(isMainPartition) {
+                for(const auto& IDF : depFile.dependencies){
+                    for (const auto& I : inFile.dependencies) {
+                        if(IDF == I) continue;
+                        auto& iDefFile = ProjectFile[IDF];
+                        inFile.Flags.append(
+                            isSystemHeader ? fmt(" -fmodule-file=",fmt((mPath / iDefFile.getName()).string(),file.pcmModule)) :
+                            fmt(" -fmodule-file=",iDefFile.Name,"=",fmt((mPath / iDefFile.getName()).string(),file.pcmModule))
+                        );
+                    }
+                }
+            }
         }
 
         const std::string f_cmd {fmt(Compiler, Options,inFile.haveHeaderUnit ? "-Wno-experimental-header-units":"" ,f_cppOutput,inFile.Flags,f_isModule?" -c -o ":" -o ", f_objOutput).clean()};

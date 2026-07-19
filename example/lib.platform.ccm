@@ -1,0 +1,386 @@
+module;
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <GL/gl.h>
+
+export module lib.win:platform;
+
+import lib.std;
+import lib.types;
+import :fwd;
+import :renderer;
+
+
+export
+class DisplayManager {
+    public:
+    DisplayManager() {
+        Refresh();
+        m_PreviousCount = m_Monitors.size();
+    }
+    ~DisplayManager() = default;
+
+    void Refresh() {
+        m_Monitors.clear();
+        
+        EnumDisplayMonitors(
+            nullptr, 
+            nullptr, 
+            MonitorEnumProc, 
+            reinterpret_cast<LPARAM>(this)
+        );
+    }
+
+    size_t GetMonitorCount() const noexcept { return m_Monitors.size(); }
+    const std::vector<MonitorConfig>& GetMonitors() const noexcept { return m_Monitors; }
+
+    const MonitorConfig* GetPrimaryMonitor() const noexcept {
+        for (const auto& monitor : m_Monitors) {
+            if (monitor.isPrimary) {
+                return &monitor;
+            }
+        }
+        return m_Monitors.empty() ? nullptr : &m_Monitors[0];
+    }
+    // Helper checks
+    bool HasTopologyChanged() {
+        Refresh();
+        if (m_Monitors.size() != m_PreviousCount) {
+            m_PreviousCount = m_Monitors.size();
+            return true;
+        }
+        return false;
+    }
+    private:
+    std::vector<MonitorConfig> m_Monitors;
+    size_t m_PreviousCount = 0;
+
+    // The hidden Win32 callback function
+    static int CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) {
+        auto* instance = reinterpret_cast<DisplayManager*>(dwData);
+        
+        MONITORINFOEXA mi = {};
+        mi.cbSize = sizeof(MONITORINFOEXA);
+        
+        if (GetMonitorInfoA(hMonitor, &mi)) {
+            MonitorConfig config;
+            config.x = mi.rcMonitor.left;
+            config.y = mi.rcMonitor.top;
+            config.width = mi.rcMonitor.right - mi.rcMonitor.left;
+            config.height = mi.rcMonitor.bottom - mi.rcMonitor.top;
+            config.isPrimary = (mi.dwFlags & MONITORINFOF_PRIMARY) != 0;
+            
+            instance->m_Monitors.push_back(config);
+        }
+        
+        return true; // Continue enumerating
+    }
+};
+
+
+
+export
+class Window {
+    
+    std::string mClassName;
+    bool mRunning;
+
+    inline static Window* sRootWindow = nullptr;
+    public:
+    WindowDesc Desc;
+    DisplayManager* mDispMgr = nullptr; 
+    InputState* mInput = nullptr; 
+    std::unique_ptr<IRenderer> gfxCtx = nullptr; 
+
+    Window(const Window&) = delete;
+    Window& operator=(const Window&) = delete;
+    Window() {
+        
+        Desc.mHInstance = GetModuleHandleA(nullptr);
+        mClassName = "Win32Class_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+
+        Desc.mWCA.style          = CS_HREDRAW | CS_VREDRAW;
+        Desc.mWCA.lpfnWndProc    = Window::WndProc;
+        Desc.mWCA.cbClsExtra     = 0;
+        Desc.mWCA.cbWndExtra     = 0;
+        Desc.mWCA.hInstance      = Desc.mHInstance;
+        Desc.mWCA.hIcon          = LoadIcon(Desc.mWCA.hInstance, IDI_APPLICATION);
+        Desc.mWCA.hCursor        = LoadCursor(NULL, IDC_ARROW);
+        Desc.mWCA.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
+        Desc.mWCA.lpszMenuName   = NULL;
+        Desc.mWCA.lpszClassName  = mClassName.c_str();
+        if (!RegisterClassA(&Desc.mWCA))
+        {
+            MessageBox(nullptr,
+                "Call to RegisterClassA failed!",
+                "Windows Desktop Guided Tour",
+                MB_ICONERROR | MB_OK);
+        }
+    }
+
+    bool createWindow(const char* title,int32 width,int32 height,uint32 flags,Window* patent = nullptr,Vec2<int32> pos = {CW_USEDEFAULT,CW_USEDEFAULT}) {
+        auto [style,exStyle] = WindowFlags::WindowStyles(flags);
+        
+        bool haveDisplayManager = (mDispMgr != nullptr);
+        pos.x = (haveDisplayManager && (flags & WindowFlags::WinCenter)) ? (mDispMgr->GetPrimaryMonitor()->width - width) * 0.5 : pos.x;
+        pos.y = (haveDisplayManager && (flags & WindowFlags::WinCenter)) ? (mDispMgr->GetPrimaryMonitor()->height - height) * 0.5 : pos.y;
+
+        Desc.mHWND = CreateWindowExA(
+            exStyle,
+            Desc.mWCA.lpszClassName,   // Must match the registered class name
+            title,
+            style, // Standard window decor (Minimize, Maximize, Close)
+            pos.x , pos.y, // Initial x, y positions
+            width, height,                // Dimensions
+            !patent ? nullptr : patent->Desc.mHWND, nullptr, Desc.mHInstance, this
+        );
+        if (!Desc.mHWND) {
+            MessageBoxA(nullptr, "Window Creation Failed!", "Error", MB_ICONERROR | MB_OK);
+            return false;
+        }
+        // if (flags & WindowFlags::WinOGL) {
+        //     gfxCtx = std::make_unique<Renderer<"GL">>();
+        // }
+
+        // if (gfxCtx) {
+        //     gfxCtx->Initialize(mHWND, width, height);
+        // }
+        
+        if (!sRootWindow) sRootWindow = this;
+        
+        Desc.title = title;
+        Desc.width = width;
+        Desc.height = height;
+        Desc.flags = flags;
+        Desc.assigned = this;
+
+        ShowWindow(Desc.mHWND, SW_SHOW);
+        UpdateWindow(Desc.mHWND);
+        mRunning = true;
+        return true;
+    }
+
+    ~Window() {
+        if (Desc.mHWND)  DestroyWindow(Desc.mHWND);
+        UnregisterClassA(mClassName.c_str(), Desc.mHInstance);
+    }
+
+    [[nodiscard]] const InputState& GetInput() const noexcept { return *mInput; }
+    [[nodiscard]] InputState&       GetInputMutable() noexcept { return *mInput; }
+    [[nodiscard]] static Window&    GetRoot() { return *sRootWindow; }
+    [[nodiscard]] bool IsRunning() const noexcept { return mRunning; }
+    [[nodiscard]] HWND GetNativeHandle() noexcept { return Desc.mHWND; }
+    [[nodiscard]] IRenderer* GetGfxCtx()  { return gfxCtx.get(); }
+    void CloseApp() noexcept { mRunning = false; }
+
+    void addDisplayManager(DisplayManager* disp) {
+        this->mDispMgr = disp;
+    }
+    void addInputState(InputState* iState) {
+        this->mInput = iState;
+    }
+
+    void ProcessEvents() {
+        MSG msg = {};
+        mInput->scrollDirection = 0;
+        
+        while (PeekMessageA(&msg, nullptr, 0, 0, PM_REMOVE)) {
+            auto inMsg = EventType::parseMessage(msg.message,msg.wParam,msg.lParam);
+            
+            switch (inMsg) {
+                case EventType::keyPressed: {
+                    // mInput.KeyInput = true;
+                    break;
+                };
+                case EventType::keyReleased: {
+                    // input.keyInput = false;
+                    break;
+                };
+                case EventType::quit: {
+                    mRunning = false;
+                    break;
+                }; 
+                default:
+                // std::cout << "msg : " << inMsg << "\n";
+            }
+            TranslateMessage(&msg);
+            DispatchMessageA(&msg);
+        }
+    }
+
+    LRESULT mWinProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+        HDC hdc;
+        DWORD inputStatus = GetQueueStatus(QS_ALLINPUT);
+
+        if (inputStatus & QS_KEY) size_t keyboard = EventType::castPlatform(wParam,lParam);
+        
+        size_t mouse = EventType::castMouse(uMsg,wParam);
+        EventType::parseMessage(uMsg,wParam,lParam);
+        // std::print("Key: {} pressed\n",keyboard);
+        // std::cout << "param : " << param << "\n";
+        switch (uMsg) {
+            case WM_DESTROY:
+                PostQuitMessage(0); // Signals the message loop to stop
+                return 0;
+                // --- Keyboard Input ---
+            case WM_KEYDOWN:
+                if (keyboard < 256) mInput->Keys[keyboard] = true;
+                return 0;
+
+            case WM_KEYUP:
+                if (keyboard < 256) mInput->Keys[keyboard] = false;
+                return 0;
+            // --- Mouse Movement ---
+            case WM_MOUSEMOVE:
+                mInput->mouseX = LOWORD(lParam); // X coordinate relative to window
+                mInput->mouseY = HIWORD(lParam); // Y coordinate relative to window
+            
+                return 0;
+
+            // --- Mouse Buttons ---
+            case WM_LBUTTONDOWN:
+                mInput->Mouse[mouse] = true;
+                return 0;
+            case WM_LBUTTONUP:
+                mInput->Mouse[mouse] = false;
+                return 0;
+            case WM_RBUTTONDOWN:
+                mInput->Mouse[mouse] = true;
+                return 0;
+            case WM_RBUTTONUP:
+                mInput->Mouse[mouse] = false;
+                return 0;
+            case WM_XBUTTONDOWN:
+                mInput->Mouse[mouse] = true;
+                return 0;
+            case WM_XBUTTONUP:
+                mInput->Mouse[mouse] = false;
+                return 0;
+            case WM_MBUTTONDOWN:
+                mInput->Mouse[mouse] = true;
+                return 0;
+            case WM_MBUTTONUP:
+                mInput->Mouse[mouse] = false;
+                return 0;
+            // --- Mouse Wheels ---
+            case WM_MOUSEWHEEL: {
+                mInput->mouseScroll([](int32* delta,int32* sdir,void* inParam){
+                    auto in = static_cast<WPARAM*>(inParam) ;
+                    *delta = GET_WHEEL_DELTA_WPARAM(*in);
+                    *sdir = *delta / WHEEL_DELTA;
+                },&wParam);
+                return 0;
+            }
+            case WM_PAINT: {
+                PAINTSTRUCT ps;
+                hdc = BeginPaint(hwnd, &ps);
+                TextOut(hdc,5,5,"learn windows\0",15);
+                // Custom drawing code goes here if needed
+                EndPaint(hwnd, &ps);
+                return 0;
+            }
+            case WM_SIZE: {
+                if (Desc.flags & WindowFlags::WinOGL) {
+                    int newWidth = LOWORD(lParam);
+                    int newHeight = HIWORD(lParam);
+                    // Ensure our context is active on this thread before updating the viewport size
+                    gfxCtx->MakeCurrent(); 
+                    glViewport(0, 0, newWidth, newHeight);
+                }
+                return 0;
+            }
+        }
+
+        return DefWindowProcA(hwnd, uMsg, wParam, lParam);
+    }
+    private:
+    static LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+        HDC hdc;
+        Window* pWindow = nullptr;
+
+        if (uMsg == WM_NCCREATE) {
+            CREATESTRUCTA* pCreate = reinterpret_cast<CREATESTRUCTA*>(lParam);
+            pWindow = reinterpret_cast<Window*>(pCreate->lpCreateParams);
+            SetWindowLongPtrA(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pWindow));
+        } else {
+            pWindow = reinterpret_cast<Window*>(GetWindowLongPtrA(hwnd, GWLP_USERDATA));
+        }
+        if (pWindow) return pWindow->mWinProc(hwnd, uMsg, wParam, lParam);
+        return DefWindowProcA(hwnd, uMsg, wParam, lParam);
+    }
+};
+
+    // class ChildWindow {
+    // public:
+    //     ChildWindow(Window& parent, const char* title, int32 x, int32 y, int32 width, int32 height) {
+    //         m_hInstance = GetModuleHandleA(nullptr);
+    //         m_ClassName = "ModernChildWinClass_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+
+    //         WNDCLASSA wca{};
+    //         wca.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+    //         wca.lpfnWndProc   = ChildWndProc; // Dedicated child wndproc
+    //         wca.hInstance     = m_hInstance;
+    //         wca.hCursor       = LoadCursor(nullptr, IDC_ARROW);
+    //         wca.lpszClassName = m_ClassName.c_str();
+
+    //         RegisterClassA(&wca);
+
+    //         // Enforce WS_CHILD and link directly to parent HWND
+    //         m_hWnd = CreateWindowExA(
+    //             0, m_ClassName.c_str(), title, 
+    //             WS_CHILD | WS_VISIBLE | WS_BORDER,
+    //             x, y, width, height,
+    //             parent.GetNativeHandle(), nullptr, m_hInstance, this
+    //         );
+    //     }
+
+    //     ~ChildWindow() {
+    //         if (m_hWnd) DestroyWindow(m_hWnd);
+    //         UnregisterClassA(m_ClassName.c_str(), m_hInstance);
+    //     }
+
+    //     [[nodiscard]] HWND GetNativeHandle() const noexcept { return m_hWnd; }
+
+    //     private:
+    //         static LRESULT CALLBACK ChildWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    //             ChildWindow* childPtr = nullptr;
+    //             if (uMsg == WM_NCCREATE) {
+    //                 auto* createStruct = reinterpret_cast<CREATESTRUCTA*>(lParam);
+    //                 childPtr = static_cast<ChildWindow*>(createStruct->lpCreateParams);
+    //                 SetWindowLongPtrA(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(childPtr));
+    //                 childPtr->m_hWnd = hwnd;
+    //             } else {
+    //                 childPtr = reinterpret_cast<ChildWindow*>(GetWindowLongPtrA(hwnd, GWLP_USERDATA));
+    //             }
+
+    //             if (childPtr) {
+    //                 // Route input directly to the single root instance!
+    //                 InputState& rootInput = Window::GetRoot().GetInputMutable();
+    //                 size_t keyboard = EventType::castPlatform(wParam);
+    //                 size_t mouse = EventType::castMouse(uMsg, wParam);
+
+    //                 switch (uMsg) {
+    //                     case WM_KEYDOWN: case WM_SYSKEYDOWN:
+    //                         if (keyboard < 256) rootInput.Keys[keyboard] = true;
+    //                         return 0;
+    //                     case WM_KEYUP: case WM_SYSKEYUP:
+    //                         if (keyboard < 256) rootInput.Keys[keyboard] = false;
+    //                         return 0;
+    //                     case WM_LBUTTONDOWN: case WM_RBUTTONDOWN:
+    //                         rootInput.Mouse[mouse] = true;
+    //                         return 0;
+    //                     case WM_LBUTTONUP: case WM_RBUTTONUP:
+    //                         rootInput.Mouse[mouse] = false;
+    //                         return 0;
+    //                 }
+    //             }
+    //             return DefWindowProcA(hwnd, uMsg, wParam, lParam);
+    //         }
+
+    //         HWND m_hWnd = nullptr;
+    //         HINSTANCE m_hInstance = nullptr;
+    //         std::string m_ClassName;
+    //     };
+    // }
+
+

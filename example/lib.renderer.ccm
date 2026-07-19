@@ -27,11 +27,11 @@ module;
 
 
 
-export module lib.renderer;
+export module lib.win:renderer;
 // import somethisng;
-import lib.std /* test */ ;
-import lib.win;
+import lib.std;
 import lib.types; // test
+import :fwd;
 
 
 typedef BOOL(WINAPI* PFNWGLCHOOSEPIXELFORMATARBPROC)(HDC hdc, const int* piAttribIList, const FLOAT* pfAttribFList, UINT nMaxFormats, int* piFormats, UINT* nNumFormats);
@@ -40,177 +40,184 @@ typedef HGLRC(WINAPI* PFNWGLCREATECONTEXTATTRIBSARBPROC)(HDC hdc, HGLRC hShareCo
 inline PFNWGLCHOOSEPIXELFORMATARBPROC wglChoosePixelFormatARB = nullptr;
 inline PFNWGLCREATECONTEXTATTRIBSARBPROC wglCreateContextAttribsARB = nullptr;
 
-// template<StaticString str>
-// class Renderer : IRenderer;
 export
+template<StaticString str>
+class Renderer : public IRenderer
 {
-    template<>
-    class Renderer<"GL"> : public IRenderer {
-        static bool InitOpenGLExtensions() {
-            // Create a temporary, minimal background window layout
-            HINSTANCE hInst = GetModuleHandle(nullptr);
-            HWND dummyHWND = CreateWindowExA(
-                0, "STATIC", "DummyWGL", WS_OVERLAPPEDWINDOW, 
-                0, 0, 1, 1, nullptr, nullptr, hInst, nullptr
-            );
-            if (!dummyHWND) return false;
+    static_assert(str.getSize() != 0, "Please enter renderer type");
+};
 
-            HDC dummyHDC = GetDC(dummyHWND);
-            
-            // Setup a legacy pixel format just to get OpenGL initialized
-            PIXELFORMATDESCRIPTOR pfd = {};
-            pfd.nSize = sizeof(pfd);
-            pfd.nVersion = 1;
-            pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
-            pfd.iPixelType = PFD_TYPE_RGBA;
-            pfd.cColorBits = 32;
+export template<>
+class Renderer<"GL"> : public IRenderer {
+    static bool InitOpenGLExtensions() {
+        // Create a temporary, minimal background window layout
+        HINSTANCE hInst = GetModuleHandle(nullptr);
+        HWND dummyHWND = CreateWindowExA(
+            0, "STATIC", "DummyWGL", WS_OVERLAPPEDWINDOW, 
+            0, 0, 1, 1, nullptr, nullptr, hInst, nullptr
+        );
+        if (!dummyHWND) return false;
 
-            int pf = ChoosePixelFormat(dummyHDC, &pfd);
-            SetPixelFormat(dummyHDC, pf, &pfd);
-            
-            // Spin up a legacy context
-            HGLRC dummyHGLRC = wglCreateContext(dummyHDC);
-            if (!dummyHGLRC) {
-                ReleaseDC(dummyHWND, dummyHDC);
-                DestroyWindow(dummyHWND);
-                return false;
-            }
+        HDC dummyHDC = GetDC(dummyHWND);
+        
+        // Setup a legacy pixel format just to get OpenGL initialized
+        PIXELFORMATDESCRIPTOR pfd = {};
+        pfd.nSize = sizeof(pfd);
+        pfd.nVersion = 1;
+        pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+        pfd.iPixelType = PFD_TYPE_RGBA;
+        pfd.cColorBits = 32;
 
-            wglMakeCurrent(dummyHDC, dummyHGLRC);
-
-            // Fetch the modern ARB functions from the GPU driver
-            wglChoosePixelFormatARB = (PFNWGLCHOOSEPIXELFORMATARBPROC)wglGetProcAddress("wglChoosePixelFormatARB");
-            wglCreateContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)wglGetProcAddress("wglCreateContextAttribsARB");
-
-            // Clean up the temporary window and context immediately
-            wglMakeCurrent(nullptr, nullptr);
-            wglDeleteContext(dummyHGLRC);
+        int pf = ChoosePixelFormat(dummyHDC, &pfd);
+        SetPixelFormat(dummyHDC, pf, &pfd);
+        
+        // Spin up a legacy context
+        HGLRC dummyHGLRC = wglCreateContext(dummyHDC);
+        if (!dummyHGLRC) {
             ReleaseDC(dummyHWND, dummyHDC);
             DestroyWindow(dummyHWND);
-
-            // Return true only if both modern functions were successfully bound
-            return (wglChoosePixelFormatARB && wglCreateContextAttribsARB);
-        }
-    public:
-        Renderer() = default;
-        Renderer(const Renderer&) = delete;
-        Renderer& operator=(const Renderer&) = delete;
-        Renderer(Renderer&& other) = delete;
-        Renderer& operator=(Renderer&& other) noexcept {
-            if (this != &other) {
-                Shutdown();
-                m_HDC = other.m_HDC;
-                m_HGLRC = other.m_HGLRC;
-                other.m_HDC = nullptr;
-                other.m_HGLRC = nullptr;
-            }
-            return *this;
+            return false;
         }
 
-        ~Renderer() {
-            Shutdown();
-        }
-        bool Initialize(HWND hwnd, int width, int height) override {
-            m_HDC = GetDC(hwnd);
-            if (!m_HDC) return false;
-            return true;
-        }
-        bool init(int major, int minor, bool enableDebug = false)  {
-            if (!m_HDC) return false;
+        wglMakeCurrent(dummyHDC, dummyHGLRC);
 
-            // 1. Ensure our extensions are ready (via the dummy pass method)
-            if (!wglChoosePixelFormatARB || !wglCreateContextAttribsARB) {
-                if (!InitOpenGLExtensions()) {
-                    std::print("Error: Could not load modern WGL extensions from the GPU driver.\n");
-                    return false;
-                } 
-            }
+        // Fetch the modern ARB functions from the GPU driver
+        wglChoosePixelFormatARB = (PFNWGLCHOOSEPIXELFORMATARBPROC)wglGetProcAddress("wglChoosePixelFormatARB");
+        wglCreateContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)wglGetProcAddress("wglCreateContextAttribsARB");
 
-            // 2. Query pixel format attributes
-            const int pixelAttribs[] = {
-                WGL_DRAW_TO_WINDOW_ARB, 1,
-                WGL_SUPPORT_OPENGL_ARB, 1,
-                WGL_DOUBLE_BUFFER_ARB,  1,
-                WGL_PIXEL_TYPE_ARB,     WGL_TYPE_RGBA_ARB,
-                WGL_COLOR_BITS_ARB,     32,
-                WGL_DEPTH_BITS_ARB,     24,
-                WGL_STENCIL_BITS_ARB,    8,
-                0
-            };
+        // Clean up the temporary window and context immediately
+        wglMakeCurrent(nullptr, nullptr);
+        wglDeleteContext(dummyHGLRC);
+        ReleaseDC(dummyHWND, dummyHDC);
+        DestroyWindow(dummyHWND);
 
-            int format;
-            UINT numFormats;
-            if (!wglChoosePixelFormatARB(m_HDC, pixelAttribs, nullptr, 1, &format, &numFormats) || numFormats == 0) {
-                std::print("Failed to find a matching pixel format.\n");
+        // Return true only if both modern functions were successfully bound
+        return (wglChoosePixelFormatARB && wglCreateContextAttribsARB);
+    }
+public:
+    // Renderer() = default;
+    // Renderer(const Renderer&) = delete;
+    // Renderer& operator=(const Renderer&) = delete;
+    // Renderer(Renderer&& other) = delete;
+    // Renderer& operator=(Renderer&& other) noexcept {
+    //     if (this != &other) {
+    //         Shutdown();
+    //         m_HDC = other.m_HDC;
+    //         m_HGLRC = other.m_HGLRC;
+    //         other.m_HDC = nullptr;
+    //         other.m_HGLRC = nullptr;
+    //     }
+    //     return *this;
+    // }
+
+    ~Renderer() {
+        Shutdown();
+    }
+    bool Initialize(HWND hwnd, int major, int minor) override {
+        m_HDC = GetDC(hwnd);
+        if (!m_HDC) return false;
+        this->major = major;
+        this->minor = minor;
+        return true;
+    }
+    bool init(bool enableDebug = false)  {
+        if (!m_HDC) return false;
+
+        // 1. Ensure our extensions are ready (via the dummy pass method)
+        if (!wglChoosePixelFormatARB || !wglCreateContextAttribsARB) {
+            if (!InitOpenGLExtensions()) {
+                std::print("Error: Could not load modern WGL extensions from the GPU driver.\n");
                 return false;
-            }
-
-            PIXELFORMATDESCRIPTOR pfd;
-            DescribePixelFormat(m_HDC, format, sizeof(pfd), &pfd);
-            SetPixelFormat(m_HDC, format, &pfd);
-
-            // 3. Set up context attributes
-            int contextFlags = 0;
-            if (enableDebug) contextFlags |= WGL_CONTEXT_DEBUG_BIT_ARB;
-
-            const int contextAttribs[] = {
-                WGL_CONTEXT_MAJOR_VERSION_ARB, major,
-                WGL_CONTEXT_MINOR_VERSION_ARB, minor,
-                WGL_CONTEXT_PROFILE_MASK_ARB,  WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
-                WGL_CONTEXT_FLAGS_ARB,         contextFlags,
-                0
-            };
-
-            // 4. Create the high-performance context
-            m_HGLRC = wglCreateContextAttribsARB(m_HDC, nullptr, contextAttribs);
-            if (!m_HGLRC) {
-                std::print("Failed to create modern WGL context.\n");
-                return false;
-            }
-
-            return MakeCurrent();
+            } 
         }
 
-        bool MakeCurrent() override {
-            return wglMakeCurrent(m_HDC, m_HGLRC);
+        // 2. Query pixel format attributes
+        const int pixelAttribs[] = {
+            WGL_DRAW_TO_WINDOW_ARB, 1,
+            WGL_SUPPORT_OPENGL_ARB, 1,
+            WGL_DOUBLE_BUFFER_ARB,  1,
+            WGL_PIXEL_TYPE_ARB,     WGL_TYPE_RGBA_ARB,
+            WGL_COLOR_BITS_ARB,     32,
+            WGL_DEPTH_BITS_ARB,     24,
+            WGL_STENCIL_BITS_ARB,    8,
+            0
+        };
+
+        int format;
+        UINT numFormats;
+        if (!wglChoosePixelFormatARB(m_HDC, pixelAttribs, nullptr, 1, &format, &numFormats) || numFormats == 0) {
+            std::print("Failed to find a matching pixel format.\n");
+            return false;
         }
 
-        void SwapBuffers() const noexcept {
-            if (m_HDC) ::SwapBuffers(m_HDC);
+        PIXELFORMATDESCRIPTOR pfd;
+        DescribePixelFormat(m_HDC, format, sizeof(pfd), &pfd);
+        SetPixelFormat(m_HDC, format, &pfd);
+
+        // 3. Set up context attributes
+        int contextFlags = 0;
+        if (enableDebug) contextFlags |= WGL_CONTEXT_DEBUG_BIT_ARB;
+
+        const int contextAttribs[] = {
+            WGL_CONTEXT_MAJOR_VERSION_ARB, major,
+            WGL_CONTEXT_MINOR_VERSION_ARB, minor,
+            WGL_CONTEXT_PROFILE_MASK_ARB,  WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+            WGL_CONTEXT_FLAGS_ARB,         contextFlags,
+            0
+        };
+
+        // 4. Create the high-performance context
+        m_HGLRC = wglCreateContextAttribsARB(m_HDC, nullptr, contextAttribs);
+        if (!m_HGLRC) {
+            std::print("Failed to create modern WGL context.\n");
+            return false;
         }
 
-        void Present() override {
-            SwapBuffers();
-        }
+        return MakeCurrent();
+    }
 
-        void Shutdown() noexcept {
-            if (wglGetCurrentContext() == m_HGLRC) {
-                wglMakeCurrent(nullptr, nullptr);
-            }
-            if (m_HGLRC) {
-                wglDeleteContext(m_HGLRC);
-                m_HGLRC = nullptr;
-            }
-            // Note: ReleaseDC is omitted here if you used CS_OWNDC in your Window Class.
-            // Since your window class uses CS_HREDRAW | CS_VREDRAW, we release it safely:
-            if (m_HDC) {
-                // We'd need the HWND to safely call ReleaseDC. If you change your class 
-                // style to include CS_OWNDC, you don't ever need to release this HDC!
-            }
-        }
-        const char* GetName() final override {
-            return "GL";
-        }
+    bool MakeCurrent() override {
+        return wglMakeCurrent(m_HDC, m_HGLRC);
+    }
 
-        void Resize(int width, int height) override {
-            if (m_HGLRC) {
-                glViewport(0, 0, width, height);
-            }
+    void SwapBuffers() const noexcept {
+        if (m_HDC) ::SwapBuffers(m_HDC);
+    }
+
+    void Present() override {
+        SwapBuffers();
+    }
+
+    void Shutdown() noexcept {
+        if (wglGetCurrentContext() == m_HGLRC) {
+            wglMakeCurrent(nullptr, nullptr);
         }
-    private:
-        HDC m_HDC = nullptr;
-        HGLRC m_HGLRC = nullptr;
-    };
+        if (m_HGLRC) {
+            wglDeleteContext(m_HGLRC);
+            m_HGLRC = nullptr;
+        }
+        // Note: ReleaseDC is omitted here if you used CS_OWNDC in your Window Class.
+        // Since your window class uses CS_HREDRAW | CS_VREDRAW, we release it safely:
+        if (m_HDC) {
+            // We'd need the HWND to safely call ReleaseDC. If you change your class 
+            // style to include CS_OWNDC, you don't ever need to release this HDC!
+        }
+    }
+    const char* GetName() final override {
+        return "GL";
+    }
+
+    void Resize(int width, int height) override {
+        if (m_HGLRC) {
+            glViewport(0, 0, width, height);
+        }
+    }
+private:
+    int major;
+    int minor;
+    HDC m_HDC = nullptr;
+    HGLRC m_HGLRC = nullptr;
+};
     
 
     // template<>
@@ -419,149 +426,148 @@ export
     //         }
     //     }
     // };
-    
-    template<>
-    class Renderer<"software"> {
-        public:
-        int channel;
-        bool done = false;
-        Window* window;
-        uint8* buffer;
-        size_t width,height;
-        size_t bufferSize;
 
-        void initBuffer(size_t ih,size_t iw,size_t colorchannels) {
-            channel = colorchannels;
-            height = ih;
-            width = iw;
-            bufferSize = height*width*channel;
-            buffer = new uint8[bufferSize];
+template<>
+class Renderer<"software"> {
+    public:
+    int channel;
+    bool done = false;
+    Window* window;
+    uint8* buffer;
+    size_t width,height;
+    size_t bufferSize;
+
+    void initBuffer(size_t ih,size_t iw,size_t colorchannels) {
+        channel = colorchannels;
+        height = ih;
+        width = iw;
+        bufferSize = height*width*channel;
+        buffer = new uint8[bufferSize];
+    }
+
+    inline void clear() {
+        for (int i = 0;; i+=100) {
+            uint8* buffview = buffer + i;
+            for(int n = 0; n <= (i >= bufferSize ? mabs(bufferSize - i) : 100) ;++n) {
+                *(buffview + n) = 0;
+            }
+            if(i >= bufferSize) break;
         }
+    }
 
-        inline void clear() {
-            for (int i = 0;; i+=100) {
-                uint8* buffview = buffer + i;
-                for(int n = 0; n <= (i >= bufferSize ? mabs(bufferSize - i) : 100) ;++n) {
-                    *(buffview + n) = 0;
-                }
-                if(i >= bufferSize) break;
-            }
-        }
-
-        inline void set(size_t ix,size_t iy,const uint8* colors) {
-            uint8* index = buffer + ((iy * (channel*width))  +  ix *channel);
-            if (index >= buffer + bufferSize || index <= buffer) return;
-            for (int i = 0;;++i)
-            {
-                *(index + i) = *(colors + i);
-                if(i >= channel) break;
-            }
-        }
-
-        void line(int32 aix,int32 aiy,int32 bix,int32 biy,RGBA col) {
-            const bool steep = mabs(aix - bix) < mabs(aiy - biy);
-            if (steep) {
-                swap(&aix, &aiy);
-                swap(&bix, &biy);
-            }
-            if (aix > bix) {
-                swap(&aix, &bix);
-                swap(&biy, &biy);
-            }
-            int y = aiy;
-            int ierror = 0;
-            for (int x = aix; x <= bix;x++) {
-                if (steep) set(y,x,col);
-                else       set(x,y,col);
-                ierror += 2 * mabs(biy - aiy);
-                if (ierror > bix - aix) {
-                    y += biy > aiy ? 1 : -1;
-                    ierror -= 2 * (bix - aix);
-                }
-            }
-        }
-
-        void triangle (int32 aix,int32 aiy,int32 bix,int32 biy,int32 cix,int32 ciy,RGBA col)
+    inline void set(size_t ix,size_t iy,const uint8* colors) {
+        uint8* index = buffer + ((iy * (channel*width))  +  ix *channel);
+        if (index >= buffer + bufferSize || index <= buffer) return;
+        for (int i = 0;;++i)
         {
-            const auto signed_triangle_area = [](int ax, int ay, int bx, int by, int cx, int cy) -> double {
-                return .5*((by-ay)*(bx+ax) + (cy-by)*(cx+bx) + (ay-cy)*(ax+cx));
-            };
-            const int32 bbminx = min(min(aix,bix),cix) 
-            , bbmaxx = max(max(aix,bix),cix)
-            , bbminy = min(min(aiy,biy),ciy) 
-            , bbmaxy = max(max(aiy,biy),ciy);
-            const double total_area = 1 / signed_triangle_area(aix, aiy, bix, biy, cix, ciy);
-            #pragma omp parallel for
-            for (int x = bbminx; x <= bbmaxx; x++) {
-                for (int y = bbminy; y <= bbmaxy; y++)
-                {
-                    double alpha = signed_triangle_area(x, y, bix, biy, cix, ciy) * total_area;
-                    double beta = signed_triangle_area(x, y, cix, ciy, aix, aiy) * total_area;
-                    double gamma = signed_triangle_area(x, y, aix, aiy, bix, biy) * total_area;
-                    if (alpha < 0 || beta < 0 || gamma < 0) continue;
-                    set(x, y, col);
-                }
-            } 
+            *(index + i) = *(colors + i);
+            if(i >= channel) break;
         }
+    }
+
+    void line(int32 aix,int32 aiy,int32 bix,int32 biy,RGBA col) {
+        const bool steep = mabs(aix - bix) < mabs(aiy - biy);
+        if (steep) {
+            swap(&aix, &aiy);
+            swap(&bix, &biy);
+        }
+        if (aix > bix) {
+            swap(&aix, &bix);
+            swap(&biy, &biy);
+        }
+        int y = aiy;
+        int ierror = 0;
+        for (int x = aix; x <= bix;x++) {
+            if (steep) set(y,x,col);
+            else       set(x,y,col);
+            ierror += 2 * mabs(biy - aiy);
+            if (ierror > bix - aix) {
+                y += biy > aiy ? 1 : -1;
+                ierror -= 2 * (bix - aix);
+            }
+        }
+    }
+
+    void triangle (int32 aix,int32 aiy,int32 bix,int32 biy,int32 cix,int32 ciy,RGBA col)
+    {
+        const auto signed_triangle_area = [](int ax, int ay, int bx, int by, int cx, int cy) -> double {
+            return .5*((by-ay)*(bx+ax) + (cy-by)*(cx+bx) + (ay-cy)*(ax+cx));
+        };
+        const int32 bbminx = min(min(aix,bix),cix) 
+        , bbmaxx = max(max(aix,bix),cix)
+        , bbminy = min(min(aiy,biy),ciy) 
+        , bbmaxy = max(max(aiy,biy),ciy);
+        const double total_area = 1 / signed_triangle_area(aix, aiy, bix, biy, cix, ciy);
+        #pragma omp parallel for
+        for (int x = bbminx; x <= bbmaxx; x++) {
+            for (int y = bbminy; y <= bbmaxy; y++)
+            {
+                double alpha = signed_triangle_area(x, y, bix, biy, cix, ciy) * total_area;
+                double beta = signed_triangle_area(x, y, cix, ciy, aix, aiy) * total_area;
+                double gamma = signed_triangle_area(x, y, aix, aiy, bix, biy) * total_area;
+                if (alpha < 0 || beta < 0 || gamma < 0) continue;
+                set(x, y, col);
+            }
+        } 
+    }
+    
+    std::tuple<int,int> projection(Vec3<double> v) {
+        return {
+            (v[0] + 1.) * width,
+            (v[1] + 1.) * height
+        };
+    }
+    uint8* get() const {return buffer;}
+    uint8* view() const {return buffer;} 
+
+    Renderer& init(Window* win,size_t height,size_t width) {
         
-        std::tuple<int,int> projection(Vec3<double> v) {
-            return {
-                (v[0] + 1.) * width,
-                (v[1] + 1.) * height
-            };
-        }
-        uint8* get() const {return buffer;}
-        uint8* view() const {return buffer;} 
+        window = win;
+        initBuffer(height, width,4);
+        return *this;
+    }
+    Renderer& end() {
+        clear();
+        return *this;
+    }
+    Renderer& swapbuffer() {
+        // thread_local bool* isDone = &done;
+        // end();
+        return *this;
 
-        Renderer& init(Window* win) {
-            
-            window = win;
-            initBuffer(win->height, win->width,4);
-            return *this;
-        }
-        Renderer& end() {
-            clear();
-            return *this;
-        }
-        Renderer& swapbuffer() {
-            // thread_local bool* isDone = &done;
-            // end();
-            return *this;
+    }
+    ~Renderer() {
+        // surfaceFree(surface);
+    }
 
-        }
-        ~Renderer() {
-            // surfaceFree(surface);
-        }
+};
 
-    };
-
-    class Rect {
-        public:
-        int32 x,y;
-        int32 h,w;
-        RGBA color;
-        bool ex,ey;
-        Rect() {}
-        Rect(int32 ih,int32 iw,int32 ix,int32 iy,RGBA colorin) {
-            init(ih,iw,ix,iy,colorin);
-        }
-        void init (int32 ih,int32 iw,int32 ix,int32 iy,RGBA colorin) {
-            h = ih;
-            w = iw;
-            x = ix;
-            y = iy;
-            setColor(colorin);
-        }
-        inline Rect& setColor(RGBA colorin) {
-            memcpy(this->color.col, colorin.col, 4*sizeof(uint8));
-            return *this;
-        }
-        inline Rect& draw(Renderer<"software">* buff,const int32 ix,const int32 iy) {
-            x += ix;
-            y += iy;
-            buff->triangle(x, y, x, h+y, w+x, h+y, color);
-            buff->triangle(x, y, h+x, y, w+x, h+y, color);
-            return *this;
-        }
-    };
+class Rect {
+    public:
+    int32 x,y;
+    int32 h,w;
+    RGBA color;
+    bool ex,ey;
+    Rect() {}
+    Rect(int32 ih,int32 iw,int32 ix,int32 iy,RGBA colorin) {
+        init(ih,iw,ix,iy,colorin);
+    }
+    void init (int32 ih,int32 iw,int32 ix,int32 iy,RGBA colorin) {
+        h = ih;
+        w = iw;
+        x = ix;
+        y = iy;
+        setColor(colorin);
+    }
+    inline Rect& setColor(RGBA colorin) {
+        memcpy(this->color.col, colorin.col, 4*sizeof(uint8));
+        return *this;
+    }
+    inline Rect& draw(Renderer<"software">* buff,const int32 ix,const int32 iy) {
+        x += ix;
+        y += iy;
+        buff->triangle(x, y, x, h+y, w+x, h+y, color);
+        buff->triangle(x, y, h+x, y, w+x, h+y, color);
+        return *this;
+    }
 };

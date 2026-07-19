@@ -1,0 +1,124 @@
+module;
+export module lib.win:event;
+import lib.std;
+import lib.types;
+import :fwd;
+
+export
+template<EventType::Key V>
+struct keyData {
+    static constexpr unsigned char value = V;
+    bool isDown = false;
+    bool wasDown = false;
+    bool changed = false;
+
+    using invoke = void(*)(void*,bool);
+    invoke action = nullptr; 
+    void* ptr = nullptr;
+    
+    template<typename F>
+    constexpr void setFn(F&& inFN) {
+        using decay = std::decay_t<F>;
+        static_assert(sizeof(decay) <= 24, "Callable too large for in-place buffer");
+        static_assert(alignof(decay) <= alignof(std::max_align_t), "Alignment mismatch");
+        ptr = new (buffer) decay(std::forward<F>(inFN));
+        
+        action = [](void* ptr,bool destroy) -> void {
+            if (destroy) {
+                return static_cast<decay*>(ptr)->~decay();
+            }
+            return (*static_cast<decay*>(ptr))();
+        };
+    }
+    ~keyData() {
+        if(action) {
+            action(ptr,true);
+        }
+    }
+    void operator ()() {
+        return action(ptr,false);
+    }
+    constexpr void update(bool update) {
+        isDown = update; 
+        changed = (isDown != wasDown);
+        wasDown = isDown;
+    }
+    alignas(std::max_align_t) char buffer[24];
+};
+
+template <typename T>
+struct isKeyData_t : false_t {};
+
+template <EventType::Key K>
+struct isKeyData_t<keyData<K>> : true_t {};
+
+template <typename T>
+concept IsKeyData_c = isKeyData_t<std::decay_t<T>>()();
+
+export
+template<IsKeyData_c... KeyDataTypes> 
+struct KeyMap {
+    template <typename T>
+    using decay = std::decay_t<T>;
+
+    const InputState* state = nullptr;
+    std::tuple<decay<KeyDataTypes>...> keys;
+    static constexpr auto indices = std::make_index_sequence<sizeof...(KeyDataTypes)>{};
+
+    // template <>
+    static consteval size_t GetPosition(uint32 K) {
+        // static constexpr auto indices = std::make_index_sequence<sizeof...(KeyDataTypes)>{};
+        size_t index = 0;
+        bool found = false;
+
+        ((!found && (decay<KeyDataTypes>::value == K ? (found = true) : (++index, true))), ...);
+
+        return found ? index : static_cast<size_t>(-1);
+    }
+    int32_t inputAccumulator = 0;
+    static consteval bool UniqueKeyError() {
+        constexpr size_t numKeys = sizeof...(KeyDataTypes);
+        constexpr size_t keys[numKeys] = { static_cast<size_t>(KeyDataTypes::value)... };
+            for (size_t i = 0; i < numKeys; ++i) {
+            for (size_t j = i + 1; j < numKeys; ++j) {
+                if (keys[i] == keys[j]) return false; // Found a duplicate!
+            }
+        }
+        return true;
+    }
+
+    static_assert(UniqueKeyError(),"KeyMap Error: You cannot bind the same key to multiple actions!");
+
+    constexpr KeyMap(const InputState* is,KeyDataTypes&&... args) 
+        : state(is), keys(std::forward<KeyDataTypes>(args)...) {}
+
+    constexpr void update(int32_t tickMS = 0, int32_t dtimeMS = 0) {
+        inputAccumulator += inputAccumulator >= tickMS ? -tickMS : dtimeMS;
+        if (inputAccumulator >= tickMS) {
+            // inputAccumulator -= tickMS;
+            (isPressed(std::get<GetPosition(KeyDataTypes::value)>(keys)), ...);
+            // updateKeysHelper(indices);
+        }
+    }
+    template<typename K>
+    constexpr void isPressed(K& data) {
+        bool pressed = state->Keys[data.value]; 
+        data.update(pressed);
+        if (pressed) {
+            data(); 
+        }
+        data.isDown = false;
+    }
+    template<EventType::Key K>
+    constexpr auto& get() {
+        constexpr size_t position = GetPosition(K);
+        return std::get<position>(keys);
+    }
+
+    // private:
+    // template<size_t... Is>
+    // constexpr void updateKeysHelper(std::index_sequence<Is...>) {
+    //     (isPressed(std::get<Is>(keys)), ...);
+    // }
+    
+};
