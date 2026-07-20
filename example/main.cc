@@ -18,9 +18,11 @@ int main() {
 
     app.addDisplayManager(&disp);
     app.addInputState(&input);
-    app.createWindow("MainWindow",800,600,WindowFlags::None,nullptr,{10,22});
-    // auto GL = static_cast<Renderer<"GL">*>(app.GetGfxCtx());
-    // GL->init();
+    app.addRenderer(&glCtx);
+    app.createWindow("MainWindow",800,600,WindowFlags::WinOGL,nullptr,{10,22});
+    glCtx.Initialize(app.mHWND, 4, 3);
+    glCtx.Resize(app.Desc.width, app.Desc.height);
+    
     KeyMap keyMap(&input,
         keyData<et::escape>{},
         keyData<et::e>{},
@@ -28,8 +30,8 @@ int main() {
         keyData<et::a>{},
         keyData<et::s>{},
         keyData<et::d>{},
-        keyData<et::q>{}
-        // keyData<et::controlL>{}
+        keyData<et::q>{},
+        keyData<et::controlL>{}
     );
 
     float x = 0 ,y = 0;
@@ -40,13 +42,12 @@ int main() {
     keyMap.get<et::s>().setFn([&]() {--(y); std::print("{} {} \n", x , y) ; });
     // keyMap.get<et::controlL>().setFn([&]() {std::print("ctrlL pressed \n") ; });
     keyMap.get<et::d>().setFn([&]() {
-        input.Keys[et::controlL] ? x += 10 : ++(x); 
+        keyMap.getState<et::controlL>().IsToggled() ? x += 10 : ++(x); 
         std::print("{} {} \n", x , y) ;
     });
     
     auto& times = Clock::get();
     while (app.IsRunning()) {
-        
         times.start();
         app.ProcessEvents();
 
@@ -60,9 +61,9 @@ int main() {
         glClearColor(0.1f, 0.15f, 0.2f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        keyMap.update(16,times.delta_time());
+        glCtx.SwapBuffer();
+        keyMap.update(8,times.delta_time());
         int timeSleep = times.end(16);
-        // std::print("ms: {} dt: {} \n", timeSleep , times.delta_time());
         Sleep(timeSleep);
     }
     return 0;

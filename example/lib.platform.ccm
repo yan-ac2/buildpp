@@ -83,14 +83,18 @@ export
 class Window {
     
     std::string mClassName;
+    WNDCLASSA mWCA = {};
     bool mRunning;
 
     inline static Window* sRootWindow = nullptr;
     public:
     WindowDesc Desc;
+    HWND mHWND = nullptr;
+    HDC hdc = nullptr;
     DisplayManager* mDispMgr = nullptr; 
     InputState* mInput = nullptr; 
-    std::unique_ptr<IRenderer> gfxCtx = nullptr; 
+    IRenderer* gfxCtx = nullptr; 
+    
 
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
@@ -99,42 +103,44 @@ class Window {
         Desc.mHInstance = GetModuleHandleA(nullptr);
         mClassName = "Win32Class_" + std::to_string(reinterpret_cast<uintptr_t>(this));
 
-        Desc.mWCA.style          = CS_HREDRAW | CS_VREDRAW;
-        Desc.mWCA.lpfnWndProc    = Window::WndProc;
-        Desc.mWCA.cbClsExtra     = 0;
-        Desc.mWCA.cbWndExtra     = 0;
-        Desc.mWCA.hInstance      = Desc.mHInstance;
-        Desc.mWCA.hIcon          = LoadIcon(Desc.mWCA.hInstance, IDI_APPLICATION);
-        Desc.mWCA.hCursor        = LoadCursor(NULL, IDC_ARROW);
-        Desc.mWCA.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
-        Desc.mWCA.lpszMenuName   = NULL;
-        Desc.mWCA.lpszClassName  = mClassName.c_str();
-        if (!RegisterClassA(&Desc.mWCA))
+       
+    }
+
+    bool createWindow(const char* title,int32 width,int32 height,uint32 flags,Window* patent = nullptr,Vec2<int32> pos = {CW_USEDEFAULT,CW_USEDEFAULT}) {
+        auto [style,exStyle] = WindowFlags::WindowStyles(flags);
+        UINT WCAStyle = (flags & WindowFlags::WinOGL) ? CS_HREDRAW | CS_VREDRAW : CS_HREDRAW | CS_VREDRAW | CS_OWNDC; 
+        mWCA.style          = CS_HREDRAW | CS_VREDRAW;
+        mWCA.lpfnWndProc    = Window::WndProc;
+        mWCA.cbClsExtra     = 0;
+        mWCA.cbWndExtra     = 0;
+        mWCA.hInstance      = Desc.mHInstance;
+        mWCA.hIcon          = LoadIcon(mWCA.hInstance, IDI_APPLICATION);
+        mWCA.hCursor        = LoadCursor(NULL, IDC_ARROW);
+        mWCA.hbrBackground  = (flags & WindowFlags::WinOGL) ? nullptr :(HBRUSH)(COLOR_WINDOW+1);
+        mWCA.lpszMenuName   = NULL;
+        mWCA.lpszClassName  = mClassName.c_str();
+        if (!RegisterClassA(&mWCA))
         {
             MessageBox(nullptr,
                 "Call to RegisterClassA failed!",
                 "Windows Desktop Guided Tour",
                 MB_ICONERROR | MB_OK);
         }
-    }
 
-    bool createWindow(const char* title,int32 width,int32 height,uint32 flags,Window* patent = nullptr,Vec2<int32> pos = {CW_USEDEFAULT,CW_USEDEFAULT}) {
-        auto [style,exStyle] = WindowFlags::WindowStyles(flags);
-        
         bool haveDisplayManager = (mDispMgr != nullptr);
         pos.x = (haveDisplayManager && (flags & WindowFlags::WinCenter)) ? (mDispMgr->GetPrimaryMonitor()->width - width) * 0.5 : pos.x;
         pos.y = (haveDisplayManager && (flags & WindowFlags::WinCenter)) ? (mDispMgr->GetPrimaryMonitor()->height - height) * 0.5 : pos.y;
 
-        Desc.mHWND = CreateWindowExA(
+        mHWND = CreateWindowExA(
             exStyle,
-            Desc.mWCA.lpszClassName,   // Must match the registered class name
+            mWCA.lpszClassName,   // Must match the registered class name
             title,
             style, // Standard window decor (Minimize, Maximize, Close)
             pos.x , pos.y, // Initial x, y positions
             width, height,                // Dimensions
-            !patent ? nullptr : patent->Desc.mHWND, nullptr, Desc.mHInstance, this
+            !patent ? nullptr : patent->mHWND, nullptr, Desc.mHInstance, this
         );
-        if (!Desc.mHWND) {
+        if (!mHWND) {
             MessageBoxA(nullptr, "Window Creation Failed!", "Error", MB_ICONERROR | MB_OK);
             return false;
         }
@@ -154,14 +160,14 @@ class Window {
         Desc.flags = flags;
         Desc.assigned = this;
 
-        ShowWindow(Desc.mHWND, SW_SHOW);
-        UpdateWindow(Desc.mHWND);
+        ShowWindow(mHWND, SW_SHOW);
+        UpdateWindow(mHWND);
         mRunning = true;
         return true;
     }
 
     ~Window() {
-        if (Desc.mHWND)  DestroyWindow(Desc.mHWND);
+        if (mHWND)  DestroyWindow(mHWND);
         UnregisterClassA(mClassName.c_str(), Desc.mHInstance);
     }
 
@@ -169,8 +175,13 @@ class Window {
     [[nodiscard]] InputState&       GetInputMutable() noexcept { return *mInput; }
     [[nodiscard]] static Window&    GetRoot() { return *sRootWindow; }
     [[nodiscard]] bool IsRunning() const noexcept { return mRunning; }
-    [[nodiscard]] HWND GetNativeHandle() noexcept { return Desc.mHWND; }
-    [[nodiscard]] IRenderer* GetGfxCtx()  { return gfxCtx.get(); }
+    [[nodiscard]] HWND GetNativeHandle() noexcept { return mHWND; }
+    // [[nodiscard]] IRenderer* GetGfxCtx()  { 
+    //     if (Desc.flags & WindowFlags::WinOGL) {
+    //         return static_cast<Renderer<"GL">*>(gfxCtx); 
+    //     }
+    //     return gfxCtx;
+    // }
     void CloseApp() noexcept { mRunning = false; }
 
     void addDisplayManager(DisplayManager* disp) {
@@ -178,6 +189,9 @@ class Window {
     }
     void addInputState(InputState* iState) {
         this->mInput = iState;
+    }
+    void addRenderer(IRenderer* iRenderer) {
+        this->gfxCtx = iRenderer;
     }
 
     void ProcessEvents() {
@@ -209,11 +223,9 @@ class Window {
     }
 
     LRESULT mWinProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-        HDC hdc;
-        DWORD inputStatus = GetQueueStatus(QS_ALLINPUT);
 
-        if (inputStatus & QS_KEY) size_t keyboard = EventType::castPlatform(wParam,lParam);
         
+        size_t keyboard = EventType::castPlatform(wParam,lParam);
         size_t mouse = EventType::castMouse(uMsg,wParam);
         EventType::parseMessage(uMsg,wParam,lParam);
         // std::print("Key: {} pressed\n",keyboard);
@@ -280,12 +292,11 @@ class Window {
                 return 0;
             }
             case WM_SIZE: {
-                if (Desc.flags & WindowFlags::WinOGL) {
+                if (gfxCtx && (Desc.flags & WindowFlags::WinOGL)) {
                     int newWidth = LOWORD(lParam);
                     int newHeight = HIWORD(lParam);
                     // Ensure our context is active on this thread before updating the viewport size
-                    gfxCtx->MakeCurrent(); 
-                    glViewport(0, 0, newWidth, newHeight);
+                    gfxCtx->Resize(newWidth, newHeight);
                 }
                 return 0;
             }

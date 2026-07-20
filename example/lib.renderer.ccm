@@ -113,15 +113,12 @@ public:
     ~Renderer() {
         Shutdown();
     }
-    bool Initialize(HWND hwnd, int major, int minor) override {
-        m_HDC = GetDC(hwnd);
-        if (!m_HDC) return false;
+    bool Initialize(HWND hwnd, int major, int minor) final override {
+        mHDC = GetDC(hwnd);
+        if (!mHDC) return false;
+
         this->major = major;
         this->minor = minor;
-        return true;
-    }
-    bool init(bool enableDebug = false)  {
-        if (!m_HDC) return false;
 
         // 1. Ensure our extensions are ready (via the dummy pass method)
         if (!wglChoosePixelFormatARB || !wglCreateContextAttribsARB) {
@@ -145,14 +142,14 @@ public:
 
         int format;
         UINT numFormats;
-        if (!wglChoosePixelFormatARB(m_HDC, pixelAttribs, nullptr, 1, &format, &numFormats) || numFormats == 0) {
+        if (!wglChoosePixelFormatARB(mHDC, pixelAttribs, nullptr, 1, &format, &numFormats) || numFormats == 0) {
             std::print("Failed to find a matching pixel format.\n");
             return false;
         }
 
         PIXELFORMATDESCRIPTOR pfd;
-        DescribePixelFormat(m_HDC, format, sizeof(pfd), &pfd);
-        SetPixelFormat(m_HDC, format, &pfd);
+        DescribePixelFormat(mHDC, format, sizeof(pfd), &pfd);
+        SetPixelFormat(mHDC, format, &pfd);
 
         // 3. Set up context attributes
         int contextFlags = 0;
@@ -167,8 +164,8 @@ public:
         };
 
         // 4. Create the high-performance context
-        m_HGLRC = wglCreateContextAttribsARB(m_HDC, nullptr, contextAttribs);
-        if (!m_HGLRC) {
+        mHGLRC = wglCreateContextAttribsARB(mHDC, nullptr, contextAttribs);
+        if (!mHGLRC) {
             std::print("Failed to create modern WGL context.\n");
             return false;
         }
@@ -177,28 +174,24 @@ public:
     }
 
     bool MakeCurrent() override {
-        return wglMakeCurrent(m_HDC, m_HGLRC);
+        return wglMakeCurrent(mHDC, mHGLRC);
     }
 
-    void SwapBuffers() const noexcept {
-        if (m_HDC) ::SwapBuffers(m_HDC);
-    }
-
-    void Present() override {
-        SwapBuffers();
+    void SwapBuffer() override {
+        if (mHDC) ::SwapBuffers(mHDC);
     }
 
     void Shutdown() noexcept {
-        if (wglGetCurrentContext() == m_HGLRC) {
+        if (wglGetCurrentContext() == mHGLRC) {
             wglMakeCurrent(nullptr, nullptr);
         }
-        if (m_HGLRC) {
-            wglDeleteContext(m_HGLRC);
-            m_HGLRC = nullptr;
+        if (mHGLRC) {
+            wglDeleteContext(mHGLRC);
+            mHGLRC = nullptr;
         }
         // Note: ReleaseDC is omitted here if you used CS_OWNDC in your Window Class.
         // Since your window class uses CS_HREDRAW | CS_VREDRAW, we release it safely:
-        if (m_HDC) {
+        if (mHDC) {
             // We'd need the HWND to safely call ReleaseDC. If you change your class 
             // style to include CS_OWNDC, you don't ever need to release this HDC!
         }
@@ -208,15 +201,17 @@ public:
     }
 
     void Resize(int width, int height) override {
-        if (m_HGLRC) {
+        if (mHGLRC) {
             glViewport(0, 0, width, height);
         }
     }
 private:
+    bool enableDebug = false;
     int major;
     int minor;
-    HDC m_HDC = nullptr;
-    HGLRC m_HGLRC = nullptr;
+    HWND mHWND = nullptr;
+    HDC mHDC = nullptr;
+    HGLRC mHGLRC = nullptr;
 };
     
 

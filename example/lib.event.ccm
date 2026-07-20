@@ -8,13 +8,11 @@ export
 template<EventType::Key V>
 struct keyData {
     static constexpr unsigned char value = V;
-    bool isDown = false;
-    bool wasDown = false;
-    bool changed = false;
 
     using invoke = void(*)(void*,bool);
-    invoke action = nullptr; 
+    invoke action = nullptr;//[](void*,bool){std::print("noop\n");}; 
     void* ptr = nullptr;
+    alignas(std::max_align_t) char buffer[24];
     
     template<typename F>
     constexpr void setFn(F&& inFN) {
@@ -36,14 +34,11 @@ struct keyData {
         }
     }
     void operator ()() {
-        return action(ptr,false);
+        if(action) {
+            return action(ptr,false);
+        }
     }
-    constexpr void update(bool update) {
-        isDown = update; 
-        changed = (isDown != wasDown);
-        wasDown = isDown;
-    }
-    alignas(std::max_align_t) char buffer[24];
+    
 };
 
 template <typename T>
@@ -61,21 +56,31 @@ struct KeyMap {
     template <typename T>
     using decay = std::decay_t<T>;
 
-    const InputState* state = nullptr;
     std::tuple<decay<KeyDataTypes>...> keys;
+    KeyState KeysState[sizeof...(KeyDataTypes)] {};
+    InputState* state = nullptr;
+    int32_t inputAccumulator = 0;
     static constexpr auto indices = std::make_index_sequence<sizeof...(KeyDataTypes)>{};
 
     // template <>
     static consteval size_t GetPosition(uint32 K) {
         // static constexpr auto indices = std::make_index_sequence<sizeof...(KeyDataTypes)>{};
-        size_t index = 0;
-        bool found = false;
+        // if (K >= 255) { // Assuming keyLast is 255
+        //     return static_cast<size_t>(-1);
+        // }
+        // size_t index = 0;
+        // bool found = false;
 
-        ((!found && (decay<KeyDataTypes>::value == K ? (found = true) : (++index, true))), ...);
+        // ((!found && (decay<KeyDataTypes>::value == K ? (found = true) : (++index, true))), ...);
 
-        return found ? index : static_cast<size_t>(-1);
+        // return found ? index : static_cast<size_t>(-1);
+        constexpr size_t numKeys = sizeof...(KeyDataTypes);
+        constexpr size_t keys[numKeys] = { static_cast<size_t>(KeyDataTypes::value)... };
+        for (size_t i = 0; i < numKeys; ++i) {
+            if (keys[i] == K) return i;
+        }
+        return static_cast<size_t>(-1);
     }
-    int32_t inputAccumulator = 0;
     static consteval bool UniqueKeyError() {
         constexpr size_t numKeys = sizeof...(KeyDataTypes);
         constexpr size_t keys[numKeys] = { static_cast<size_t>(KeyDataTypes::value)... };
@@ -89,36 +94,71 @@ struct KeyMap {
 
     static_assert(UniqueKeyError(),"KeyMap Error: You cannot bind the same key to multiple actions!");
 
-    constexpr KeyMap(const InputState* is,KeyDataTypes&&... args) 
+    constexpr KeyMap(InputState* is,KeyDataTypes&&... args) 
         : state(is), keys(std::forward<KeyDataTypes>(args)...) {}
+
+    void tickFrame() {
+        for (size_t i = 0; i < sizeof...(KeyDataTypes); ++i) {
+            KeysState[i].update(); // No parameter needed anymore!
+        }
+    }
 
     constexpr void update(int32_t tickMS = 0, int32_t dtimeMS = 0) {
         inputAccumulator += inputAccumulator >= tickMS ? -tickMS : dtimeMS;
         if (inputAccumulator >= tickMS) {
-            // inputAccumulator -= tickMS;
-            (isPressed(std::get<GetPosition(KeyDataTypes::value)>(keys)), ...);
-            // updateKeysHelper(indices);
+            // (gatherRawInputs(std::get<GetPosition(KeyDataTypes::value)>(keys)), ...);
+            updateRawKeysHelper(indices);
+            tickFrame();
+            // (isPressed(std::get<GetPosition(KeyDataTypes::value)>(keys)), ...);
+            updateKeysHelper(indices);
         }
     }
+
     template<typename K>
     constexpr void isPressed(K& data) {
-        bool pressed = state->Keys[data.value]; 
-        data.update(pressed);
-        if (pressed) {
+        constexpr size_t position = GetPosition(K::value);
+        static_assert(position != static_cast<size_t>(-1), "Sanity Check Failed: Key data value not found in Map!");
+        KeyState& sKeyState = KeysState[position];
+        sKeyState.setRawDown(state->Keys[data.value]);
+        // auto& key = state->Keys[data.value];
+        // key.update();
+        // std::print("is Pressed {}\n",pressed);
+        if (sKeyState.IsDown() || sKeyState.ChangedDown()) {
             data(); 
         }
-        data.isDown = false;
     }
+
+    template<typename K>
+    constexpr void gatherRawInputs(K& data) {
+        constexpr size_t position = GetPosition(K::value);
+        static_assert(position != static_cast<size_t>(-1), "Sanity Check Failed: Key data value not found in Map!");
+        // Evaluates bitBool::BitReference cleanly to a true/false bool
+        bool isCurrentlyHeld = state->Keys[data.value]; 
+        
+        // Pass the explicit bool to our internal wrapper state
+        KeysState[position].setRawDown(isCurrentlyHeld);
+    }
+
     template<EventType::Key K>
     constexpr auto& get() {
         constexpr size_t position = GetPosition(K);
+        static_assert(position != -1,"Index Not found");
         return std::get<position>(keys);
     }
+    template<EventType::Key K>
+    constexpr KeyState& getState() {
+        constexpr size_t position = GetPosition(K);
+        static_assert(position != -1,"Index Not found");
+        return KeysState[position];
+    }
+     private:
+    template<size_t... Is>
+    constexpr void updateKeysHelper(std::index_sequence<Is...>) {
+        (isPressed(std::get<Is>(keys)), ...);
+    }
+    template<size_t... Is>
+    constexpr void updateRawKeysHelper(std::index_sequence<Is...>) {
+        (gatherRawInputs(std::get<Is>(keys)), ...);
+    }
 
-    // private:
-    // template<size_t... Is>
-    // constexpr void updateKeysHelper(std::index_sequence<Is...>) {
-    //     (isPressed(std::get<Is>(keys)), ...);
-    // }
-    
 };

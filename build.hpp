@@ -347,6 +347,13 @@ struct File {
     using fStr = std::string;
     using fStrView = std::string_view;
     using IDx = std::size_t;
+    File& err(bool cnd = false,std::string_view msg = "",std::source_location fn = std::source_location::current()) {
+        if (cnd) {
+            print << fmt ("At: ",fn.file_name(), " ",fn.function_name(), " col: ",std::to_string(fn.column())," line: ",std::to_string(fn.line()), "\n" , msg ,"\n"); 
+            std::exit(1);
+        } 
+        return *this;
+    }
 
     mutable bool compiled = false;
     mutable bool haveHeaderUnit = false;
@@ -368,8 +375,17 @@ struct File {
     fStr ldFlags     {};
     fStr objectPath  {};
     std::vector<IDx> dependencies {};
-
+    [[nodiscard]] fStr getModuleOutput(const fs::path* mPath) {
+        err(Name.empty(), "File Name Empty");
+        err((fileType != Module) && (fileType != SystemHeader), "File Not a Module");
+        return fmt((*mPath / getName()).string(), fileUtil::pcmModule).clean().str;
+    }
+    void setObjOutputName(const fs::path* oPath) {
+        err(Name.empty(),"File Name Empty");
+        objectPath = fmt((*oPath / getName()).string(), fileUtil::objFile).clean().str;
+    }
     fStr getName() {
+        err(Name.empty(),"File Name Empty");
         if (isPartition) {
             fStr temp = Name;
             temp.replace(temp.find(':'),1,"-");
@@ -1058,7 +1074,11 @@ class Project
                             V.isPartition = true;
                         }
                         V.Name = moduleName;
+                        V.setObjOutputName(&OutPath->objPath);
                         V.fileType  = File::Module;
+                        std::string moPath = V.getModuleOutput(&OutPath->modulePath);
+                        bool exist = fs::exists(moPath) ? fs::last_write_time(V.Path) > fs::last_write_time(moPath) : false;
+                        V.compiled = exist;
                         exportModuleFound = true; // only one export module per file is allowed 
                     }
                 }
@@ -1180,8 +1200,9 @@ class Project
                         std::string rawHeader = moduleName.substr(1, moduleName.size() - 2);
                         auto& F = ProjectFile.addFile((moduleName.front() == '"') ? rawHeader : moduleName);
                         F.second.Name = rawHeader;
-                        F.second.objectPath = fmt((OutPath->modulePath / rawHeader).string(),file.pcmModule);
                         F.second.fileType = File::SystemHeader;
+                        F.second.objectPath = F.second.getModuleOutput(&OutPath->modulePath);
+                        // F.second.objectPath = fmt((OutPath->modulePath / rawHeader).string(),file.pcmModule);
                         F.second.compiled = fs::exists(F.second.objectPath);
                     }
                     for (const auto& [M,MV] : ProjectFile) {
@@ -1198,7 +1219,9 @@ class Project
     }
 
     int compileModule(File& inFile) {
-        if(inFile.compiled) {return 1;}
+        if ((inFile.fileType == File::SystemHeader && inFile.compiled) || (inFile.compiled && !recompile)) {
+            return 1;
+        }
         if(!inFile.dependencies.empty()) {
             for (const auto& I : inFile.dependencies) {
                 auto& dep = ProjectFile[I];
@@ -1218,7 +1241,7 @@ class Project
         const auto& mPath = OutPath->modulePath;
         const auto& oPath = OutPath->objPath;
         
-        const std::string fModule    = fmt((mPath / inFile.getName()).string(), file.pcmModule).str;
+        const std::string fModule    = inFile.getModuleOutput(&mPath);
         
         const std::string fObjOutput = fmt((oPath / inFile.getName()).string(), file.objFile).str;
         

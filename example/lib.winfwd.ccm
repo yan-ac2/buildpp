@@ -14,7 +14,7 @@ public:
     virtual ~IRenderer() = default;
     virtual bool Initialize(HWND hwnd, int width, int height) = 0;
     // virtual void Resize(int width, int height) = 0;
-    virtual void Present() = 0;
+    virtual void SwapBuffer() = 0;
     virtual bool MakeCurrent() = 0;
     virtual void Resize(int width, int height) = 0;
 
@@ -40,8 +40,6 @@ struct WindowDesc {
     Window* parent = nullptr; 
     Window* assigned = nullptr; 
     HINSTANCE mHInstance = nullptr;
-    HWND mHWND = nullptr;
-    WNDCLASSA mWCA = {};
 };
 
 export
@@ -152,15 +150,130 @@ struct WindowFlags {
 };
 
 export
+struct KeyState{
+    enum Flags : unsigned char {
+        None         = 0,
+        kIsDown      = 1 << 0, // 0000 0001
+        kWasDown     = 1 << 1,
+        kChangedDown = 1 << 2,
+        kIsToggled   = 1 << 3,
+        rawKeyDown   = 1 << 4
+    };
+    unsigned char kState = None;
+
+    constexpr void setRawDown(bool down) {
+        if (down) kState |= rawKeyDown;
+        else      kState &= ~rawKeyDown;
+    }
+    
+    constexpr void setToggle(bool totalState) {
+        if (totalState) kState |= kIsToggled;
+        else            kState &= ~kIsToggled;
+    }
+
+    constexpr void update() {
+        // 1. Keep toggle state safe
+        unsigned char currentToggle = kState & kIsToggled;
+
+        // 2. Read raw hardware state
+        bool isCurrentlyDown = (kState & rawKeyDown) != 0;
+
+        // 3. Start clean, shift the previous frame's isDown into wasDown
+        unsigned char nextState = None;
+        if (kState & kIsDown) {
+            nextState |= kWasDown;
+        }
+
+        // 4. Set the new frame's isDown bit only if currently held
+        if (isCurrentlyDown) {
+            nextState |= kIsDown;
+        }
+
+        // 5. Calculate if it changed this frame (XOR)
+        unsigned char changed = ((nextState ^ (nextState >> 1)) & kIsDown) << 2;
+        nextState |= changed;
+
+        // 6. Handle toggle flips on transitions
+        bool justPressed = (nextState & (kIsDown | kWasDown)) == kIsDown;
+        if (justPressed) {
+            currentToggle ^= kIsToggled;
+        }
+
+        // Merge everything together, preserving the raw state sent by Windows
+        kState = nextState | currentToggle | (kState & rawKeyDown);
+    }
+
+    // Basic state getters
+    constexpr bool IsDown()      const { return (kState & kIsDown) != 0; }
+    constexpr bool WasDown()     const { return (kState & kWasDown) != 0; }
+    constexpr bool ChangedDown() const { return (kState & kChangedDown) != 0; }
+    constexpr bool IsToggled()   const { return (kState & kIsToggled) != 0; }
+    constexpr bool RawKeyDown()  const { return (kState & rawKeyDown) != 0; }
+    // --- Action Helpers ---
+    
+    // True only on the exact frame the key transitions from UP to DOWN
+    constexpr bool justPressed() const { 
+        return (kState & (kIsDown | kWasDown)) == kIsDown; 
+    }
+
+    // True only on the exact frame the key transitions from DOWN to UP
+    constexpr bool justReleased() const { 
+        return (kState & (kIsDown | kWasDown)) == kWasDown; 
+    }
+    
+};
+template <size_t N>
+struct bitBool {
+    // 32 bytes * 8 bits = 256 bits total capacity
+    unsigned char bit[N] = {0};
+
+    // Helper proxy class to allow writing: myBits[10] = true;
+    struct BitReference {
+        unsigned char& byteRef;
+        unsigned char mask;
+
+        // Automatically implicitly converts to bool when reading: bool value = myBits[10];
+        operator bool() const {
+            return (byteRef & mask) != 0;
+        }
+
+        // Handles writing: myBits[10] = true;
+        BitReference& operator=(bool value) {
+            if (value) byteRef |= mask;
+            else       byteRef &= ~mask;
+            return *this;
+        }
+    };
+
+    // Non-const operator[]: supports both reading and writing
+    BitReference operator[](size_t IDX) {
+        size_t bytePos = IDX / 8; // Find which of the 32 bytes holds the bit
+        size_t bitPos  = IDX % 8; // Find the bit offset inside that byte
+        
+        unsigned char mask = static_cast<unsigned char>(1 << bitPos);
+        return BitReference{ bit[bytePos], mask };
+    }
+
+    // Const operator[]: for when the bitBool instance is read-only
+    bool operator[](size_t IDX) const {
+        size_t bytePos = IDX / 8;
+        size_t bitPos  = IDX % 8;
+        return (bit[bytePos] & (1 << bitPos)) != 0;
+    }
+};
+
+export
 struct InputState {
     using et =  EventType;
-    bool Keys  [et::keyLast] {};
+    bitBool<32> Keys {};
     bool Mouse [et::mLast] {};
-    bool KeyInput = false;
     int32 zDelta = 0;
     int32 scrollDirection = 0;
     int32 mouseX = 0;
     int32 mouseY = 0;
+
+    
+
     void mouseScroll(void(*scrFN)(int32*,int32*,void*),void* t = nullptr ){
         scrFN(&zDelta,&scrollDirection,t);
     } 
