@@ -99,24 +99,21 @@ class Window {
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
     Window() {
-        
         Desc.mHInstance = GetModuleHandleA(nullptr);
         mClassName = "Win32Class_" + std::to_string(reinterpret_cast<uintptr_t>(this));
-
-       
     }
 
     bool createWindow(const char* title,int32 width,int32 height,uint32 flags,Window* patent = nullptr,Vec2<int32> pos = {CW_USEDEFAULT,CW_USEDEFAULT}) {
         auto [style,exStyle] = WindowFlags::WindowStyles(flags);
-        UINT WCAStyle = (flags & WindowFlags::WinOGL) ? CS_HREDRAW | CS_VREDRAW : CS_HREDRAW | CS_VREDRAW | CS_OWNDC; 
-        mWCA.style          = CS_HREDRAW | CS_VREDRAW;
+         
+        mWCA.style          = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
         mWCA.lpfnWndProc    = Window::WndProc;
         mWCA.cbClsExtra     = 0;
         mWCA.cbWndExtra     = 0;
         mWCA.hInstance      = Desc.mHInstance;
         mWCA.hIcon          = LoadIcon(mWCA.hInstance, IDI_APPLICATION);
         mWCA.hCursor        = LoadCursor(NULL, IDC_ARROW);
-        mWCA.hbrBackground  = (flags & WindowFlags::WinOGL) ? nullptr :(HBRUSH)(COLOR_WINDOW+1);
+        mWCA.hbrBackground  = nullptr;
         mWCA.lpszMenuName   = NULL;
         mWCA.lpszClassName  = mClassName.c_str();
         if (!RegisterClassA(&mWCA))
@@ -283,14 +280,7 @@ class Window {
                 },&wParam);
                 return 0;
             }
-            case WM_PAINT: {
-                PAINTSTRUCT ps;
-                hdc = BeginPaint(hwnd, &ps);
-                TextOut(hdc,5,5,"learn windows\0",15);
-                // Custom drawing code goes here if needed
-                EndPaint(hwnd, &ps);
-                return 0;
-            }
+            
             case WM_SIZE: {
                 if (gfxCtx && (Desc.flags & WindowFlags::WinOGL)) {
                     int newWidth = LOWORD(lParam);

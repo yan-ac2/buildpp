@@ -222,6 +222,7 @@ struct KeyState{
     }
     
 };
+
 template <size_t N>
 struct bitBool {
     // 32 bytes * 8 bits = 256 bits total capacity
@@ -267,12 +268,12 @@ struct InputState {
     using et =  EventType;
     bitBool<32> Keys {};
     bool Mouse [et::mLast] {};
+    
     int32 zDelta = 0;
     int32 scrollDirection = 0;
     int32 mouseX = 0;
     int32 mouseY = 0;
 
-    
 
     void mouseScroll(void(*scrFN)(int32*,int32*,void*),void* t = nullptr ){
         scrFN(&zDelta,&scrollDirection,t);
@@ -280,7 +281,7 @@ struct InputState {
 };
 
 // ____EVENT_TYPE______
-
+#ifdef _WIN32
 size_t EventType::castPlatform(size_t inchar, LPARAM lParam) {
     HKL currentLayout = GetKeyboardLayout(0);
     UINT mappedChar = MapVirtualKeyExA(inchar, 2, currentLayout);
@@ -653,8 +654,9 @@ EventType::event EventType::parseMessage(UINT message, WPARAM wParam, LPARAM lPa
     }
     return eventNone;
 };
-
+#endif
 // ____WINDOW_FLAGS______
+#ifdef _WIN32
 Vec2<uint32> WindowFlags::WindowStyles(uint32 flags) {
     uint32 outStyle = WS_OVERLAPPEDWINDOW;
     uint32 outExStyle = 0;
@@ -697,3 +699,4 @@ Vec2<uint32> WindowFlags::WindowStyles(uint32 flags) {
     }
     return {outStyle,outExStyle};
 };
+#endif

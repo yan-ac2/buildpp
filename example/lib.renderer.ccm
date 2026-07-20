@@ -7,6 +7,7 @@ module;
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <GL/gl.h>
+#include <GL/glext.h>
 
 #ifndef WGL_CONTEXT_MAJOR_VERSION_ARB
 #define WGL_DRAW_TO_WINDOW_ARB            0x2001
@@ -49,67 +50,15 @@ class Renderer : public IRenderer
 
 export template<>
 class Renderer<"GL"> : public IRenderer {
-    static bool InitOpenGLExtensions() {
-        // Create a temporary, minimal background window layout
-        HINSTANCE hInst = GetModuleHandle(nullptr);
-        HWND dummyHWND = CreateWindowExA(
-            0, "STATIC", "DummyWGL", WS_OVERLAPPEDWINDOW, 
-            0, 0, 1, 1, nullptr, nullptr, hInst, nullptr
-        );
-        if (!dummyHWND) return false;
-
-        HDC dummyHDC = GetDC(dummyHWND);
-        
-        // Setup a legacy pixel format just to get OpenGL initialized
-        PIXELFORMATDESCRIPTOR pfd = {};
-        pfd.nSize = sizeof(pfd);
-        pfd.nVersion = 1;
-        pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
-        pfd.iPixelType = PFD_TYPE_RGBA;
-        pfd.cColorBits = 32;
-
-        int pf = ChoosePixelFormat(dummyHDC, &pfd);
-        SetPixelFormat(dummyHDC, pf, &pfd);
-        
-        // Spin up a legacy context
-        HGLRC dummyHGLRC = wglCreateContext(dummyHDC);
-        if (!dummyHGLRC) {
-            ReleaseDC(dummyHWND, dummyHDC);
-            DestroyWindow(dummyHWND);
-            return false;
-        }
-
-        wglMakeCurrent(dummyHDC, dummyHGLRC);
-
-        // Fetch the modern ARB functions from the GPU driver
-        wglChoosePixelFormatARB = (PFNWGLCHOOSEPIXELFORMATARBPROC)wglGetProcAddress("wglChoosePixelFormatARB");
-        wglCreateContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)wglGetProcAddress("wglCreateContextAttribsARB");
-
-        // Clean up the temporary window and context immediately
-        wglMakeCurrent(nullptr, nullptr);
-        wglDeleteContext(dummyHGLRC);
-        ReleaseDC(dummyHWND, dummyHDC);
-        DestroyWindow(dummyHWND);
-
-        // Return true only if both modern functions were successfully bound
-        return (wglChoosePixelFormatARB && wglCreateContextAttribsARB);
-    }
+    bool enableDebug = false;
+    int major;
+    int minor;
+    HWND mHWND = nullptr;
+    HDC mHDC = nullptr;
+    HGLRC mHGLRC = nullptr;
 public:
     // Renderer() = default;
-    // Renderer(const Renderer&) = delete;
-    // Renderer& operator=(const Renderer&) = delete;
-    // Renderer(Renderer&& other) = delete;
-    // Renderer& operator=(Renderer&& other) noexcept {
-    //     if (this != &other) {
-    //         Shutdown();
-    //         m_HDC = other.m_HDC;
-    //         m_HGLRC = other.m_HGLRC;
-    //         other.m_HDC = nullptr;
-    //         other.m_HGLRC = nullptr;
-    //     }
-    //     return *this;
-    // }
-
+    
     ~Renderer() {
         Shutdown();
     }
@@ -205,13 +154,53 @@ public:
             glViewport(0, 0, width, height);
         }
     }
+
 private:
-    bool enableDebug = false;
-    int major;
-    int minor;
-    HWND mHWND = nullptr;
-    HDC mHDC = nullptr;
-    HGLRC mHGLRC = nullptr;
+    static bool InitOpenGLExtensions() {
+        // Create a temporary, minimal background window layout
+        HINSTANCE hInst = GetModuleHandle(nullptr);
+        HWND dummyHWND = CreateWindowExA(
+            0, "STATIC", "DummyWGL", WS_OVERLAPPEDWINDOW, 
+            0, 0, 1, 1, nullptr, nullptr, hInst, nullptr
+        );
+        if (!dummyHWND) return false;
+
+        HDC dummyHDC = GetDC(dummyHWND);
+        
+        // Setup a legacy pixel format just to get OpenGL initialized
+        PIXELFORMATDESCRIPTOR pfd = {};
+        pfd.nSize = sizeof(pfd);
+        pfd.nVersion = 1;
+        pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+        pfd.iPixelType = PFD_TYPE_RGBA;
+        pfd.cColorBits = 32;
+
+        int pf = ChoosePixelFormat(dummyHDC, &pfd);
+        SetPixelFormat(dummyHDC, pf, &pfd);
+        
+        // Spin up a legacy context
+        HGLRC dummyHGLRC = wglCreateContext(dummyHDC);
+        if (!dummyHGLRC) {
+            ReleaseDC(dummyHWND, dummyHDC);
+            DestroyWindow(dummyHWND);
+            return false;
+        }
+
+        wglMakeCurrent(dummyHDC, dummyHGLRC);
+
+        // Fetch the modern ARB functions from the GPU driver
+        wglChoosePixelFormatARB = (PFNWGLCHOOSEPIXELFORMATARBPROC)wglGetProcAddress("wglChoosePixelFormatARB");
+        wglCreateContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)wglGetProcAddress("wglCreateContextAttribsARB");
+
+        // Clean up the temporary window and context immediately
+        wglMakeCurrent(nullptr, nullptr);
+        wglDeleteContext(dummyHGLRC);
+        ReleaseDC(dummyHWND, dummyHDC);
+        DestroyWindow(dummyHWND);
+
+        // Return true only if both modern functions were successfully bound
+        return (wglChoosePixelFormatARB && wglCreateContextAttribsARB);
+    }
 };
     
 
@@ -297,130 +286,130 @@ private:
 
     // };
     
-    // class Shader 
-    // {
-    //     enum shaderType {
-    //         vertex = GL_VERTEX_SHADER,
-    //         fragment = GL_FRAGMENT_SHADER,
-    //         program = GL_PROGRAM
-    //     };
-    //     using shaderPair = std::pair<shaderType,unsigned int>;
-    //     using shaderMap = std::unordered_map<std::string,shaderPair>;
-    //     using fileTime = std::chrono::time_point<std::chrono::file_clock>;
-    //     using strStream = std::ostringstream;
-    //     using str = std::string;
-    //     using strView = std::string_view;
+    class Shader 
+    {
+        enum shaderType {
+            vertex = GL_VERTEX_SHADER,
+            fragment = GL_FRAGMENT_SHADER,
+            program = GL_PROGRAM
+        };
+        using shaderPair = std::pair<shaderType,unsigned int>;
+        using shaderMap = std::unordered_map<std::string,shaderPair>;
+        using fileTime = std::chrono::time_point<std::chrono::file_clock>;
+        using strStream = std::ostringstream;
+        using str = std::string;
+        using strView = std::string_view;
         
-    //     shaderMap fileMap;
+        shaderMap fileMap;
         
-    //     public:
+        public:
         
-    //     unsigned int ID; 
-    //     fileTime lastWrite = {};
-    //     str shaderPath;
+        unsigned int ID; 
+        fileTime lastWrite = {};
+        str shaderPath;
         
-    //     Shader(const str& path) : shaderPath((fs::current_path()/path).string()) {
-    //         scanShader();
-    //     }
-    //     ~Shader() {
-    //         if(ID != 0) {
-    //             glDeleteProgram(ID);
-    //         }
-    //     }
-    //     void setBool(const str& name,bool* value) const {
-    //         glUniform1i(glGetUniformLocation(ID, name.data()), (int)*value);
-    //     }
-    //     void setInt(const str& name,int* value) const {
-    //         glUniform1i(glGetUniformLocation(ID, name.data()), *value);
-    //     }
-    //     void setFloat(const str& name,float* value) const {
-    //         glUniform1f(glGetUniformLocation(ID, name.data()), *value);
-    //     }
+        Shader(const str& path) : shaderPath((fs::current_path()/path).string()) {
+            scanShader();
+        }
+        ~Shader() {
+            if(ID != 0) {
+                glDeleteProgram(ID);
+            }
+        }
+        void setBool(const str& name,bool* value) const {
+            glUniform1i(glGetUniformLocation(ID, name.data()), (int)*value);
+        }
+        void setInt(const str& name,int* value) const {
+            glUniform1i(glGetUniformLocation(ID, name.data()), *value);
+        }
+        void setFloat(const str& name,float* value) const {
+            glUniform1f(glGetUniformLocation(ID, name.data()), *value);
+        }
 
-    //     void scanShader() {
-    //         str base = fs::current_path().string();
-    //         for(const auto& f : fs::directory_iterator(shaderPath)) {
-    //             const auto& file = f.path();
-    //             std::cout << file.lexically_relative(base) << " test\n";
-    //             fileMap[file.lexically_relative(base).string()] = {file.extension().string() == ".fs" ?
-    //             fragment : vertex,0};
+        void scanShader() {
+            str base = fs::current_path().string();
+            for(const auto& f : fs::directory_iterator(shaderPath)) {
+                const auto& file = f.path();
+                std::cout << file.lexically_relative(base) << " test\n";
+                fileMap[file.lexically_relative(base).string()] = {file.extension().string() == ".fs" ?
+                fragment : vertex,0};
 
-    //             if (f.last_write_time() > lastWrite) lastWrite = f.last_write_time();
-    //         }
-    //     }
+                if (f.last_write_time() > lastWrite) lastWrite = f.last_write_time();
+            }
+        }
 
-    //     void CompileShader() {
-    //         auto cmpShader = [this](const char* source,shaderPair* spair) {
-    //             spair->second = glCreateShader(spair->first);
-    //             glShaderSource(spair->second,1,&source,nullptr);
-    //             glCompileShader(spair->second);
-    //             err("ERROR: shader compilation error",spair->first, spair->second);
-    //         };
+        void CompileShader() {
+            auto cmpShader = [this](const char* source,shaderPair* spair) {
+                spair->second = glCreateShader(spair->first);
+                glShaderSource(spair->second,1,&source,nullptr);
+                glCompileShader(spair->second);
+                err("ERROR: shader compilation error",spair->first, spair->second);
+            };
             
-    //         for(auto& [key,value] : fileMap) {
-    //             std::ifstream file(key,std::ios::in | std::ios::binary);
-    //             if(file){
-    //                 std::ostringstream contents;
-    //                 contents << file.rdbuf();
-    //                 str sourceCode = contents.str();
+            for(auto& [key,value] : fileMap) {
+                std::ifstream file(key,std::ios::in | std::ios::binary);
+                if(file){
+                    std::ostringstream contents;
+                    contents << file.rdbuf();
+                    str sourceCode = contents.str();
                     
-    //                 file.close();
-    //                 std::cout << "file " << key << "\n" << sourceCode << "\n";
+                    file.close();
+                    std::cout << "file " << key << "\n" << sourceCode << "\n";
                     
-    //                 cmpShader(sourceCode.c_str(), &value);
+                    cmpShader(sourceCode.c_str(), &value);
                     
-    //                 if (fs::last_write_time(key) > lastWrite) {
-    //                 lastWrite = fs::last_write_time(key);}
+                    if (fs::last_write_time(key) > lastWrite) {
+                    lastWrite = fs::last_write_time(key);}
 
-    //             } else std::cout << key << " ERROR: cant open file \n";
+                } else std::cout << key << " ERROR: cant open file \n";
 
-    //         }
-    //     }
+            }
+        }
 
-    //     void CompileProgram() {
-    //         if (ID != 0) {
-    //             glDeleteProgram(ID);
-    //         }
+        void CompileProgram() {
+            if (ID != 0) {
+                glDeleteProgram(ID);
+            }
 
-    //         ID = glCreateProgram();
-    //         for (const auto [key,value] : fileMap){
-    //             glAttachShader(ID, value.second);
-    //         }
+            ID = glCreateProgram();
+            for (const auto [key,value] : fileMap){
+                glAttachShader(ID, value.second);
+            }
 
-    //         glLinkProgram(ID);
+            glLinkProgram(ID);
             
-    //         err("ERROR: shader program compilation error",program,ID);
-    //         for (auto& [key, value] : fileMap) {
-    //             glDeleteShader(value.second);
-    //             value.second = 0; // Reset ID so we don't accidentally use deleted shaders
-    //         }
-    //     }
+            err("ERROR: shader program compilation error",program,ID);
+            for (auto& [key, value] : fileMap) {
+                glDeleteShader(value.second);
+                value.second = 0; // Reset ID so we don't accidentally use deleted shaders
+            }
+        }
 
-    //     inline void use() const {
-    //         glUseProgram(ID);
-    //     }
+        inline void use() const {
+            glUseProgram(ID);
+        }
 
-    //     private:
+        private:
 
-    //     void err(strView message,Shader::shaderType type,unsigned int& objectID){
-    //         int success;
-    //         char infoLog[512];
+        void err(strView message,Shader::shaderType type,unsigned int& objectID){
+            int success;
+            char infoLog[512];
 
-    //         if (type == program) {
-    //             glGetProgramiv(objectID, GL_LINK_STATUS, &success);
-    //             if (!success) {
-    //                 glGetProgramInfoLog(objectID, 512, nullptr, infoLog);
-    //                 std::cout << message << "\n" << infoLog << "\n";
-    //             }
-    //         } else {
-    //             glGetShaderiv(objectID, GL_COMPILE_STATUS, &success);
-    //             if (!success) {
-    //                 glGetShaderInfoLog(objectID, 512, nullptr, infoLog);
-    //                 std::cout << message << "\n" << infoLog << "\n";
-    //             }
-    //         }
-    //     }
-    // };
+            if (type == program) {
+                glGetProgramiv(objectID, GL_LINK_STATUS, &success);
+                if (!success) {
+                    glGetProgramInfoLog(objectID, 512, nullptr, infoLog);
+                    std::cout << message << "\n" << infoLog << "\n";
+                }
+            } else {
+                glGetShaderiv(objectID, GL_COMPILE_STATUS, &success);
+                if (!success) {
+                    glGetShaderInfoLog(objectID, 512, nullptr, infoLog);
+                    std::cout << message << "\n" << infoLog << "\n";
+                }
+            }
+        }
+    };
 
 template<>
 class Renderer<"software"> {
