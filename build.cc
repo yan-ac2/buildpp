@@ -1,59 +1,59 @@
 #include "build.hpp"
 
 #include <functional>
-#include <mutex>
-#include <thread>
+// #include <mutex>
+// #include <thread>
 #include <queue>
 
 
-class ThreadPool {
-public:
-    explicit ThreadPool(size_t num_threads) {
-        for (size_t i = 0; i < num_threads; ++i) {
-            threads_.emplace_back([this] {
-                while (true) {
-                    std::function<void()> task;
-                    {
-                        std::unique_lock lock(queue_mutex_);
-                        cv_.wait(lock, [this] { return !tasks_.empty() || stop_; });
-                        if (stop_ && tasks_.empty()) return;
-                        task = std::move(tasks_.front());
-                        tasks_.pop();
-                    }
-                    task();
-                }
-            });
-        }
-    }
+// class ThreadPool {
+// public:
+//     explicit ThreadPool(size_t num_threads) {
+//         for (size_t i = 0; i < num_threads; ++i) {
+//             threads_.emplace_back([this] {
+//                 while (true) {
+//                     std::function<void()> task;
+//                     {
+//                         std::unique_lock lock(queue_mutex_);
+//                         cv_.wait(lock, [this] { return !tasks_.empty() || stop_; });
+//                         if (stop_ && tasks_.empty()) return;
+//                         task = std::move(tasks_.front());
+//                         tasks_.pop();
+//                     }
+//                     task();
+//                 }
+//             });
+//         }
+//     }
 
-    ~ThreadPool() {
-        {
-            std::unique_lock lock(queue_mutex_);
-            stop_ = true;
-        }
-        cv_.notify_all();
-        print << "exiting"_fmt.color(fmt::Bold_Green).endl();
-        for (auto& thread : threads_) {
-            thread.join();
-        }
-    }
+//     ~ThreadPool() {
+//         {
+//             std::unique_lock lock(queue_mutex_);
+//             stop_ = true;
+//         }
+//         cv_.notify_all();
+//         print << "exiting"_fmt.color(fmt::Bold_Green).endl();
+//         for (auto& thread : threads_) {
+//             thread.join();
+//         }
+//     }
 
-    template<typename F>
-    void enqueue(F&& f) {
-        {
-            std::unique_lock lock(queue_mutex_);
-            tasks_.emplace(std::forward<F>(f));
-        }
-        cv_.notify_one();
-    }
-    int isEmpty() {return tasks_.empty();}
-    private:
-    std::vector<std::jthread> threads_;
-    std::queue<std::function<void()>> tasks_;
-    mutable std::mutex queue_mutex_;
-    std::condition_variable cv_;
-    bool stop_ = false;
-};
+//     template<typename F>
+//     void enqueue(F&& f) {
+//         {
+//             std::unique_lock lock(queue_mutex_);
+//             tasks_.emplace(std::forward<F>(f));
+//         }
+//         cv_.notify_one();
+//     }
+//     int isEmpty() {return tasks_.empty();}
+//     private:
+//     std::vector<std::jthread> threads_;
+//     std::queue<std::function<void()>> tasks_;
+//     mutable std::mutex queue_mutex_;
+//     std::condition_variable cv_;
+//     bool stop_ = false;
+// };
 
 int test()
 { 
@@ -136,7 +136,7 @@ int selfCompile(bool recompile)
 
 int compileProject(bool recompile)
 {
-        ThreadPool pool(std::thread::hardware_concurrency());
+        // ThreadPool pool(std::thread::hardware_concurrency());
         const fs::path rootPath = fs::current_path();
         const fs::path exePath = rootPath / "bin";
 
@@ -225,7 +225,7 @@ int compileProject(bool recompile)
         #endif
         .dumpProject();
 
-        while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
+        // while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
         std::queue<std::reference_wrapper<File>> queue;
         for (auto& i : mainProj.ProjectFile) {
             if (i.second.fileType == File::Source) {
@@ -243,14 +243,14 @@ int compileProject(bool recompile)
             }
         }
         
-        while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
+        // while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
         
         for (auto& i : mainProj.ProjectFile) {
             // pool.enqueue ([&i,&mainProj]{mainProj.compileCpp(i);});
             // print << "File " << i.first << " with ID: " << std::to_string(i.second.ID) << " is: " << (i.second.compiled ? "Compiled" : "not Compiled") << "\n";
             mainProj.compileCpp(i.second);
         }
-        while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
+        // while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
 
         if(mainProj.cmdJson != nullptr) mainProj.cmdJson->write(outPath.rootPath/"compile_commands.json");
 

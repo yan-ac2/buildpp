@@ -1,6 +1,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 
 using size_t = decltype(sizeof(0));
 
@@ -44,17 +45,17 @@ class string {
         char* str;
         size_t cap;
         
-        large() noexcept : str(nullptr), cap(0) {}
-        large(size_t capacity) noexcept : str(nullptr), cap(capacity) {}
+        constexpr large() noexcept : str(nullptr), cap(0) {}
+        constexpr large(size_t capacity) noexcept : str(nullptr), cap(capacity) {}
         ~large() noexcept { deleteStr(); }
 
-        large& deleteStr() noexcept {
+        constexpr large& deleteStr() noexcept {
             delete[] str;
             str = nullptr;
             return *this;
         }
 
-        large& allocate_and_copy(const char* source, size_t source_len, size_t new_cap) {
+        constexpr large& allocate_and_copy(const char* source, size_t source_len, size_t new_cap) {
             char* new_buffer = new char[new_cap + 1];
             if (source && source_len > 0) {
                 for (std::size_t i = 0; i < source_len; ++i) {
@@ -72,41 +73,43 @@ class string {
         auto* begin() { return str; }
         auto* end() { return (str + cap); }
 
-        large(large&& other) noexcept : str(other.str), cap(other.cap) {
+        constexpr large(large&& other) noexcept : str(other.str), cap(other.cap) {
             other.str = nullptr;
             other.cap = 0;
         }
-        large(const large&) = delete;
-        large& operator=(const large&) = delete;
+        constexpr large(const large&) = delete;
+        constexpr large& operator=(const large&) = delete;
     };
 
     struct variant {
         template <typename T> using is_large = is_same<T, large>;
         template <typename T> using is_small = is_same<T, small>;
+        template <typename T> using is_literal = is_same<T, const char*>;
         // Using standard aligned_storage representation safely
         alignas(alignof(large) > alignof(small) ? alignof(large) : alignof(small)) 
         variantBuffer buffer[sizeof(large) > sizeof(small) ? sizeof(large) : sizeof(small)] {};
         
         bool autoshrink = false;
-        enum : char { no_type = -1, s = 0, l = 1 } type_index = no_type;
+        enum : char { no_type = -1, smll = 0, lrg = 1 ,literal = 2} type_index = no_type;
         size_t len = 0;
         
-        void destroy_current() noexcept {
+        constexpr void destroy_current() noexcept {
             if (type_index == no_type) return;
-            if (type_index == l) { reinterpret_cast<large*>(buffer)->~large(); }
+            if (type_index == lrg) { static_cast<large*>(static_cast<void*>(buffer))->~large(); }
             type_index = no_type; 
         }
 
         template <typename T>
-        constexpr variant& set(T&& value) noexcept {
+        constexpr variant& set(T value) noexcept {
             destroy_current();
-            new (buffer) T(static_cast<decltype(value)>(value));
-            type_index = is_large<T>::value ? l : s; 
+            std::construct_at(reinterpret_cast<T*>(buffer), std::forward<T>(value));
+            // new (buffer) T(static_cast<decltype(value)>(value));
+            type_index = is_large<T>::value ? lrg : is_small<T>() ? smll : is_literal<T>() ? literal : no_type; 
             return *this;
         }
 
-        template <typename T> constexpr T& get() noexcept { return *reinterpret_cast<T*>(buffer); }
-        template <typename T> constexpr const T& get() const noexcept { return *reinterpret_cast<const T*>(buffer); }
+        template <typename T> constexpr T& get() noexcept { return *static_cast<T*>(static_cast<void*>(buffer)); }
+        template <typename T> constexpr const T& get() const noexcept { return *static_cast<const T*>(static_cast<const void*>(buffer)); }
         ~variant() { destroy_current(); }
     } storage;
 
@@ -121,12 +124,12 @@ class string {
 
 public:
     // rule 5
-    string() noexcept {
+    constexpr string() noexcept {
         storage.set(small());
         storage.len = 0;
     }
 
-    string(const char* instr) noexcept {
+    constexpr string(const char* instr) noexcept {
         const size_t len = getLen(instr);
         if (len > smallSize) {
             storage.set(large{}).get<large>().allocate_and_copy(instr, len, len);
@@ -140,7 +143,7 @@ public:
         storage.len = len;
     }
 
-    string(const string& other) noexcept {
+    constexpr string(const string& other) noexcept {
         storage.len = other.storage.len;
         if (other.storage.type_index == 1) { 
             const large& o_large = other.storage.get<large>();
@@ -156,7 +159,7 @@ public:
 
     string(string&& other)  = delete;
 
-    string& operator=(const char* inStr) noexcept {
+    constexpr string& operator=(const char* inStr) noexcept {
         std::size_t inLen = getLen(inStr);
 
         if (inLen > smallSize || (storage.type_index == 1 && !storage.autoshrink)) {
@@ -182,7 +185,7 @@ public:
         return *this;
     }
 
-    string& reserve(size_t in) {
+    constexpr string& reserve(size_t in) {
         const size_t newSize = storage.len + in;
         if (newSize > smallSize) {
             if (storage.type_index == 1) { 
@@ -198,7 +201,7 @@ public:
         return *this;
     }
 
-    string& append(const char* in) {
+    constexpr string& append(const char* in) {
         const size_t inlen = getLen(in);
         if (inlen == 0) return *this;
         const size_t totalLen = storage.len + inlen;
@@ -250,6 +253,7 @@ public:
     constexpr size_t cap() const noexcept { return storage.get<large>().cap; }
     constexpr int getindex() const noexcept { return storage.type_index; }
 };
+
 
 
 int main()

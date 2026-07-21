@@ -36,14 +36,16 @@ int main() {
 
     float x = 0 ,y = 0;
 
-    keyMap.get<et::escape>().setFn([&]() { std::print("Hello\n");app.CloseApp();});
-    keyMap.get<et::w>().setFn([&]() {++(y); std::print("{} {} \n", x , y); });
-    keyMap.get<et::a>().setFn([&]() {--(x); std::print("{} {} \n", x , y) ; });
-    keyMap.get<et::s>().setFn([&]() {--(y); std::print("{} {} \n", x , y) ; });
+    keyMap.get<et::escape>().setFn([&]() { std::cout << "Hello\n";
+        app.CloseApp();}
+    );
+    keyMap.get<et::w>().setFn([&]() {++(y); std::cout << fmt(x," " ,y,"\n"); });
+    keyMap.get<et::a>().setFn([&]() {--(x); std::cout << fmt(x," " ,y,"\n"); });
+    keyMap.get<et::s>().setFn([&]() {--(y); std::cout << fmt(x," " ,y,"\n"); });
     // keyMap.get<et::controlL>().setFn([&]() {std::print("ctrlL pressed \n") ; });
     keyMap.get<et::d>().setFn([&]() {
         keyMap.getState<et::controlL>().IsToggled() ? x += 10 : ++(x); 
-        std::print("{} {} \n", x , y) ;
+        std::cout << fmt(x," " ,y,"\n");
     });
     
     auto& times = Clock::get();
@@ -53,8 +55,8 @@ int main() {
 
         if(app.GetInput().scrollDirection > 0) {
             auto monitor = disp.GetPrimaryMonitor();
-            std::print( 
-                "Monitor\n X: {} Y: {} {}x{} isPrimary: {} \n" ,monitor->x, monitor->y, monitor->width  , monitor->height, monitor->isPrimary);   
+            std::cout << fmt( 
+                "Monitor\n X: ",monitor->x," Y: ",monitor->y," ",monitor->width,"x",monitor->height," isPrimary: ",monitor->isPrimary," \n");   
             // std::cout << "\nMonitor \n"<< "X: "<< monitor->x << " Y: " << monitor->y << " Res: " << monitor->width  << "x" << monitor->height << " Is Primary: " << monitor->isPrimary << "\n";   
         }
 

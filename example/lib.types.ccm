@@ -23,7 +23,8 @@ export
     using f64       = double;
     using int8      = char;
     using uint8     = unsigned char;
-    using uint32    = decltype(0);
+    using int32     = decltype(0);
+    using uint32    = unsigned int;
     using int64     = std::int64_t;
     using uint64    = std::uint64_t;
     
@@ -47,261 +48,6 @@ export
     template<typename F>                   struct isFn_ptr                : false_t {};
     template<typename F,typename... Args>  struct isFn_ptr<F(*)(Args...)> : true_t {};
     
-    namespace fs = std::filesystem;
-        
-    template <size_t N>
-    struct StaticString
-    {
-        char data[N] {};
-
-        constexpr StaticString(const char (&input)[N + 1])
-        {
-            for(size_t i {0};input[i] != '\0';i++) {
-                data[i] = input[i];
-            }
-        }
-        constexpr const size_t getSize() const {return N;}
-        constexpr const char* getData () const {return data;}
-        constexpr operator const char*() const {return data;}
-    };
-    template <size_t N> StaticString(const char(&)[N]) -> StaticString<N - 1>;
-
-    template <class Ty,int ID,StaticString S>
-    struct var {
-        static constexpr std::string_view Name {S.getData(),S.getSize()};
-        static constexpr int id = ID; 
-        using type = Ty;
-    };
-
-    using int32_v   = var<int, 1, "int">;
-    using int32     = int32_v::type;
-    // int32 s = 12;
-    static_assert(int32_v::Name == "int", "");
-    static_assert(int32_v::id == 1, "");
-    static_assert(sizeof(int32) == 4, "");
-    
-    struct buffer {char buff;};
-    inline void* operator new(size_t size,buffer* Buff) {return Buff;} 
-
-    struct RGBA {
-        uint8 col[4];
-        constexpr RGBA() {}
-        constexpr RGBA(uint8 r,uint8 g,uint8 b,uint8 a) : col(r,g,b,a) {}
-        // void operator =(RGBA c) {
-        //     copy(col, c.col, 4 * sizeof(uint8));
-        // }
-        operator const uint8*() const {return col;}
-        operator uint8*() {return col;}
-        
-    };
-    
-    template <size_t Num>
-    struct vecutl {
-        // void compilation_failed_invalid_swizzle_character();
-        size_t num[Num];
-        
-        constexpr vecutl(const char (&input)[Num + 1]) : num{} {
-            for (size_t i = 0; i < Num; ++i) {
-                char c = input[i];
-
-                num[i] = (c == 'x' ? 0 :
-                        c == 'y' ? 1 : 
-                        c == 'z' ? 2 :
-                        c == 'w' ? 3 : 4);                
-            }
-        }
-        constexpr size_t operator[](size_t i) const {
-            return num[i];
-        }
-        // constexpr std::size_t err(int i) {
-        // }
-        constexpr size_t getSize() const { return Num; }
-        constexpr bool max(int m) const { 
-            for (const int& i : num) {
-                if (i > m - 1) return false;
-            }
-            return true;
-        }
-    };
-    template <size_t Num>
-    vecutl(const char(&)[Num]) -> vecutl<Num - 1>;
-    
-    template <typename T>
-    class Vec2 {
-        void idxErr() {
-            // std::cerr << "index > 1 \n";
-            std::exit(1);
-        }
-    public:
-        T x {};
-        T y {};
-
-        T& operator [](int idx) {
-            switch(idx) {
-                case 0: return x;
-                case 1: return y;
-                default: {
-                    idxErr();
-                    return x;
-                }
-            }
-        }
-
-        template <vecutl s> requires (s.getSize() > 1 && s.max(2))
-        constexpr std::array<T, s.getSize()> swizzle() {
-            std::array<T, s.getSize()> buffer;
-            
-            for (size_t i = 0; i < s.getSize(); ++i) {
-                buffer[i] = (*this)[s.num[i]];
-            }
-            
-            return buffer; 
-        
-        }
-    };
-
-    template <typename T>
-    class Vec3 {
-        void idxErr() {
-            // std::cerr << "index > 1 \n";
-            std::exit(1);
-        }
-    public:
-        T x {};
-        T y {};
-        T z {};
-
-        constexpr T& operator [](size_t idx) {
-            switch(idx) {
-                case 0: return x;
-                case 1: return y;
-                case 2: return z;
-                default: {
-                    idxErr();
-                    return x;
-                }
-            }
-        }
-
-        template <vecutl s> requires (s.getSize() > 1 && s.max(3))
-        constexpr std::array<T, s.getSize()> swizzle() {
-            std::array<T, s.getSize()> buffer;
-            
-            for (size_t i = 0; i < s.getSize(); ++i) {
-                buffer[i] = (*this)[s.num[i]];
-            }
-            return buffer;
-        }
-    };
-
-    template <typename T>
-    class Vec4 {
-        void idxErr() {
-            // std::cerr << "index > 1 \n";
-            std::exit(1);
-        }
-    public:
-        T x {};
-        T y {};
-        T z {};
-        T w {};
-
-        T& operator [](int idx) {
-            switch(idx) {
-                case 0: return x;
-                case 1: return y;
-                case 2: return z;
-                case w: return z;
-                default: {
-                    idxErr();
-                    return x;
-                }
-            }
-        }
-
-        template <vecutl s> requires (s.getSize() > 1 && s.max(4))
-        constexpr std::array<T, s.getSize()> swizzle() {
-            std::array<T, s.getSize()> buffer;
-            
-            for (size_t i = 0; i < s.getSize(); ++i) {
-                buffer[i] = (*this)[s.num[i]];
-            }
-            return buffer;
-        }
-    };
-
-    static_assert( []{
-        Vec3<int> i {4,2,1};
-        auto sw = i.swizzle<"zzz">();
-        std::array<int,3> ws {1,1,1};
-        return sw == ws ;
-    }() == true,"test");
-
-    class model {
-        std::vector<Vec3<double>> verts = {};
-        std::vector<int> faces = {};
-        public: 
-        model(const fs::path file) {
-            static const char* vert = "v ";
-            static const char* face = "f ";
-            static const fs::path path = fs::current_path();
-            std::ifstream in; in.open( path / file);
-            if (!in) {
-                // std::cerr << "failed " << path / file <<"\n"; 
-                return;}
-            std::string line;
-            while(!in.eof()) {
-                std::getline(in,line);
-                std::istringstream iss(line.c_str());
-                char trash;
-                if (!line.compare(0,2,vert)) {
-                    iss >> trash;
-                    Vec3<double> v;
-                    for(int i :{0,1,2}) iss >> v[i];
-                    verts.push_back(v);
-                } else if (!line.compare(0,2,face)) {
-                    int f,t,n, cnt = 0;
-                    iss >> trash;
-                    while (iss >> f >> trash >> t >> trash >> n) {
-                        faces.push_back(--f);
-                        cnt++;
-                    } 
-                    if (3 != cnt) {
-                        // std::cerr <<  "Error: the obj file is supposed to be triangulated \n"; 
-                        return;
-                    }
-                }
-            }
-            // std::cerr << "# v# " << nverts() << " f# "  << nfaces() << std::endl;
-        }
-        int nverts() const {return verts.size();}
-        int nfaces() const {return faces.size()/3;}
-        Vec3<double> vert(const int i) const {return verts[i];}
-        Vec3<double> vert(const int iface,const int nthvert) const {return verts[faces[iface*3+nthvert]];}
-    };
-
-    class FastBoolGenerator {
-    public:
-        FastBoolGenerator() : m_rand(0), m_counter(0) {}
-
-        bool next() {
-            if (m_counter == 0) {
-                // Fetch a new 64-bit random number
-                m_rand = std::uniform_int_distribution<uint64_t>{}(m_gen);
-                m_counter = 64;
-            }
-            // Extract the least significant bit
-            bool result = (m_rand & 1);
-            m_rand >>= 1; // Shift right for next call
-            --m_counter;
-            return result;
-        }
-
-    private:
-        std::mt19937 m_gen{std::random_device{}()};
-        uint64_t m_rand;
-        int m_counter;
-    };
     
     template<typename T>
     constexpr T mabs(T a) {return T(a < 0 ? -a : a);}
@@ -312,51 +58,426 @@ export
     template<typename T>
     constexpr T min(T a,T b) {return a < b ? a : b;}
 
-    class Clock {
-        using clock = std::chrono::high_resolution_clock;
-        using ms = std::chrono::milliseconds;
+    namespace fs = std::filesystem;
+};
+constexpr std::size_t compile_time_log10(std::size_t n) {
+    return (n < 10) ? 0 : 1 + compile_time_log10(n / 10);
+}
+
+export
+template <std::integral T>
+struct strConv{
+    static consteval std::size_t countDigit() {
+        constexpr bool isSigned = (T(-1) < T(0));
         
-        clock::time_point m_start = clock::now();
-        clock::time_point m_end   = clock::now();
-        int32_t frame_debt= 0; 
-        int32_t dt_ms     = 16;
-        Clock() = default;
-    public:
-        static Clock& get() {
-            static Clock instance;
-            return instance;
+        constexpr std::size_t mavBit = isSigned ? (sizeof(T) * 8 - 1) : (sizeof(T) * 8);
+        std::size_t maxValue = 0;
+        for (std::size_t i = 0; i < mavBit; ++i) {
+            maxValue = (maxValue << 1) | 1;
         }
-        void start() { 
-            m_start = clock::now(); 
+
+        return 1 + (isSigned ? 1 : 0) + compile_time_log10(maxValue) + 1;
+    }
+
+    char digit[countDigit()] = {};
+    std::size_t len = 0;
+
+    constexpr strConv(T in) {
+        // to_chars returns a result struct containing a ptr to the end of written chars
+        auto [ptr, ec] = std::to_chars(digit, digit + countDigit() - 1, in);
+        if (ec == std::errc{}) {
+            *ptr = '\0'; 
+            len = (ptr - digit);
+        } else {
+            digit[0] = '\0';
+            len = 0;
         }
-        
-        int32_t end(int32_t target_ms) { 
-            m_end = clock::now(); 
-            auto duration = std::chrono::duration_cast<ms>(m_end - m_start);
-            int32_t frame_time = static_cast<int32_t>(duration.count());
-    
-            int32_t sleep_time = (target_ms - frame_time) - frame_debt;
-    
-            if (sleep_time > 0) {
-                frame_debt = 0;
-                dt_ms = frame_time + sleep_time;
-                return sleep_time;
+    }
+
+    constexpr operator const char*() const { return digit; }
+    constexpr operator std::string_view() const { return {digit, len}; }
+    constexpr const char* data() const {
+        return digit;
+    }
+
+    constexpr std::size_t length() const {
+        return len;
+    }
+};
+template <typename T>
+concept Formattable = 
+    requires(T t) { { std::string_view(t) } -> std::same_as<std::string_view>; } || 
+    std::integral<std::decay_t<T>>;
+
+template <typename... Args>
+concept onlyStr = (Formattable<Args> && ...);
+
+// Calculates maximum upper-bound capacity based purely on TYPES (works for runtime variables!)
+template <typename... Args>
+constexpr std::size_t compute_max_capacity() {
+    auto get_max_type_size = []<typename Arg>() -> std::size_t {
+        using Decayed = std::decay_t<Arg>;
+        if constexpr (std::integral<Decayed>) {
+            // max digits + sign + null
+            return std::numeric_limits<Decayed>::digits10 + 3; 
+        } else {
+            // For string literals / std::string_view, we can't always know length purely from type,
+            // but for C-arrays (like "hello"), sizeof gives the length!
+            if constexpr (std::is_array_v<Decayed>) {
+                return sizeof(Decayed);
             } else {
-                frame_debt = static_cast<int32_t>((-sleep_time) * 0.25f);
-                if (frame_debt > target_ms * 2) {
-                    frame_debt = target_ms * 2;
-                }
-                dt_ms = frame_time;
-                return 0;
+                return 64; // Default fallback for runtime std::string_view
             }
         }
+    };
+    return (0 + ... + get_max_type_size.template operator()<Args>());
+}
+
+template <std::size_t Capacity>
+struct fmt_buf {
+    char data[Capacity + 1] = {};
+    std::size_t len = 0;
+
+    // CHANGED: constexpr instead of consteval
+    template <onlyStr... Args>
+    constexpr fmt_buf(Args&&... args) {
+        auto tuple = std::make_tuple(
+            []<typename Arg>(Arg&& arg) {
+                using Decayed = std::decay_t<Arg>;
+                if constexpr (std::integral<Decayed>) {
+                    return strConv<Decayed>(arg);
+                } else {
+                    return std::string_view(arg);
+                }
+            }(std::forward<Args>(args))...
+        );
+
+        std::apply([this](auto&&... items) {
+            auto append_sv = [this](std::string_view sv) {
+                for (char c : sv) {
+                    data[len++] = c;
+                }
+            };
+            (append_sv(std::string_view(items)), ...);
+        }, tuple);
+
+        data[len] = '\0';
+    }
+
+    constexpr operator std::string_view() const { return {data, len}; }
+    constexpr const char* cstr() const { return data; }
+    constexpr std::size_t size() const { return len; }
+};
+
+// CTAD works for both runtime and compile-time now!
+template <onlyStr... Args>
+fmt_buf(Args&&... args) -> fmt_buf<compute_max_capacity<Args...>()>;
+
+export
+template <std::size_t Capacity>
+using fmt = fmt_buf<Capacity>;
+
+// constexpr fmt s("hello ",45);
+// static_assert(std::string_view(s) == "hello 45", "");
+// static_assert(s.size() == 8, "");
+
+export
+template <size_t N>
+struct StaticString
+{
+    char data[N] {};
+
+    constexpr StaticString(const char (&input)[N + 1])
+    {
+        for(size_t i {0};input[i] != '\0';i++) {
+            data[i] = input[i];
+        }
+    }
+    constexpr const size_t getSize() const {return N;}
+    constexpr const char* getData () const {return data;}
+    constexpr operator const char*() const {return data;}
+};
+template <size_t N> StaticString(const char(&)[N]) -> StaticString<N - 1>;
+
+template <class Ty,int ID,StaticString S>
+struct var {
+    static constexpr std::string_view Name {S.getData(),S.getSize()};
+    static constexpr int id = ID; 
+    using type = Ty;
+};
+
+struct buffer {char buff;};
+inline void* operator new(size_t size,buffer* Buff) {return Buff;} 
+
+export
+struct RGBA {
+    uint8 col[4];
+    constexpr RGBA() {}
+    constexpr RGBA(uint8 r,uint8 g,uint8 b,uint8 a) : col(r,g,b,a) {}
+    // void operator =(RGBA c) {
+    //     copy(col, c.col, 4 * sizeof(uint8));
+    // }
+    operator const uint8*() const {return col;}
+    operator uint8*() {return col;}
+    
+};
+
+template <size_t Num>
+struct vecutl {
+    // void compilation_failed_invalid_swizzle_character();
+    size_t num[Num];
+    
+    constexpr vecutl(const char (&input)[Num + 1]) : num{} {
+        for (size_t i = 0; i < Num; ++i) {
+            char c = input[i];
+
+            num[i] = (c == 'x' ? 0 :
+                    c == 'y' ? 1 : 
+                    c == 'z' ? 2 :
+                    c == 'w' ? 3 : 4);                
+        }
+    }
+    constexpr size_t operator[](size_t i) const {
+        return num[i];
+    }
+    // constexpr std::size_t err(int i) {
+    // }
+    constexpr size_t getSize() const { return Num; }
+    constexpr bool max(int m) const { 
+        for (const int& i : num) {
+            if (i > m - 1) return false;
+        }
+        return true;
+    }
+};
+template <size_t Num>
+vecutl(const char(&)[Num]) -> vecutl<Num - 1>;
+
+export
+template <typename T>
+class Vec2 {
+    void idxErr() {
+        // std::cerr << "index > 1 \n";
+        std::exit(1);
+    }
+public:
+    T x {};
+    T y {};
+
+    T& operator [](int idx) {
+        switch(idx) {
+            case 0: return x;
+            case 1: return y;
+            default: {
+                idxErr();
+                return x;
+            }
+        }
+    }
+
+    template <vecutl s> requires (s.getSize() > 1 && s.max(2))
+    constexpr std::array<T, s.getSize()> swizzle() {
+        std::array<T, s.getSize()> buffer;
         
-        int32_t delta_time() const {
-            return dt_ms;
+        for (size_t i = 0; i < s.getSize(); ++i) {
+            buffer[i] = (*this)[s.num[i]];
         }
         
-    };
+        return buffer; 
+    
+    }
+};
 
+export
+template <typename T>
+class Vec3 {
+    void idxErr() {
+        // std::cerr << "index > 1 \n";
+        std::exit(1);
+    }
+public:
+    T x {};
+    T y {};
+    T z {};
+
+    constexpr T& operator [](size_t idx) {
+        switch(idx) {
+            case 0: return x;
+            case 1: return y;
+            case 2: return z;
+            default: {
+                idxErr();
+                return x;
+            }
+        }
+    }
+
+    template <vecutl s> requires (s.getSize() > 1 && s.max(3))
+    constexpr std::array<T, s.getSize()> swizzle() {
+        std::array<T, s.getSize()> buffer;
+        
+        for (size_t i = 0; i < s.getSize(); ++i) {
+            buffer[i] = (*this)[s.num[i]];
+        }
+        return buffer;
+    }
+};
+
+export
+template <typename T>
+class Vec4 {
+    void idxErr() {
+        // std::cerr << "index > 1 \n";
+        std::exit(1);
+    }
+public:
+    T x {};
+    T y {};
+    T z {};
+    T w {};
+
+    T& operator [](int idx) {
+        switch(idx) {
+            case 0: return x;
+            case 1: return y;
+            case 2: return z;
+            case w: return z;
+            default: {
+                idxErr();
+                return x;
+            }
+        }
+    }
+
+    template <vecutl s> requires (s.getSize() > 1 && s.max(4))
+    constexpr std::array<T, s.getSize()> swizzle() {
+        std::array<T, s.getSize()> buffer;
+        
+        for (size_t i = 0; i < s.getSize(); ++i) {
+            buffer[i] = (*this)[s.num[i]];
+        }
+        return buffer;
+    }
+};
+
+static_assert( []{
+    Vec3<int> i {4,2,1};
+    auto sw = i.swizzle<"zzz">();
+    std::array<int,3> ws {1,1,1};
+    return sw == ws ;
+}() == true,"test");
+
+export
+class model {
+    std::vector<Vec3<double>> verts = {};
+    std::vector<int> faces = {};
+    public: 
+    model(const fs::path file) {
+        static const char* vert = "v ";
+        static const char* face = "f ";
+        static const fs::path path = fs::current_path();
+        std::ifstream in; in.open( path / file);
+        if (!in) {
+            // std::cerr << "failed " << path / file <<"\n"; 
+            return;}
+        std::string line;
+        while(!in.eof()) {
+            std::getline(in,line);
+            std::istringstream iss(line.c_str());
+            char trash;
+            if (!line.compare(0,2,vert)) {
+                iss >> trash;
+                Vec3<double> v;
+                for(int i :{0,1,2}) iss >> v[i];
+                verts.push_back(v);
+            } else if (!line.compare(0,2,face)) {
+                int f,t,n, cnt = 0;
+                iss >> trash;
+                while (iss >> f >> trash >> t >> trash >> n) {
+                    faces.push_back(--f);
+                    cnt++;
+                } 
+                if (3 != cnt) {
+                    // std::cerr <<  "Error: the obj file is supposed to be triangulated \n"; 
+                    return;
+                }
+            }
+        }
+        // std::cerr << "# v# " << nverts() << " f# "  << nfaces() << std::endl;
+    }
+    int nverts() const {return verts.size();}
+    int nfaces() const {return faces.size()/3;}
+    Vec3<double> vert(const int i) const {return verts[i];}
+    Vec3<double> vert(const int iface,const int nthvert) const {return verts[faces[iface*3+nthvert]];}
+};
+
+export
+class FastBoolGenerator {
+public:
+    FastBoolGenerator() : m_rand(0), m_counter(0) {}
+
+    bool next() {
+        if (m_counter == 0) {
+            // Fetch a new 64-bit random number
+            m_rand = std::uniform_int_distribution<uint64_t>{}(m_gen);
+            m_counter = 64;
+        }
+        // Extract the least significant bit
+        bool result = (m_rand & 1);
+        m_rand >>= 1; // Shift right for next call
+        --m_counter;
+        return result;
+    }
+
+private:
+    std::mt19937 m_gen{std::random_device{}()};
+    uint64_t m_rand;
+    int m_counter;
+};
+
+export
+class Clock {
+    using clock = std::chrono::high_resolution_clock;
+    using ms = std::chrono::milliseconds;
+    
+    clock::time_point m_start = clock::now();
+    clock::time_point m_end   = clock::now();
+    int32_t frame_debt= 0; 
+    int32_t dt_ms     = 16;
+    Clock() = default;
+public:
+    static Clock& get() {
+        static Clock instance;
+        return instance;
+    }
+    void start() { 
+        m_start = clock::now(); 
+    }
+    
+    int32_t end(int32_t target_ms) { 
+        m_end = clock::now(); 
+        auto duration = std::chrono::duration_cast<ms>(m_end - m_start);
+        int32_t frame_time = static_cast<int32_t>(duration.count());
+
+        int32_t sleep_time = (target_ms - frame_time) - frame_debt;
+
+        if (sleep_time > 0) {
+            frame_debt = 0;
+            dt_ms = frame_time + sleep_time;
+            return sleep_time;
+        } else {
+            frame_debt = static_cast<int32_t>((-sleep_time) * 0.25f);
+            if (frame_debt > target_ms * 2) {
+                frame_debt = target_ms * 2;
+            }
+            dt_ms = frame_time;
+            return 0;
+        }
+    }
+    
+    int32_t delta_time() const {
+        return dt_ms;
+    }
     
 };
 

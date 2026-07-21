@@ -17,7 +17,7 @@
 #include <source_location>
 #include <utility>
 #include <functional>
-#include <ranges>
+// #include <ranges>
 
 #include "json.hpp"
 
@@ -44,7 +44,6 @@ concept funcPtr = std::is_pointer_v<T> && std::is_function_v<remove_ptr_t<T>>;
 
 struct fmt {
     std::string str;
-    
     enum colors {Not_color,
         Black,    Bold_Black,   High_Black,
         Red,      Bold_Red,     High_Red,
@@ -120,6 +119,7 @@ struct fmt {
             case High_Purple:  return "\033[0;95m"; break;
             case High_Cyan:    return "\033[0;96m"; break;
             case High_White:   return "\033[0;97m"; break;
+            default:           return ""; break;
         }
     };
 };
