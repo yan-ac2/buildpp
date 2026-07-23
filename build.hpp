@@ -1324,27 +1324,30 @@ class Project
             inFile.dependencies.empty() ? "" : 
             fmt(" -fprebuilt-module-path=", (mPath).string()," ")
         )};
+
+        for (const auto& I : inFile.dependencies) { 
+            const auto& depFile = ProjectFile[I];
+            if (depFile.isMainPartition){
+                for(const auto& IDF : depFile.dependencies){
+                    bool notIn = false;
+                    for (const auto& I : inFile.dependencies) { 
+                        if(IDF == I) break;
+                        notIn = true;
+                    }
+                    if (notIn) {
+                        inFile.dependencies.emplace_back(IDF);
+                    }
+                }
+            }
+        }
             
         for (const auto& I : inFile.dependencies) {
             auto& depFile = ProjectFile[I];
             bool isSystemHeader = depFile.fileType == File::SystemHeader;
-            bool isMainPartition = depFile.isMainPartition;
             inFile.Flags.append(
                 isSystemHeader ? fmt(" -fmodule-file=",fmt((mPath / depFile.getName()).string(),file.pcmModule)) :
                 fmt(" -fmodule-file=",depFile.Name,"=",fmt((mPath / depFile.getName()).string(),file.pcmModule))
             );
-            if(isMainPartition) {
-                for(const auto& IDF : depFile.dependencies){
-                    for (const auto& I : inFile.dependencies) {
-                        if(IDF == I) continue;
-                        auto& iDefFile = ProjectFile[IDF];
-                        inFile.Flags.append(
-                            isSystemHeader ? fmt(" -fmodule-file=",fmt((mPath / iDefFile.getName()).string(),file.pcmModule)) :
-                            fmt(" -fmodule-file=",iDefFile.Name,"=",fmt((mPath / iDefFile.getName()).string(),file.pcmModule))
-                        );
-                    }
-                }
-            }
         }
 
         const std::string f_cmd {fmt(Compiler, Options,inFile.haveHeaderUnit ? "-Wno-experimental-header-units":"" ,f_cppOutput,inFile.Flags,f_isModule?" -c -o ":" -o ", f_objOutput).clean()};

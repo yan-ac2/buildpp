@@ -34,7 +34,7 @@ int main() {
         keyData<et::controlL>{}
     );
 
-    float x = 0 ,y = 0;
+    int x = 0 ,y = 0;
 
     keyMap.get<et::escape>().setFn([&]() { std::cout << "Hello\n";
         app.CloseApp();}
@@ -56,7 +56,7 @@ int main() {
         if(app.GetInput().scrollDirection > 0) {
             auto monitor = disp.GetPrimaryMonitor();
             std::cout << fmt( 
-                "Monitor\n X: ",monitor->x," Y: ",monitor->y," ",monitor->width,"x",monitor->height," isPrimary: ",monitor->isPrimary," \n");   
+                "Monitor\n X: ",monitor->x," Y: ",monitor->y," ",monitor->width,"x",monitor->height," isPrimary: ",monitor->isPrimary ? "true" : "false"," \n");   
             // std::cout << "\nMonitor \n"<< "X: "<< monitor->x << " Y: " << monitor->y << " Res: " << monitor->width  << "x" << monitor->height << " Is Primary: " << monitor->isPrimary << "\n";   
         }
 
