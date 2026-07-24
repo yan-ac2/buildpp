@@ -3,5 +3,5 @@ export module lib.win;
 export import :platform;
 export import :renderer;
 export import :event;
-export import :fwd;
+export import :common;
 

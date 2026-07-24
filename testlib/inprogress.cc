@@ -27,11 +27,6 @@ template<typename  T,typename U> struct is_enum : false_t {};
 template<typename T> struct is_ptr     :false_t {};
 template<typename T> struct is_ptr<T*> :true_t  {};
 
-
-
-struct variantBuffer{char buffer;};
-inline void* operator new (size_t size,variantBuffer* p) {return p;}
-
 class string {
     struct small {
         char str[22]; 
@@ -86,8 +81,15 @@ class string {
         template <typename T> using is_small = is_same<T, small>;
         template <typename T> using is_literal = is_same<T, const char*>;
         // Using standard aligned_storage representation safely
-        alignas(alignof(large) > alignof(small) ? alignof(large) : alignof(small)) 
-        variantBuffer buffer[sizeof(large) > sizeof(small) ? sizeof(large) : sizeof(small)] {};
+        union StorageUnion {
+            large largestr;
+            small smallstr;
+            const char* Literal;
+            constexpr StorageUnion() {}
+            constexpr ~StorageUnion() {}
+        } storage;
+        // alignas(alignof(large) > alignof(small) ? alignof(large) : alignof(small)) 
+        // variantBuffer buffer[sizeof(large) > sizeof(small) ? sizeof(large) : sizeof(small)] {};
         
         bool autoshrink = false;
         enum : char { no_type = -1, smll = 0, lrg = 1 ,literal = 2} type_index = no_type;
@@ -95,21 +97,45 @@ class string {
         
         constexpr void destroy_current() noexcept {
             if (type_index == no_type) return;
-            if (type_index == lrg) { static_cast<large*>(static_cast<void*>(buffer))->~large(); }
+            if (type_index == lrg) {static_cast<large*>(&storage.largestr)->~large();}
+            if (type_index == smll) { static_cast<small*>(&storage.smallstr)->~small(); }
             type_index = no_type; 
         }
 
         template <typename T>
-        constexpr variant& set(T value) noexcept {
+        constexpr variant& set(T&& value) noexcept {
             destroy_current();
-            std::construct_at(reinterpret_cast<T*>(buffer), std::forward<T>(value));
-            // new (buffer) T(static_cast<decltype(value)>(value));
             type_index = is_large<T>::value ? lrg : is_small<T>() ? smll : is_literal<T>() ? literal : no_type; 
+            // new (buffer) T(static_cast<decltype(value)>(value));
+            if (type_index == smll) {
+                ::new (&storage.smallstr) T(std::forward<T>(value));
+            }
+            if (type_index == lrg) {
+                ::new (&storage.largestr) T(std::forward<T>(value));
+            }
+            if (type_index == literal) {
+                ::new (&storage.Literal) T(std::forward<T>(value));
+            }
             return *this;
         }
 
-        template <typename T> constexpr T& get() noexcept { return *static_cast<T*>(static_cast<void*>(buffer)); }
-        template <typename T> constexpr const T& get() const noexcept { return *static_cast<const T*>(static_cast<const void*>(buffer)); }
+        template <typename T> constexpr T& get() noexcept {};
+        template <> constexpr small& get<small>() noexcept {
+            return storage.smallstr;
+        };
+        template <> constexpr large& get<large>() noexcept {
+            return storage.largestr;
+        };
+        template <> constexpr const char*& get<const char*>() noexcept {
+            return storage.Literal;
+        };
+        template <typename T> constexpr const T& get() const noexcept {}
+        template <> constexpr const small& get<small>() const noexcept {
+            return storage.smallstr;
+        };
+        template <> constexpr const large& get<large>() const noexcept {
+            return storage.largestr;
+        };
         ~variant() { destroy_current(); }
     } storage;
 

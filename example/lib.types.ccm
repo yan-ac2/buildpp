@@ -61,51 +61,93 @@ export
     namespace fs = std::filesystem;
 };
 
-export
-template <std::integral T>
-constexpr void strConv(T in) {
-    auto countDigit = [] consteval {
-        auto _log10 = [](this auto self,int n)  consteval -> size_t {
-            return (n < 10) ? 0 : 1 + self(n / 10);
-        };
-        constexpr bool isSigned = (T(-1) < T(0));
+// export
+// template <std::integral T>
+// constexpr void strConv(T in) {
+//     auto countDigit = [] consteval {
+//         auto _log10 = [](this auto self,int n)  consteval -> size_t {
+//             return (n < 10) ? 0 : 1 + self(n / 10);
+//         };
+//         constexpr bool isSigned = (T(-1) < T(0));
         
-        constexpr std::size_t mavBit = isSigned ? (sizeof(T) * 8 - 1) : (sizeof(T) * 8);
-        std::size_t maxValue = 0;
-        for (std::size_t i = 0; i < mavBit; ++i) {
-            maxValue = (maxValue << 1) | 1;
-        }
+//         constexpr std::size_t mavBit = isSigned ? (sizeof(T) * 8 - 1) : (sizeof(T) * 8);
+//         std::size_t maxValue = 0;
+//         for (std::size_t i = 0; i < mavBit; ++i) {
+//             maxValue = (maxValue << 1) | 1;
+//         }
 
-        return 1 + (isSigned ? 1 : 0) + _log10(maxValue) + 1;
-    };
-    char digit[countDigit()] = {};
-    std::size_t len = 0;
-    // to_chars returns a result struct containing a ptr to the end of written chars
-    auto [ptr, ec] = std::to_chars(digit, digit + countDigit() - 1, in);
-    if (ec == std::errc{}) {
-        *ptr = '\0'; 
-        len = (ptr - digit);
-    } else {
-        digit[0] = '\0';
-        len = 0;
-    }
-};
+//         return 1 + (isSigned ? 1 : 0) + _log10(maxValue) + 1;
+//     };
+//     char digit[countDigit()] = {};
+//     std::size_t len = 0;
+//     // to_chars returns a result struct containing a ptr to the end of written chars
+//     auto [ptr, ec] = std::to_chars(digit, digit + countDigit() - 1, in);
+//     if (ec == std::errc{}) {
+//         *ptr = '\0'; 
+//         len = (ptr - digit);
+//     } else {
+//         digit[0] = '\0';
+//         len = 0;
+//     }
+// };
+
 template <typename T>
 concept Formattable = 
     requires(T t) { { std::string_view(t) } -> std::same_as<std::string_view>; } || 
-    std::integral<std::decay_t<T>>;
+    std::integral<std::decay_t<T>> ||
+    std::floating_point<std::decay_t<T>>;
 
 template <typename... Args>
 concept onlyStr = (Formattable<Args> && ...);
 
-template<typename T>
-consteval std::size_t maxIntegerDigits() {
+template<typename T> requires (std::integral<std::decay_t<T>> || std::floating_point<std::decay_t<T>>)
+consteval std::size_t maxDigits() {
     using Unqualified = std::remove_cvref_t<T>;
-    // std::numeric_limits<T>::digits10 is the max base-10 digits without precision loss.
-    // +1 accounts for rounding up, +1 for potential '-' sign.
-    constexpr bool isSigned = std::is_signed_v<Unqualified>;
-    return std::numeric_limits<Unqualified>::digits10 + 1 + (isSigned ? 1 : 0);
+    if (std::integral<Unqualified>) {
+        constexpr bool isSigned = std::is_signed_v<Unqualified>;
+        return std::numeric_limits<Unqualified>::digits10 + 1 + (isSigned ? 1 : 0);
+    } else {
+        return std::numeric_limits<Unqualified>::max_exponent10 + 2;
+    }
 }
+struct pow10 {
+    static constexpr auto max_digits = maxDigits<double>() - 1;
+    static constexpr std::array<double, max_digits> powarr = []() consteval {
+        std::array<double, max_digits> arr{};
+        arr[0] = 1.0;
+        for (size_t i = 1; i < arr.size(); ++i) {
+            arr[i] = arr[i - 1] * 10.0;
+        }
+        return arr;
+    }();
+
+    template <typename T> requires (std::integral<std::decay_t<T>> || std::floating_point<std::decay_t<T>>)
+    constexpr size_t operator[](const T& in) const {
+        bool isNeg = in < 0;
+        // Find digit count (or highest power index) safely
+        for (size_t i = 0; i < powarr.size(); ++i) {
+            if ((isNeg ? -in :in) < powarr[i]) {
+                return i + (isNeg ? 1 : 0); 
+            }
+        }
+        return powarr.size();
+    }
+    template <typename T> requires (std::integral<std::decay_t<T>> || std::floating_point<std::decay_t<T>>)
+    static constexpr size_t digitLength (const T& in) {
+        bool isNeg = in < 0;
+        // Find digit count (or highest power index) safely
+        for (size_t i = 0; i < powarr.size(); ++i) {
+            if ((isNeg ? -in :in) < powarr[i]) {
+                return i + (isNeg ? 1 : 0);
+            }
+        }
+        return powarr.size();
+    }
+};
+// static constexpr pow10 test;
+// static constexpr int test2 = 900;
+// static_assert(test[test2] == 3,"" );
+
 export
 struct fmt {
     std::string str;
@@ -123,12 +165,12 @@ struct fmt {
     };
 
     // 1. Variadic Concatenation Constructor: fmt("hello ", 123, " world")
-    // template<onlyStr... Args>
-    // constexpr fmt(Args&&... args) {
-    //     size_t preAlloc = (getArgSize(args) + ... + 0);
-    //     str.reserve(preAlloc);
-    //     (appendArg(std::forward<Args>(args)), ...);
-    // }
+    template<onlyStr... Args>
+    constexpr fmt(Args&&... args) {
+        size_t preAlloc = (getArgSize(args) + ... + 0);
+        str.reserve(preAlloc);
+        (appendArg(std::forward<Args>(args)), ...);
+    }
 
     // 2. Format String Constructor: fmt("Value: {}, Status: {}", 42, "OK")
     template<onlyStr... Args>
@@ -136,24 +178,28 @@ struct fmt {
         if (!in) return;
 
         std::string_view fmtStr(in);
+        size_t preAlloc = (getArgSize(args) + ... + 0);
+        int attr = 0;
+        int attr2 = 0;
         size_t lastPos = 0;
 
         // Lambda executed once per parameter in fold expression
         auto processArg = [this, &fmtStr, &lastPos](auto&& arg) {
-            size_t placeholder = fmtStr.find("{}", lastPos);
-            if (placeholder != std::string_view::npos) {
+            size_t pBegin = fmtStr.find('{',lastPos);
+            size_t pEnd = fmtStr.find('}', lastPos);
+            if (pBegin != std::string_view::npos && pEnd != std::string_view::npos) {
                 // Append text preceding the {}
-                str.append(fmtStr.substr(lastPos, placeholder - lastPos));
+                str.append(fmtStr.substr(lastPos, pBegin - lastPos));
                 // Append argument value
                 appendArg(arg);
                 // Move position past the {}
-                lastPos = placeholder + 2;
+                lastPos = pEnd + 1;
             }
         };
 
+        str.reserve(preAlloc);
         // Expand over all arguments
         (processArg(args), ...);
-
         // Append remaining tail of format string after the last {}
         if (lastPos < fmtStr.size()) {
             str.append(fmtStr.substr(lastPos));
@@ -203,25 +249,46 @@ struct fmt {
     }
 
 private:
-    template<typename T>
+    template<onlyStr T>
     constexpr size_t getArgSize(const T& arg) const {
         using Raw = std::remove_cvref_t<T>;
         if constexpr (std::is_convertible_v<Raw, std::string_view>) {
-            return std::string_view(arg).size();
+            std::string_view viewArg(arg);
+            size_t preAlloc = viewArg.size();
+            if (viewArg.find('{') != std::string::npos) {
+                bool inPlaceholder = false;
+                const char* pBegin = nullptr;
+                for (const auto& c : viewArg.substr(viewArg.find('{'),viewArg.find_last_of('{'))) {
+                    if (c == '{') inPlaceholder = true;
+                    if (c == '}') inPlaceholder = false;
+                    if (inPlaceholder) {
+                        pBegin = &c;
+                        
+                        --preAlloc;
+                    }
+                }
+            }
+            return preAlloc;
         } else if constexpr (std::integral<Raw>) {
-            return maxIntegerDigits<Raw>();
+            return pow10::digitLength(arg);
+        } else if constexpr (std::floating_point<Raw>) {
+            return pow10::digitLength(arg);
         }
         return 0;
     }
 
-    template<typename T>
+    template<onlyStr T>
     constexpr void appendArg(T& arg) {
         using Raw = std::remove_cvref_t<T>;
         if constexpr (std::is_convertible_v<Raw, std::string_view>) {
             str += std::string_view(arg);
         } else if constexpr (std::integral<Raw>) {
-            char digit[maxIntegerDigits<Raw>()];
-            auto [eDigit, ec] = std::to_chars(digit, digit + maxIntegerDigits<Raw>(), arg);
+            char digit[maxDigits<Raw>()];
+            auto [eDigit, ec] = std::to_chars(digit, digit + maxDigits<Raw>(), arg);
+            str.append(digit, static_cast<std::size_t>(eDigit - digit));
+        } else if constexpr (std::floating_point<Raw>) {
+            char digit[maxDigits<Raw>()];
+            auto [eDigit, ec] = std::to_chars(digit, digit + maxDigits<Raw>(), arg,std::chars_format::fixed);
             str.append(digit, static_cast<std::size_t>(eDigit - digit));
         }
     }
@@ -258,13 +325,14 @@ private:
     }
 };
 
-constexpr std::string s (fmt("{}  hello",453).clean());
+// constexpr std::string s (fmt("{}  hello",453).clean());
+constexpr fmt gs ("{ } hello {}",43,54);
+static_assert(std::string_view(gs) == "43 hello 54", "");
 // s.clean();
-constexpr char arr[] = [] -> char[2] {
-    return {"a","b"}
-}();
-static_assert(s == "453 hello", "");
-// static_assert(s.size() == 8, "");
+// 
+// constexpr unsigned int a = 0b11010;
+// constexpr unsigned int b = 0b11010;
+// static_assert(pow10<20>[19] == 10000000000000000000ul, "");
 
 export
 template <size_t N>

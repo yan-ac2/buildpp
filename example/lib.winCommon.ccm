@@ -2,7 +2,7 @@ module;
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-export module lib.win:fwd;
+export module lib.win:common;
 import lib.std;
 import lib.types;
 
@@ -80,7 +80,7 @@ struct EventType {
         kpPeriod,kpReturn,
         scrollLock,printScreen,pause,
         world1,world2,
-        keyLast = 255 /* padding for alignment ~(175 by default) */
+        keyLast = 255 
     };
     enum Mouse : unsigned char {
         mNull = 0,
@@ -113,10 +113,10 @@ struct EventType {
         monitorConnected,
         monitorDisconnected
     };
-    static size_t castPlatform(size_t inchar, LPARAM lParam = 0);
-    static size_t castMouse(UINT message, WPARAM wParam);
-    static size_t toPlatform(size_t engineKey);
-    static event parseMessage(UINT message, WPARAM wParam, LPARAM lParam);
+    static constexpr size_t castPlatform(size_t inchar, LPARAM lParam = 0);
+    static constexpr size_t castMouse(UINT message, WPARAM wParam);
+    static constexpr size_t toPlatform(size_t engineKey);
+    static constexpr event parseMessage(UINT message, WPARAM wParam, LPARAM lParam);
 };
 
 export
@@ -146,7 +146,7 @@ struct WindowFlags {
         CaptureRawMouse    = 1 << 20
     };
 
-    static Vec2<uint32> WindowStyles(uint32 flags);
+    static constexpr Vec2<uint32> WindowStyles(uint32 flags);
 };
 
 export
@@ -274,6 +274,11 @@ struct InputState {
     int32 mouseX = 0;
     int32 mouseY = 0;
 
+    void updateKey() {
+        for (int k = 0;k <= EventType::keyLast; ++k) {
+            Keys[EventType::castPlatform(k)] = (GetAsyncKeyState(k) & 0x8000);
+        }
+    }
 
     void mouseScroll(void(*scrFN)(int32*,int32*,void*),void* t = nullptr ){
         scrFN(&zDelta,&scrollDirection,t);
@@ -282,12 +287,10 @@ struct InputState {
 
 // ____EVENT_TYPE______
 #ifdef _WIN32
-size_t EventType::castPlatform(size_t inchar, LPARAM lParam) {
+constexpr size_t EventType::castPlatform(size_t inchar, LPARAM lParam) {
     HKL currentLayout = GetKeyboardLayout(0);
     UINT mappedChar = MapVirtualKeyExA(inchar, 2, currentLayout);
-    // 1. Direct ASCII mappings for Alpha-Numeric keys in Windows API
-    // if (k >= 'A' && k <= 'Z') return k;
-    // if (k >= '0' && k <= '9') return k;
+    
     switch(mappedChar) {
         case ' ':  return space;
         case '-':  return minus;
@@ -349,31 +352,19 @@ size_t EventType::castPlatform(size_t inchar, LPARAM lParam) {
         case VK_DIVIDE:    return kpSlash;  
         
         // --- Function Keys ---
-        case VK_F1:        return F1;  
-        case VK_F2:        return F2;  
-        case VK_F3:        return F3;  
-        case VK_F4:        return F4;  
-        case VK_F5:        return F5;  
-        case VK_F6:        return F6;  
-        case VK_F7:        return F7;  
-        case VK_F8:        return F8;  
-        case VK_F9:        return F9;  
-        case VK_F10:       return F10;  
-        case VK_F11:       return F11;  
-        case VK_F12:       return F12;  
-        case VK_F13:       return F13;  
-        case VK_F14:       return F14;  
-        case VK_F15:       return F15;  
-        case VK_F16:       return F16;  
-        case VK_F17:       return F17;  
-        case VK_F18:       return F18;  
-        case VK_F19:       return F19;  
-        case VK_F20:       return F20;  
-        case VK_F21:       return F21;  
-        case VK_F22:       return F22;  
-        case VK_F23:       return F23;  
-        case VK_F24:       return F24;  
-        
+        case VK_F1:        return F1;  case VK_F13:       return F13;
+        case VK_F2:        return F2;  case VK_F14:       return F14;  
+        case VK_F3:        return F3;  case VK_F15:       return F15;  
+        case VK_F4:        return F4;  case VK_F16:       return F16; 
+        case VK_F5:        return F5;  case VK_F17:       return F17; 
+        case VK_F6:        return F6;  case VK_F18:       return F18;  
+        case VK_F7:        return F7;  case VK_F19:       return F19;  
+        case VK_F8:        return F8;  case VK_F20:       return F20; 
+        case VK_F9:        return F9;  case VK_F21:       return F21; 
+        case VK_F10:       return F10; case VK_F22:       return F22; 
+        case VK_F11:       return F11; case VK_F23:       return F23;
+        case VK_F12:       return F12; case VK_F24:       return F24;
+          
         // --- Modifiers & Locks ---
         case VK_NUMLOCK:   return numLock;  
         case VK_SCROLL:    return scrollLock;
@@ -409,7 +400,7 @@ size_t EventType::castPlatform(size_t inchar, LPARAM lParam) {
     }
 };
 
-size_t EventType::castMouse(UINT message, WPARAM wParam) {
+constexpr size_t EventType::castMouse(UINT message, WPARAM wParam) {
     switch (message) {
         // --- Left Mouse Button ---
         case WM_LBUTTONDOWN:
@@ -443,7 +434,7 @@ size_t EventType::castMouse(UINT message, WPARAM wParam) {
     return EventType::mNull;
 };
 
-size_t EventType::toPlatform(size_t engineKey) {
+constexpr size_t EventType::toPlatform(size_t engineKey) {
     // 1. Convert our internal engine punctuation enums back to ASCII characters
     UINT asciiChar = 0;
     switch (engineKey) {
@@ -469,35 +460,17 @@ size_t EventType::toPlatform(size_t engineKey) {
         if (vk != 0) return vk;
     }
 
-    // 2. Map standard alpha-numeric, control, function, and numpad keys directly
     switch (engineKey) {
         // --- Char ---
-        case a: return 'A';
-        case b: return 'B';
-        case c: return 'C';
-        case d: return 'D';
-        case e: return 'E';
-        case f: return 'F';
-        case g: return 'G';
-        case h: return 'H';
-        case i: return 'I';
-        case j: return 'J';
-        case k: return 'K';
-        case l: return 'L';
-        case m: return 'M';
-        case n: return 'N';
-        case o: return 'O';
-        case p: return 'P';
-        case q: return 'Q';
-        case r: return 'R';
-        case s: return 'S';
-        case t: return 'T';
-        case u: return 'U';
-        case v: return 'V';
-        case w: return 'W';
-        case x: return 'X';
-        case y: return 'Y';
-        case z: return 'Z';
+        case a: return 'A'; case b: return 'B'; case c: return 'C';
+        case d: return 'D'; case e: return 'E'; case f: return 'F'; 
+        case g: return 'G'; case h: return 'H'; case i: return 'I';
+        case j: return 'J'; case k: return 'K'; case l: return 'L'; 
+        case m: return 'M'; case n: return 'N'; case o: return 'O';
+        case p: return 'P'; case q: return 'Q'; case r: return 'R';
+        case s: return 'S'; case t: return 'T'; case u: return 'U'; 
+        case v: return 'V'; case w: return 'W'; case x: return 'X';
+        case y: return 'Y'; case z: return 'Z';
 
         // --- Control Keys ---
         case backSpace:   return VK_BACK;
@@ -535,31 +508,20 @@ size_t EventType::toPlatform(size_t engineKey) {
         case kpSlash:     return VK_DIVIDE;  
 
         // --- Function Keys ---
-        case F1:  return VK_F1;  
-        case F2:  return VK_F2;  
-        case F3:  return VK_F3;  
-        case F4:  return VK_F4;  
-        case F5:  return VK_F5;  
-        case F6:  return VK_F6;  
-        case F7:  return VK_F7;  
-        case F8:  return VK_F8;  
-        case F9:  return VK_F9;  
-        case F10: return VK_F10;  
-        case F11: return VK_F11;  
-        case F12: return VK_F12;  
-        case F13: return VK_F13;  
-        case F14: return VK_F14;  
-        case F15: return VK_F15;  
-        case F16: return VK_F16;  
-        case F17: return VK_F17;  
-        case F18: return VK_F18;  
-        case F19: return VK_F19;  
-        case F20: return VK_F20;  
-        case F21: return VK_F21;  
-        case F22: return VK_F22;  
-        case F23: return VK_F23;  
-        case F24: return VK_F24;  
+        case F1:  return VK_F1;  case F13: return VK_F13;
+        case F2:  return VK_F2;  case F14: return VK_F14;
+        case F3:  return VK_F3;  case F15: return VK_F15;
+        case F4:  return VK_F4;  case F16: return VK_F16;
+        case F5:  return VK_F5;  case F17: return VK_F17;
+        case F6:  return VK_F6;  case F18: return VK_F18;
+        case F7:  return VK_F7;  case F19: return VK_F19;
+        case F8:  return VK_F8;  case F20: return VK_F20; 
+        case F9:  return VK_F9;  case F21: return VK_F21;
+        case F10: return VK_F10; case F22: return VK_F22;
+        case F11: return VK_F11; case F23: return VK_F23;
+        case F12: return VK_F12; case F24: return VK_F24;
 
+        
         // --- Modifiers & Locks ---
         case numLock:    return VK_NUMLOCK;  
         case scrollLock: return VK_SCROLL;
@@ -578,7 +540,7 @@ size_t EventType::toPlatform(size_t engineKey) {
     }
 };
 
-EventType::event EventType::parseMessage(UINT message, WPARAM wParam, LPARAM lParam) {
+constexpr EventType::event EventType::parseMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
         // --- Keyboard ---
         case WM_KEYDOWN:
@@ -655,9 +617,10 @@ EventType::event EventType::parseMessage(UINT message, WPARAM wParam, LPARAM lPa
     return eventNone;
 };
 #endif
+
 // ____WINDOW_FLAGS______
 #ifdef _WIN32
-Vec2<uint32> WindowFlags::WindowStyles(uint32 flags) {
+constexpr Vec2<uint32> WindowFlags::WindowStyles(uint32 flags) {
     uint32 outStyle = WS_OVERLAPPEDWINDOW;
     uint32 outExStyle = 0;
     if (flags == WindowFlags::None) 

@@ -32,7 +32,7 @@ export module lib.win:renderer;
 // import somethisng;
 import lib.std;
 import lib.types; // test
-import :fwd;
+import :common;
 
 
 typedef BOOL(WINAPI* PFNWGLCHOOSEPIXELFORMATARBPROC)(HDC hdc, const int* piAttribIList, const FLOAT* pfAttribFList, UINT nMaxFormats, int* piFormats, UINT* nNumFormats);

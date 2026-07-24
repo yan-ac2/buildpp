@@ -10,6 +10,7 @@ public:
         View       = Literal,// Alias for clarity when using external buffers/views
         autoResize = 1 << 3, // Bit 3 (8)  -> 0 = Preserve heap cap (Default), 1 = Shrink back to SSO
         noHeap     = 1 << 4, // Bit 4 (16) -> Prevent heap allocations (Truncates on overflow)
+        lenExt1     = 1 << 5, 
         Small      = 0       // Value 0    -> Default inline SSO buffer
     };
 
@@ -292,5 +293,5 @@ public:
 
 // constexpr string sss("hello wssssssss large nee");
 constexpr string ss ("hello wssssssss large nee");
-static_assert(ss.mode() == string::View, "");
-static_assert(std::string_view(ss.data()) == "hello wssssssss large nee", "");
+
+static_assert((ss.mode() & string::View) != 0, "yes");

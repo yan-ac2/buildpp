@@ -7,7 +7,7 @@ export module lib.win:platform;
 
 import lib.std;
 import lib.types;
-import :fwd;
+import :common;
 import :renderer;
 
 
@@ -222,7 +222,7 @@ class Window {
     LRESULT mWinProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 
         
-        size_t keyboard = EventType::castPlatform(wParam,lParam);
+        // size_t keyboard = EventType::castPlatform(wParam,lParam);
         size_t mouse = EventType::castMouse(uMsg,wParam);
         EventType::parseMessage(uMsg,wParam,lParam);
         // std::print("Key: {} pressed\n",keyboard);
@@ -233,11 +233,11 @@ class Window {
                 return 0;
                 // --- Keyboard Input ---
             case WM_KEYDOWN:
-                if (keyboard < 256) mInput->Keys[keyboard] = true;
+                // if (keyboard < 256) mInput->Keys[keyboard] = true;
                 return 0;
 
             case WM_KEYUP:
-                if (keyboard < 256) mInput->Keys[keyboard] = false;
+                // if (keyboard < 256) mInput->Keys[keyboard] = false;
                 return 0;
             // --- Mouse Movement ---
             case WM_MOUSEMOVE:

@@ -23,18 +23,17 @@ int main() {
     glCtx.Initialize(app.mHWND, 4, 3);
     glCtx.Resize(app.Desc.width, app.Desc.height);
     
-    KeyMap keyMap(&input,
-        keyData<et::escape>{},
-        keyData<et::e>{},
-        keyData<et::w>{},
-        keyData<et::a>{},
-        keyData<et::s>{},
-        keyData<et::d>{},
-        keyData<et::q>{},
-        keyData<et::controlL>{}
-    );
+    KeyMap <
+    keyData<et::escape>,
+    keyData<et::e>,
+    keyData<et::w>,
+    keyData<et::a>,
+    keyData<et::s>,
+    keyData<et::d>,
+    keyData<et::q>,
+    keyData<et::controlL>> keyMap (&input);
 
-    int x = 0 ,y = 0;
+    float x = 0 ,y = 0;
 
     keyMap.get<et::escape>().setFn([&]() { std::cout << "Hello\n";
         app.CloseApp();}
@@ -42,7 +41,7 @@ int main() {
     keyMap.get<et::w>().setFn([&]() {++(y); std::cout << fmt(x," " ,y,"\n"); });
     keyMap.get<et::a>().setFn([&]() {--(x); std::cout << fmt(x," " ,y,"\n"); });
     keyMap.get<et::s>().setFn([&]() {--(y); std::cout << fmt(x," " ,y,"\n"); });
-    // keyMap.get<et::controlL>().setFn([&]() {std::print("ctrlL pressed \n") ; });
+    // keyMap.get<et::z>().setFn([&]() {std::print("ctrlL pressed \n") ; });
     keyMap.get<et::d>().setFn([&]() {
         keyMap.getState<et::controlL>().IsToggled() ? x += 10 : ++(x); 
         std::cout << fmt(x," " ,y,"\n");
@@ -52,11 +51,9 @@ int main() {
     while (app.IsRunning()) {
         times.start();
         app.ProcessEvents();
-
         if(app.GetInput().scrollDirection > 0) {
             auto monitor = disp.GetPrimaryMonitor();
-            std::cout << fmt( 
-                "Monitor\n X: ",monitor->x," Y: ",monitor->y," ",monitor->width,"x",monitor->height," isPrimary: ",monitor->isPrimary ? "true" : "false"," \n");   
+            std::cout << fmt( "Monitor\n X: {} Y: {} {}x{} isPrimary: {}\n",monitor->x,monitor->y,monitor->width,monitor->height,monitor->isPrimary ? "true" : "false");   
             // std::cout << "\nMonitor \n"<< "X: "<< monitor->x << " Y: " << monitor->y << " Res: " << monitor->width  << "x" << monitor->height << " Is Primary: " << monitor->isPrimary << "\n";   
         }
 
