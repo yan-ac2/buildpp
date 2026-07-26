@@ -91,15 +91,6 @@ export
 //     }
 // };
 
-template <typename T>
-concept Formattable = 
-    requires(T t) { { std::string_view(t) } -> std::same_as<std::string_view>; } || 
-    std::integral<std::decay_t<T>> ||
-    std::floating_point<std::decay_t<T>>;
-
-template <typename... Args>
-concept onlyStr = (Formattable<Args> && ...);
-
 template<typename T> requires (std::integral<std::decay_t<T>> || std::floating_point<std::decay_t<T>>)
 consteval std::size_t maxDigits() {
     using Unqualified = std::remove_cvref_t<T>;
@@ -110,10 +101,13 @@ consteval std::size_t maxDigits() {
         return std::numeric_limits<Unqualified>::max_exponent10 + 2;
     }
 }
-struct pow10 {
-    static constexpr auto max_digits = maxDigits<double>() - 1;
-    static constexpr std::array<double, max_digits> powarr = []() consteval {
-        std::array<double, max_digits> arr{};
+
+export
+struct Math {
+    static constexpr double PI = 3.1415926535;
+
+    static constexpr std::array<double, maxDigits<double>() - 1> Pow10LUT = []() consteval {
+        std::array<double, maxDigits<double>() - 1> arr{};
         arr[0] = 1.0;
         for (size_t i = 1; i < arr.size(); ++i) {
             arr[i] = arr[i - 1] * 10.0;
@@ -121,32 +115,31 @@ struct pow10 {
         return arr;
     }();
 
-    template <typename T> requires (std::integral<std::decay_t<T>> || std::floating_point<std::decay_t<T>>)
-    constexpr size_t operator[](const T& in) const {
-        bool isNeg = in < 0;
-        // Find digit count (or highest power index) safely
-        for (size_t i = 0; i < powarr.size(); ++i) {
-            if ((isNeg ? -in :in) < powarr[i]) {
-                return i + (isNeg ? 1 : 0); 
-            }
-        }
-        return powarr.size();
-    }
+    
     template <typename T> requires (std::integral<std::decay_t<T>> || std::floating_point<std::decay_t<T>>)
     static constexpr size_t digitLength (const T& in) {
         bool isNeg = in < 0;
         // Find digit count (or highest power index) safely
-        for (size_t i = 0; i < powarr.size(); ++i) {
-            if ((isNeg ? -in :in) < powarr[i]) {
+        for (size_t i = 0; i < Pow10LUT.size(); ++i) {
+            if ((isNeg ? -in :in) < Pow10LUT[i]) {
                 return i + (isNeg ? 1 : 0);
             }
         }
-        return powarr.size();
+        return Pow10LUT.size();
     }
 };
 // static constexpr pow10 test;
 // static constexpr int test2 = 900;
 // static_assert(test[test2] == 3,"" );
+
+template <typename T>
+concept Formattable = 
+    requires(T t) { { std::string_view(t) } -> std::same_as<std::string_view>; } || 
+    std::integral<std::decay_t<T>> ||
+    std::floating_point<std::decay_t<T>>;
+
+template <typename... Args>
+concept onlyStr = (Formattable<Args> && ...);
 
 export
 struct fmt {
@@ -179,19 +172,19 @@ struct fmt {
 
         std::string_view fmtStr(in);
         size_t preAlloc = (getArgSize(args) + ... + 0);
-        int attr = 0;
-        int attr2 = 0;
+        formatHelper help;
         size_t lastPos = 0;
 
         // Lambda executed once per parameter in fold expression
-        auto processArg = [this, &fmtStr, &lastPos](auto&& arg) {
+        auto processArg = [this, &fmtStr, &lastPos,&help](auto&& arg) {
             size_t pBegin = fmtStr.find('{',lastPos);
             size_t pEnd = fmtStr.find('}', lastPos);
             if (pBegin != std::string_view::npos && pEnd != std::string_view::npos) {
+                
                 // Append text preceding the {}
                 str.append(fmtStr.substr(lastPos, pBegin - lastPos));
                 // Append argument value
-                appendArg(arg);
+                appendArg(arg,help);
                 // Move position past the {}
                 lastPos = pEnd + 1;
             }
@@ -233,7 +226,7 @@ struct fmt {
                 inSpace = false;
             }
         }
-        str.resize(writeIdx);
+        // str.resize(writeIdx);
         return *this;
     }
 
@@ -249,36 +242,27 @@ struct fmt {
     }
 
 private:
+    struct formatHelper {
+        int attr = 0;
+        int attr2 = 0;
+        constexpr formatHelper() {}
+    };
+
     template<onlyStr T>
     constexpr size_t getArgSize(const T& arg) const {
         using Raw = std::remove_cvref_t<T>;
         if constexpr (std::is_convertible_v<Raw, std::string_view>) {
-            std::string_view viewArg(arg);
-            size_t preAlloc = viewArg.size();
-            if (viewArg.find('{') != std::string::npos) {
-                bool inPlaceholder = false;
-                const char* pBegin = nullptr;
-                for (const auto& c : viewArg.substr(viewArg.find('{'),viewArg.find_last_of('{'))) {
-                    if (c == '{') inPlaceholder = true;
-                    if (c == '}') inPlaceholder = false;
-                    if (inPlaceholder) {
-                        pBegin = &c;
-                        
-                        --preAlloc;
-                    }
-                }
-            }
-            return preAlloc;
+            return std::string_view (arg).size();
         } else if constexpr (std::integral<Raw>) {
-            return pow10::digitLength(arg);
+            return Math::digitLength(arg);
         } else if constexpr (std::floating_point<Raw>) {
-            return pow10::digitLength(arg);
+            return Math::digitLength(arg);
         }
         return 0;
     }
 
     template<onlyStr T>
-    constexpr void appendArg(T& arg) {
+    constexpr void appendArg(T& arg,formatHelper& help) {
         using Raw = std::remove_cvref_t<T>;
         if constexpr (std::is_convertible_v<Raw, std::string_view>) {
             str += std::string_view(arg);
@@ -288,10 +272,12 @@ private:
             str.append(digit, static_cast<std::size_t>(eDigit - digit));
         } else if constexpr (std::floating_point<Raw>) {
             char digit[maxDigits<Raw>()];
-            auto [eDigit, ec] = std::to_chars(digit, digit + maxDigits<Raw>(), arg,std::chars_format::fixed);
+            auto [eDigit, ec] = std::to_chars(digit, digit + maxDigits<Raw>(), arg);
             str.append(digit, static_cast<std::size_t>(eDigit - digit));
         }
     }
+
+    
 
     constexpr std::string_view getColor(colors color) const {
         switch (color) {
