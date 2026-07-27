@@ -1,8 +1,6 @@
 #ifndef BUILD_PP 
 #define BUILD_PP
 
-
-#include <algorithm>
 #include <cstddef>
 #include <cstdlib>
 #include <cstdio>
@@ -11,13 +9,14 @@
 #include <initializer_list>
 #include <string>
 #include <fstream>
+#include <iostream>
 #include <vector>
 #include <string_view>
 #include <unordered_map>
 #include <source_location>
 #include <utility>
 #include <functional>
-// #include <ranges>
+#include <mutex>
 
 #include "json.hpp"
 
@@ -34,120 +33,277 @@ using namespace std::string_view_literals;
 template<typename T> struct remove_ptr {using type = T;};
 template<typename T> using remove_ptr_t = remove_ptr<T>::type;
 
-template<typename... Args> concept onlyStr = ((
-    std::convertible_to<Args, std::string_view> || 
-    std::convertible_to<Args,const char*>) && ...);
-
 template<typename T>
 concept funcPtr = std::is_pointer_v<T> && std::is_function_v<remove_ptr_t<T>>;
 
 
+template<typename T> requires (std::integral<std::decay_t<T>> || std::floating_point<std::decay_t<T>>)
+consteval std::size_t maxDigits() {
+    using Unqualified = std::remove_cvref_t<T>;
+    if (std::integral<Unqualified>) {
+        constexpr bool isSigned = std::is_signed_v<Unqualified>;
+        return std::numeric_limits<Unqualified>::digits10 + 1 + (isSigned ? 1 : 0);
+    } else {
+        return std::numeric_limits<Unqualified>::max_exponent10 + 2;
+    }
+}
+
+struct Math {
+    static constexpr double PI = 3.1415926535;
+
+    static constexpr std::array<double, maxDigits<double>() - 1> Pow10LUT = []() consteval {
+        std::array<double, maxDigits<double>() - 1> arr{};
+        arr[0] = 1.0;
+        for (size_t i = 1; i < arr.size(); ++i) {
+            arr[i] = arr[i - 1] * 10.0;
+        }
+        return arr;
+    }();
+
+    
+    template <typename T> requires (std::integral<std::decay_t<T>> || std::floating_point<std::decay_t<T>>)
+    static constexpr size_t digitLength (const T& in) {
+        bool isNeg = in < 0;
+        // Find digit count (or highest power index) safely
+        for (size_t i = 0; i < Pow10LUT.size(); ++i) {
+            if ((isNeg ? -in :in) < Pow10LUT[i]) {
+                return i + (isNeg ? 1 : 0);
+            }
+        }
+        return Pow10LUT.size();
+    }
+};
+// static constexpr pow10 test;
+// static constexpr int test2 = 900;
+// static_assert(test[test2] == 3,"" );
+
+template <typename T>
+concept Formattable = 
+    requires(T t) { { std::string_view(t) } -> std::same_as<std::string_view>; } || 
+    std::integral<std::decay_t<T>> ||
+    std::floating_point<std::decay_t<T>>;
+
+template <typename... Args>
+concept onlyStr = (Formattable<Args> && ...);
+
 struct fmt {
     std::string str;
-    enum colors {Not_color,
-        Black,    Bold_Black,   High_Black,
-        Red,      Bold_Red,     High_Red,
-        Green,    Bold_Green,   High_Green,
-        Yellow,   Bold_Yellow,  High_Yellow,
-        Blue,     Bold_Blue,    High_Blue,
-        Purple,   Bold_Purple,  High_Purple,
-        Cyan,     Bold_Cyan,    High_Cyan,
-        White,    Bold_White,   High_White,
-    };
-    
 
-    constexpr fmt(onlyStr auto&&... args) {
-        const size_t totalSize = [](auto&&... args) -> size_t {
-            size_t size = 0;
-            ((size += std::string_view(args).size()), ...);
-            return size;
-        }(args...);
-        str.reserve(totalSize);
-        
-        (str.append(std::forward<decltype(args)>(args)), ...);
+    enum colors {
+        Not_color,
+        Black,     Bold_Black,     High_Black,
+        Red,       Bold_Red,       High_Red,
+        Green,     Bold_Green,     High_Green,
+        Yellow,    Bold_Yellow,    High_Yellow,
+        Blue,      Bold_Blue,      High_Blue,
+        Purple,    Bold_Purple,    High_Purple,
+        Cyan,      Bold_Cyan,      High_Cyan,
+        White,     Bold_White,     High_White,
     };
-    constexpr fmt& color(colors color) { 
-        str.reserve((color == fmt::Black) ? 13 : 14);
-        str.insert(0, this->getColor(color))
-        .append(this->getColor(Not_color));
+
+    // 1. Variadic Concatenation Constructor: fmt("hello ", 123, " world")
+    template<onlyStr... Args>
+    constexpr fmt(Args&&... args) {
+        varConcat(std::forward<Args>(args)...);
+    }
+    template<onlyStr... Args>
+    constexpr fmt& varConcat(Args&&... args) { 
+        size_t preAlloc = (getArgSize(args) + ... + 0);
+        str.reserve(preAlloc);
+        (appendArg(std::forward<Args>(args)), ...);
         return *this;
     }
-    constexpr std::vector<std::string_view> toArray() {
-        std::vector<std::string_view> temp;
-        for (auto idx = str.begin();idx != str.end();idx++) {
-            
+    // 2. Format String Constructor: fmt("Value: {}, Status: {}", 42, "OK")
+    template<onlyStr... Args>
+    constexpr fmt(const char* in, Args&&... args) {
+        if (std::string_view(in).find('{') == std::string_view::npos) {
+            varConcat(in, std::forward<Args>(args)...);
+            return;
         }
-        return temp;
+        std::string_view fmtStr(in);
+        size_t preAlloc = fmtStr.size() + (getArgSize(args) + ... + 0);
+        formatHelper help;
+        size_t lastPos = 0;
+
+        // Lambda executed once per parameter in fold expression
+        auto processArg = [this, &fmtStr, &lastPos,&help](auto&& arg) {
+            size_t pBegin = fmtStr.find('{',lastPos);
+            if (pBegin != std::string_view::npos) {
+                size_t pEnd = fmtStr.find('}', pBegin + 1);
+                if (pEnd != std::string_view::npos) {
+                    str.append(fmtStr.substr(lastPos, pBegin - lastPos));
+                    appendArg(std::forward<decltype(arg)>(arg), &help);
+                    lastPos = pEnd + 1;
+                }
+            }
+        };
+
+        str.reserve(preAlloc);
+        (processArg(std::forward<Args>(args)), ...);
+        if (lastPos < fmtStr.size()) {
+            str.append(fmtStr.substr(lastPos));
+        }
     }
+
+    // Apply ANSI Color
+    constexpr fmt& color(colors c) { 
+        str.reserve(str.size() + 14);
+        str.insert(0, this->getColor(c));
+        str.append(this->getColor(Not_color));
+        return *this;
+    }
+
+    // Collapse multiple contiguous spaces into a single space
     constexpr fmt& clean() { 
-        str.erase(std::unique(str.begin(), str.end(), [](char lhs,char rhs){return (lhs == rhs) && (lhs == ' ');}), str.end());
+        if (str.empty()) return *this;
+
+        size_t writeIdx = 0;
+        bool inSpace = false;
+
+        for (size_t readIdx = 0; readIdx < str.size(); ++readIdx) {
+            char c = str[readIdx];
+            if (c == ' ') {
+                if (!inSpace) {
+                    str[writeIdx++] = c;
+                    inSpace = true;
+                }
+            } else {
+                str[writeIdx++] = c;
+                inSpace = false;
+            }
+        }
+        str.resize(writeIdx);
         return *this;
     }
-    constexpr fmt& endl() {this->str.append("\n"); return *this;}
-    
-    constexpr std::string_view sv() const { return this->str;}
-    constexpr const char* cstr() const { return this->str.c_str();}
-    constexpr operator std::string_view() const { return this->sv();}
-    constexpr operator const char*() const { return this->cstr();}
-    constexpr std::ostream& operator <<(std::ostream& os) const { return os << this->str;}
 
-    private:
-    constexpr std::string_view getColor(colors color) {
-        switch (color) {
-            case Not_color:    return "\033[0m"; break;
-            case Black:        return "\033[0;0m" ; break;
-            case Red:          return "\033[0;31m"; break;
-            case Green:        return "\033[0;32m"; break;
-            case Yellow:       return "\033[0;33m"; break;
-            case Blue:         return "\033[0;34m"; break;
-            case Purple:       return "\033[0;35m"; break;
-            case Cyan:         return "\033[0;36m"; break;
-            case White:        return "\033[0;37m"; break;
-            case Bold_Black:   return "\033[1;30m"; break;
-            case Bold_Red:     return "\033[1;31m"; break;
-            case Bold_Green:   return "\033[1;32m"; break;
-            case Bold_Yellow:  return "\033[1;33m"; break;
-            case Bold_Blue:    return "\033[1;34m"; break;
-            case Bold_Purple:  return "\033[1;35m"; break;
-            case Bold_Cyan:    return "\033[1;36m"; break;
-            case Bold_White:   return "\033[1;37m"; break;
-            case High_Black:   return "\033[0;90m"; break;
-            case High_Red:     return "\033[0;91m"; break;
-            case High_Green:   return "\033[0;92m"; break;
-            case High_Yellow:  return "\033[0;93m"; break;
-            case High_Blue:    return "\033[0;94m"; break;
-            case High_Purple:  return "\033[0;95m"; break;
-            case High_Cyan:    return "\033[0;96m"; break;
-            case High_White:   return "\033[0;97m"; break;
-            default:           return ""; break;
-        }
+    constexpr fmt& endl() { str.append("\n"); return *this; }
+
+    constexpr std::string_view sv() const { return str; }
+    constexpr const char* cstr() const { return str.c_str(); }
+    constexpr operator std::string_view() const { return sv(); }
+    constexpr operator const char*() const { return cstr(); }
+    
+    friend std::ostream& operator<<(std::ostream& os, const fmt& f) {
+        return os << f.str;
+    }
+
+private:
+    struct formatHelper {
+        int attr = 0;
+        int attr2 = 0;
+        constexpr formatHelper() {}
     };
+
+    template<onlyStr T>
+    constexpr size_t getArgSize(const T& arg) const {
+        using Raw = std::remove_cvref_t<T>;
+        if constexpr (std::is_convertible_v<Raw, std::string_view>) {
+            return std::string_view (arg).size();
+        } else if constexpr (std::integral<Raw>) {
+            return Math::digitLength(arg);
+        } else if constexpr (std::floating_point<Raw>) {
+            return Math::digitLength(arg);
+        }
+        return 0;
+    }
+
+    template<onlyStr T>
+    constexpr void appendArg(T&& arg,formatHelper* help = nullptr) {
+        using Raw = std::remove_cvref_t<T>;
+        if constexpr (std::is_convertible_v<Raw, std::string_view>) {
+            str += std::string_view(arg);
+        } else if constexpr (std::integral<Raw>) {
+            char digit[maxDigits<Raw>()];
+            auto [eDigit, ec] = std::to_chars(digit, digit + maxDigits<Raw>(), std::forward<T>(arg));
+            str.append(digit, static_cast<std::size_t>(eDigit - digit));
+        } else if constexpr (std::floating_point<Raw>) {
+            char digit[maxDigits<Raw>()];
+            auto [eDigit, ec] = std::to_chars(digit, digit + maxDigits<Raw>(), std::forward<T>(arg));
+            str.append(digit, static_cast<std::size_t>(eDigit - digit));
+        } else {
+            std::unreachable();
+        }
+    }
+
+    
+
+    constexpr std::string_view getColor(colors color) const {
+        switch (color) {
+            case Not_color:    return "\033[0m";
+            case Black:        return "\033[0;30m";
+            case Red:          return "\033[0;31m";
+            case Green:        return "\033[0;32m";
+            case Yellow:       return "\033[0;33m";
+            case Blue:         return "\033[0;34m";
+            case Purple:       return "\033[0;35m";
+            case Cyan:         return "\033[0;36m";
+            case White:        return "\033[0;37m";
+            case Bold_Black:   return "\033[1;30m";
+            case Bold_Red:     return "\033[1;31m";
+            case Bold_Green:   return "\033[1;32m";
+            case Bold_Yellow:  return "\033[1;33m";
+            case Bold_Blue:    return "\033[1;34m";
+            case Bold_Purple:  return "\033[1;35m";
+            case Bold_Cyan:    return "\033[1;36m";
+            case Bold_White:   return "\033[1;37m";
+            case High_Black:   return "\033[0;90m";
+            case High_Red:     return "\033[0;91m";
+            case High_Green:   return "\033[0;92m";
+            case High_Yellow:  return "\033[0;93m";
+            case High_Blue:    return "\033[0;94m";
+            case High_Purple:  return "\033[0;95m";
+            case High_Cyan:    return "\033[0;96m";
+            case High_White:   return "\033[0;97m";
+            default:           return "";
+        }
+    }
 };
 constexpr fmt operator""_fmt(const char* str,size_t) { return fmt(str);}
 
 struct implPrint
 {
     constexpr implPrint& operator <<(std::string_view in) {
-        std::printf("%.*s",static_cast<int>(in.size()),in.data());
+        std::cout << in ;
         return *this;
     }
     void operator <<(implPrint& f) {f = *this;}
+    ~implPrint() {std::cout << std::flush;}
 };
 inline implPrint print;
 
 class cmdImpl {
-    using pipe = std::unique_ptr<FILE, decltype(&pclose)>;
+    struct PipeDeleter {
+        int* exitStatus = nullptr;
+
+        void operator()(FILE* fp) const {
+            if (!fp) return;
+            
+            int rawStatus = pclose(fp);
+            if (exitStatus) {
+                #if defined(__unix__) || defined(__APPLE__)
+                if (rawStatus != -1 && WIFEXITED(rawStatus)) {
+                    *exitStatus = WEXITSTATUS(rawStatus);
+                } else {
+                    *exitStatus = rawStatus;
+                }
+                #else
+                *exitStatus = rawStatus; // Windows (_pclose returns exit code directly)
+                #endif
+            }
+        }
+    };
+    using pipe = std::unique_ptr<FILE, PipeDeleter>;
     public:
     int ret;
     
     cmdImpl& run(const char* inCmd) {
-        pipe cmd (popen(inCmd,"r"),pclose);
-        #ifdef __unix__
-        int rawStatus = pclose(cmd.release());
-        ret = (raw_status != -1 && WIFEXITED(raw_status)) ? WEXITSTATUS(raw_status) : raw_status;
-        #else
-        ret = pclose(cmd.release());
-        #endif
+        {
+            pipe cmd (popen(inCmd,"r"),PipeDeleter{&ret});
+            if (!cmd) {
+                ret = -1; // popen failed to open
+                return *this;
+            }
+        }
         return *this;
     }
     int err(const char* msg) {
@@ -323,6 +479,8 @@ struct fileUtil
 
 class compileCommand {
     utl::json::node jsonNode;
+    mutable std::mutex mtx;
+
     public:
     compileCommand& addCompilecmd(std::string_view path,std::string_view arg,std::string_view file,std::string_view out) {
         utl::json::node innode;
@@ -330,12 +488,15 @@ class compileCommand {
         innode["command"] = arg ;
         innode["file"] = file ;
         innode["output"] = out ;
-
-        jsonNode.push_back(innode);
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            jsonNode.push_back(std::move(innode));
+        }
         return *this;
     }
     void write(fs::path to)
     {
+        std::lock_guard<std::mutex> lock(mtx);
         jsonNode.to_file(to.string());
     }
 
@@ -368,7 +529,7 @@ struct File {
         none
     } fileType = none;
 
-    IDx ID          {};
+    IDx ID           {};
     fStr Name        {};
     fStr Path        {};
     fStr Flags       {};
@@ -921,11 +1082,7 @@ class Project
         return *this;
     }
 
-    Project& addDependency(std::string_view inFile, std::initializer_list<std::string_view> inDeps){
-        // print << fmt("add dependency for " , inFile , " with deps: ");
-        // for (const auto& d : inDeps) {
-        //     print << d << " ";
-        // }        print << "\n";
+    Project& addLinkLibrary(std::string_view inFile, std::initializer_list<std::string_view> inDeps){
         std::string f_file;
         std::string f_deps; 
 
@@ -949,6 +1106,32 @@ class Project
         }
 
         ProjectFile[f_file]->ldFlags.append(f_deps);
+        return *this;
+    }
+    Project& addCompileFlags(std::string_view inFile, std::initializer_list<std::string_view> inDeps){
+        std::string f_file;
+        std::string f_deps; 
+
+        size_t f_totalSize = 0;
+        for (const auto& d : inDeps) {
+            f_totalSize += d.size() + 1; // +1 for space
+        }
+        
+        f_deps.reserve(f_totalSize);
+        for (const auto& d : inDeps) {
+            f_deps.append(fmt(" " , d , " "));
+        }
+
+        for (const auto& [k,mod] : ProjectFile) {
+            // print << fmt("Check file " , k.substr(k.find_last_of("\\/") + 1) , " against " , inFile , "\n");
+            if (k == inFile) {
+                // print << fmt("dependency found for " , inFile , " in " , k , " imp filename " , mod.Name , "\n");
+                f_file = k;
+                break;
+            }
+        }
+
+        ProjectFile[f_file]->Flags.append(f_deps);
         return *this;
     }
 
@@ -1245,28 +1428,26 @@ class Project
         
         const std::string fObjOutput = fmt((oPath / inFile.getName()).string(), file.objFile).str;
         
-        const auto l_rewrite = [&isSystemHeader,&fModule] -> void {
-            if (!isSystemHeader) {
+        const auto l_rewrite = [&fModule] -> void {
                 const std::string old = fmt(fModule,".old").str; 
                 if(fs::exists(fModule)) {
                     if (fs::exists(old)){
                     fs::remove(old);}
                     fs::rename(fModule,old);
                 }
-            }
         };
 
         const std::string f_srcInput = 
         // f_isUserHeader ? fmt("-Wno-pragma-system-header-outside-header -fmodule-header=user --precompile ",fPath.string()," -o ",f_module).str :
-        isSystemHeader ? fmt("-Wno-pragma-system-header-outside-header -x c++-system-header --precompile ",inFile.Name," -o ",fModule).str :
-        fmt("-c ",(Path / inFile.Path).string()," -fmodules-reduced-bmi -fmodule-output=",fModule," -fprebuilt-module-path=",(mPath).string()).str;
+        isSystemHeader ? fmt("-Wno-pragma-system-header-outside-header -x c++-system-header --precompile {} -o {}",inFile.Name,fModule).str :
+        fmt("-c {} -fmodules-reduced-bmi -fmodule-output={} -fprebuilt-module-path={} ",(Path / inFile.Path).string(),fModule,(mPath).string()).str;
         
         for (const auto& I : inFile.dependencies) {
             auto& depFile = ProjectFile[I];
             inFile.Flags.append(
-                depFile.fileType == File::SystemHeader ? fmt(" -fmodule-file=",fmt((mPath / depFile.Name).string(),file.pcmModule)) :
+                depFile.fileType == File::SystemHeader ? fmt(" -fmodule-file={}{}",(mPath / depFile.Name).string(),file.pcmModule) :
                 // depFile.isPartition ? fmt(" -fmodule-file=",depFile.Name.substr(1),"=",fmt((mPath / depFile.Name.substr(1)).string(),file.pcmModule)):
-                fmt(" -fmodule-file=",depFile.Name,"=",fmt((mPath / depFile.getName()).string(),file.pcmModule))
+                fmt(" -fmodule-file={}={}{}",depFile.Name,(mPath / depFile.getName()).string(),file.pcmModule)
             );
         }
         
@@ -1320,7 +1501,7 @@ class Project
         const std::string f_filein    {f_isModule ? fmt((mPath / inFile.getName()).string(),file.pcmModule ) : inFile.Path};
 
         const std::string f_cppOutput { 
-        fmt(f_isModule ?"" : "-c ",f_filein, 
+        fmt(f_isModule ? "" : "-c ",f_filein, 
             inFile.dependencies.empty() ? "" : 
             fmt(" -fprebuilt-module-path=", (mPath).string()," ")
         )};
@@ -1345,8 +1526,8 @@ class Project
             auto& depFile = ProjectFile[I];
             bool isSystemHeader = depFile.fileType == File::SystemHeader;
             inFile.Flags.append(
-                isSystemHeader ? fmt(" -fmodule-file=",fmt((mPath / depFile.getName()).string(),file.pcmModule)) :
-                fmt(" -fmodule-file=",depFile.Name,"=",fmt((mPath / depFile.getName()).string(),file.pcmModule))
+                isSystemHeader ? fmt(" -fmodule-file={}{}",(mPath / depFile.getName()).string(), file.pcmModule) :
+                fmt(" -fmodule-file={}={}{}",depFile.Name,(mPath / depFile.getName()).string(),file.pcmModule)
             );
         }
 
@@ -1381,8 +1562,8 @@ class Project
     
     void link(File& inPath) {
         
-        const std::string f_targetOut = fmt((OutPath->exePath / inPath.Name).string(), outFile == staticLib ? file.libFile : file.executable).str;
-        const std::string f_Output    = fmt(outFile == staticLib ? " " : " -o ", f_targetOut).str;
+        const std::string f_targetOut {fmt((OutPath->exePath / inPath.Name).string(), outFile == staticLib ? file.libFile : file.executable)};
+        const std::string f_Output    {fmt(outFile == staticLib ? " " : " -o ", f_targetOut)};
         
         std::string f_Object;
 

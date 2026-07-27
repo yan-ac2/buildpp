@@ -7,23 +7,25 @@
 // import lib;
 import lib.std;
 import lib.types;
-import lib.win;
+import win;
 
 int main() {
     using et = EventType;
     Window app;
+    
     InputState input;
-    Renderer<"GL"> glCtx;
+    GlHints glHints;
+    Renderer<"GL"> glCtx(&glHints);
     DisplayManager disp;
-
+    
     app.addDisplayManager(&disp);
     app.addInputState(&input);
-    app.addRenderer(&glCtx);
-    app.createWindow("MainWindow",800,600,WindowFlags::WinOGL,nullptr,{10,22});
-    glCtx.Initialize(app.mHWND, 4, 3);
-    glCtx.Resize(app.Desc.width, app.Desc.height);
+    app.addRenderer(&glHints);
+    app.createWindow("MainWindow",800,600,WindowFlags::WinOGL,{10,22});
+    glHints.Initialize(app.mHWND, 4, 3);
+    glHints.Resize(app.Desc.width, app.Desc.height);
     
-    KeyMap <
+    Keyboard <
     keyData<et::escape>,
     keyData<et::e>,
     keyData<et::w>,
@@ -31,22 +33,57 @@ int main() {
     keyData<et::s>,
     keyData<et::d>,
     keyData<et::q>,
-    keyData<et::controlL>> keyMap (&input);
+    keyData<et::controlL>> KeyMap;
+    input.addKeyboard(KeyMap.KeysState);
 
     float x = 0 ,y = 0;
 
-    keyMap.get<et::escape>().setFn([&]() { std::cout << "Hello\n";
+    KeyMap.get<et::escape>().setFn([&]() { std::cout << "Hello\n";
         app.CloseApp();}
     );
-    keyMap.get<et::w>().setFn([&]() {++(y); std::cout << fmt(x," " ,y,"\n"); });
-    keyMap.get<et::a>().setFn([&]() {--(x); std::cout << fmt(x," " ,y,"\n"); });
-    keyMap.get<et::s>().setFn([&]() {--(y); std::cout << fmt(x," " ,y,"\n"); });
-    // keyMap.get<et::z>().setFn([&]() {std::print("ctrlL pressed \n") ; });
-    keyMap.get<et::d>().setFn([&]() {
-        keyMap.getState<et::controlL>().IsToggled() ? x += 10 : ++(x); 
+    KeyMap.get<et::w>().setFn([&]() {++(y); std::cout << fmt(x," " ,y,"\n"); });
+    KeyMap.get<et::a>().setFn([&]() {--(x); std::cout << fmt(x," " ,y,"\n"); });
+    KeyMap.get<et::s>().setFn([&]() {--(y); std::cout << fmt(x," " ,y,"\n"); });
+    KeyMap.get<et::controlL>().setFn([&]() {std::print("ctrlL pressed \n") ; });
+    KeyMap.get<et::d>().setFn([&]() {
+        KeyMap.getState<et::controlL>().IsToggled() ? x += 10 : ++(x); 
         std::cout << fmt(x," " ,y,"\n");
     });
+
+    Shader shader("res");
     
+    float vertices[] {
+        -0.95f,-0.6f,0.0f,1.0f,0.0f,0.0f,0.0f,0.0f,
+        -0.5f,0.6f,0.0f,0.0f,1.0f,0.0f,1.0f,0.0f,
+        -0.1f,-0.6f, 0.0f,0.0f,0.0f,1.0f,0.5f,1.0f
+    };
+    float vertices2[] {
+        0.95f,-0.6f,0.0f,0.0f,1.0f,0.0f,0.0f,0.0f,
+        0.5f,0.6f,0.0f,1.0f,0.0f,0.0f,1.0f,0.0f,
+        0.1f,-0.6f, 0.0f,0.0f,0.0f,1.0f,0.5f,1.0f
+    };
+
+
+    float box[] {
+        0.5f, 0.5f,0.0f,0.0f,1.0f,0.0f,0.0f,1.0f,
+        0.5f, -0.5f,0.0f,0.0f,0.0f,1.0f,-0.5f,1.0f,
+        -0.5f,-0.5f,0.0f,0.0f,1.0f,0.0f,0.5f,1.0f,
+        -0.5f,0.5f,0.0f,0.0f,0.0f,1.0f,1.0f,0.5f,
+    };
+
+    unsigned int boxIndices[] = {
+        0,1,3,
+        1,2,3
+    };
+
+    glCtx.initBuffer<3>({3,3,2},128);
+    glCtx.pushVertices(vertices,24);
+    glCtx.pushVertices(vertices2,24);
+
+    shader.CompileShader();
+    shader.CompileProgram();
+    
+    auto start = std::chrono::high_resolution_clock::now();
     auto& times = Clock::get();
     while (app.IsRunning()) {
         times.start();
@@ -59,11 +96,27 @@ int main() {
 
         glClearColor(0.1f, 0.15f, 0.2f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<float> duration = end - start;
+        float second = (std::sin(duration.count()) * 0.5f) + 0.5f;
 
-        glCtx.SwapBuffer();
-        keyMap.update(8,times.delta_time());
-        int timeSleep = times.end(16);
-        Sleep(timeSleep);
+        int vertexColorLocation = glGetUniformLocation(shader.ID,"second");
+        glUniform1f(vertexColorLocation,second);
+
+        glClearColor(0.0f,0.2f,0.2f,1.f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        
+        glBindVertexArray(glCtx.VAO);
+        shader.use();
+    
+        glDrawArrays(GL_TRIANGLES,0,128);
+
+        glCtx.swapbuffer();
+        KeyMap.update(8,times.delta_time());
+        auto timeSleep = times.end(Clock::ms(16));
+        // std::cout << fmt("time: {}ms dt: {}ms\n",timeSleep.count(),times.delta_time());
+        std::this_thread::sleep_for(timeSleep);
     }
     return 0;
 }

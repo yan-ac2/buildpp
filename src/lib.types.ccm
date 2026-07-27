@@ -142,6 +142,7 @@ template <typename... Args>
 concept onlyStr = (Formattable<Args> && ...);
 
 export
+
 struct fmt {
     std::string str;
 
@@ -160,40 +161,42 @@ struct fmt {
     // 1. Variadic Concatenation Constructor: fmt("hello ", 123, " world")
     template<onlyStr... Args>
     constexpr fmt(Args&&... args) {
+        varConcat(std::forward<Args>(args)...);
+    }
+    template<onlyStr... Args>
+    constexpr fmt& varConcat(Args&&... args) { 
         size_t preAlloc = (getArgSize(args) + ... + 0);
         str.reserve(preAlloc);
         (appendArg(std::forward<Args>(args)), ...);
+        return *this;
     }
-
     // 2. Format String Constructor: fmt("Value: {}, Status: {}", 42, "OK")
     template<onlyStr... Args>
     constexpr fmt(const char* in, Args&&... args) {
-        if (!in) return;
-
+        if (std::string_view(in).find('{') == std::string_view::npos) {
+            varConcat(in, std::forward<Args>(args)...);
+            return;
+        }
         std::string_view fmtStr(in);
-        size_t preAlloc = (getArgSize(args) + ... + 0);
+        size_t preAlloc = fmtStr.size() + (getArgSize(args) + ... + 0);
         formatHelper help;
         size_t lastPos = 0;
 
         // Lambda executed once per parameter in fold expression
         auto processArg = [this, &fmtStr, &lastPos,&help](auto&& arg) {
             size_t pBegin = fmtStr.find('{',lastPos);
-            size_t pEnd = fmtStr.find('}', lastPos);
-            if (pBegin != std::string_view::npos && pEnd != std::string_view::npos) {
-                
-                // Append text preceding the {}
-                str.append(fmtStr.substr(lastPos, pBegin - lastPos));
-                // Append argument value
-                appendArg(arg,help);
-                // Move position past the {}
-                lastPos = pEnd + 1;
+            if (pBegin != std::string_view::npos) {
+                size_t pEnd = fmtStr.find('}', pBegin + 1);
+                if (pEnd != std::string_view::npos) {
+                    str.append(fmtStr.substr(lastPos, pBegin - lastPos));
+                    appendArg(std::forward<decltype(arg)>(arg), &help);
+                    lastPos = pEnd + 1;
+                }
             }
         };
 
         str.reserve(preAlloc);
-        // Expand over all arguments
-        (processArg(args), ...);
-        // Append remaining tail of format string after the last {}
+        (processArg(std::forward<Args>(args)), ...);
         if (lastPos < fmtStr.size()) {
             str.append(fmtStr.substr(lastPos));
         }
@@ -226,7 +229,7 @@ struct fmt {
                 inSpace = false;
             }
         }
-        // str.resize(writeIdx);
+        str.resize(writeIdx);
         return *this;
     }
 
@@ -262,18 +265,20 @@ private:
     }
 
     template<onlyStr T>
-    constexpr void appendArg(T& arg,formatHelper& help) {
+    constexpr void appendArg(T&& arg,formatHelper* help = nullptr) {
         using Raw = std::remove_cvref_t<T>;
         if constexpr (std::is_convertible_v<Raw, std::string_view>) {
             str += std::string_view(arg);
         } else if constexpr (std::integral<Raw>) {
             char digit[maxDigits<Raw>()];
-            auto [eDigit, ec] = std::to_chars(digit, digit + maxDigits<Raw>(), arg);
+            auto [eDigit, ec] = std::to_chars(digit, digit + maxDigits<Raw>(), std::forward<T>(arg));
             str.append(digit, static_cast<std::size_t>(eDigit - digit));
         } else if constexpr (std::floating_point<Raw>) {
             char digit[maxDigits<Raw>()];
-            auto [eDigit, ec] = std::to_chars(digit, digit + maxDigits<Raw>(), arg);
+            auto [eDigit, ec] = std::to_chars(digit, digit + maxDigits<Raw>(), std::forward<T>(arg));
             str.append(digit, static_cast<std::size_t>(eDigit - digit));
+        } else {
+            std::unreachable();
         }
     }
 
@@ -574,17 +579,59 @@ private:
     int m_counter;
 };
 
+template <size_t N>
+struct bitBool {
+    // 32 bytes * 8 bits = 256 bits total capacity
+    unsigned char bit[N] = {0};
+
+    // Helper proxy class to allow writing: myBits[10] = true;
+    struct BitReference {
+        unsigned char& byteRef;
+        unsigned char mask;
+
+        // Automatically implicitly converts to bool when reading: bool value = myBits[10];
+        operator bool() const {
+            return (byteRef & mask) != 0;
+        }
+
+        // Handles writing: myBits[10] = true;
+        BitReference& operator=(bool value) {
+            if (value) byteRef |= mask;
+            else       byteRef &= ~mask;
+            return *this;
+        }
+    };
+
+    // Non-const operator[]: supports both reading and writing
+    BitReference operator[](size_t IDX) {
+        size_t bytePos = IDX / 8; // Find which of the 32 bytes holds the bit
+        size_t bitPos  = IDX % 8; // Find the bit offset inside that byte
+        
+        unsigned char mask = static_cast<unsigned char>(1 << bitPos);
+        return BitReference{ bit[bytePos], mask };
+    }
+
+    // Const operator[]: for when the bitBool instance is read-only
+    bool operator[](size_t IDX) const {
+        size_t bytePos = IDX / 8;
+        size_t bitPos  = IDX % 8;
+        return (bit[bytePos] & (1 << bitPos)) != 0;
+    }
+};
+
+
 export
 class Clock {
     using clock = std::chrono::high_resolution_clock;
-    using ms = std::chrono::milliseconds;
     
-    clock::time_point m_start = clock::now();
-    clock::time_point m_end   = clock::now();
     int32_t frame_debt= 0; 
     int32_t dt_ms     = 16;
     Clock() = default;
-public:
+    
+    public:
+    using ms = std::chrono::milliseconds;
+    clock::time_point m_start = clock::now();
+    clock::time_point m_end   = clock::now();
     static Clock& get() {
         static Clock instance;
         return instance;
@@ -611,6 +658,26 @@ public:
             }
             dt_ms = frame_time;
             return 0;
+        }
+    }
+
+    ms end(ms target_ms) { 
+        m_end = clock::now(); 
+        auto duration = std::chrono::duration_cast<ms>(m_end - m_start);
+
+        ms sleep_time = (target_ms - duration) - ms(frame_debt);
+
+        if (sleep_time > ms(0)) {
+            frame_debt = 0;
+            dt_ms = duration.count() + sleep_time.count();
+            return sleep_time;
+        } else {
+            frame_debt = static_cast<int32_t>((-sleep_time.count()) * 0.25f);
+            if (frame_debt > target_ms.count() * 2) {
+                frame_debt = target_ms.count() * 2;
+            }
+            dt_ms = duration.count();
+            return ms(0);
         }
     }
     

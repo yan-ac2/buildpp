@@ -2,7 +2,7 @@ module;
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-export module lib.win:common;
+export module win:common;
 import lib.std;
 import lib.types;
 
@@ -223,62 +223,19 @@ struct KeyState{
     
 };
 
-template <size_t N>
-struct bitBool {
-    // 32 bytes * 8 bits = 256 bits total capacity
-    unsigned char bit[N] = {0};
-
-    // Helper proxy class to allow writing: myBits[10] = true;
-    struct BitReference {
-        unsigned char& byteRef;
-        unsigned char mask;
-
-        // Automatically implicitly converts to bool when reading: bool value = myBits[10];
-        operator bool() const {
-            return (byteRef & mask) != 0;
-        }
-
-        // Handles writing: myBits[10] = true;
-        BitReference& operator=(bool value) {
-            if (value) byteRef |= mask;
-            else       byteRef &= ~mask;
-            return *this;
-        }
-    };
-
-    // Non-const operator[]: supports both reading and writing
-    BitReference operator[](size_t IDX) {
-        size_t bytePos = IDX / 8; // Find which of the 32 bytes holds the bit
-        size_t bitPos  = IDX % 8; // Find the bit offset inside that byte
-        
-        unsigned char mask = static_cast<unsigned char>(1 << bitPos);
-        return BitReference{ bit[bytePos], mask };
-    }
-
-    // Const operator[]: for when the bitBool instance is read-only
-    bool operator[](size_t IDX) const {
-        size_t bytePos = IDX / 8;
-        size_t bitPos  = IDX % 8;
-        return (bit[bytePos] & (1 << bitPos)) != 0;
-    }
-};
 
 export
 struct InputState {
     using et =  EventType;
-    bitBool<32> Keys {};
+    KeyState* Keys = nullptr;
     bool Mouse [et::mLast] {};
     
     int32 zDelta = 0;
     int32 scrollDirection = 0;
     int32 mouseX = 0;
     int32 mouseY = 0;
-
-    void updateKey() {
-        for (int k = 0;k <= EventType::keyLast; ++k) {
-            Keys[EventType::castPlatform(k)] = (GetAsyncKeyState(k) & 0x8000);
-        }
-    }
+    
+    void addKeyboard(KeyState* key) {Keys = key;}
 
     void mouseScroll(void(*scrFN)(int32*,int32*,void*),void* t = nullptr ){
         scrFN(&zDelta,&scrollDirection,t);

@@ -204,7 +204,8 @@ int compileProject(bool recompile)
         #endif
         .addCompileCommand(&cmdJson)
         .setProjectPath((rootPath).string())
-        .addSourcePath((mainProj.Path / "example").string());
+        .addSourcePath((mainProj.Path / "src").string())
+        .addSourcePath((mainProj.Path / "src" / "window").string());
         // .getLib(&meshoptimizer)
         print << fmt("Source Path: "_fmt.color(fmt::Red),mainProj.getMainPath()," root path: "_fmt.color(fmt::Blue),mainProj.Path.string(),"\n");
         mainProj
@@ -217,8 +218,8 @@ int compileProject(bool recompile)
         mainProj
         .setMain("main.cc").scanHeader().scanModule()
         #ifdef _WIN32
-        .addDependency("lib.win.ccm",{"gdi32","user32"})
-        .addDependency("lib.renderer.ccm",{"opengl32"})
+        .addLinkLibrary("win.ccm",{"gdi32","user32"})
+        .addLinkLibrary("renderer.ccm",{"opengl32"})
         // #elif __unix__
         // .addDependency("lib.RGFW.ccm",{"X11", "Xrandr"})
         // .addDependency("lib.std.ccm",{"c++","c++abi"})

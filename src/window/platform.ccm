@@ -3,7 +3,7 @@ module;
 #include <windows.h>
 #include <GL/gl.h>
 
-export module lib.win:platform;
+export module win:platform;
 
 import lib.std;
 import lib.types;
@@ -103,7 +103,7 @@ class Window {
         mClassName = "Win32Class_" + std::to_string(reinterpret_cast<uintptr_t>(this));
     }
 
-    bool createWindow(const char* title,int32 width,int32 height,uint32 flags,Window* patent = nullptr,Vec2<int32> pos = {CW_USEDEFAULT,CW_USEDEFAULT}) {
+    bool createWindow(const char* title,int32 width,int32 height,uint32 flags,Vec2<int32> pos = {CW_USEDEFAULT,CW_USEDEFAULT},Window* parent = nullptr) {
         auto [style,exStyle] = WindowFlags::WindowStyles(flags);
          
         mWCA.style          = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
@@ -135,7 +135,7 @@ class Window {
             style, // Standard window decor (Minimize, Maximize, Close)
             pos.x , pos.y, // Initial x, y positions
             width, height,                // Dimensions
-            !patent ? nullptr : patent->mHWND, nullptr, Desc.mHInstance, this
+            !parent ? nullptr : parent->mHWND, nullptr, Desc.mHInstance, this
         );
         if (!mHWND) {
             MessageBoxA(nullptr, "Window Creation Failed!", "Error", MB_ICONERROR | MB_OK);

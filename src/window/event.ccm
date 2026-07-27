@@ -1,11 +1,14 @@
 module;
-export module lib.win:event;
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
+export module win:event;
 import lib.std;
 import lib.types;
 import :common;
 
 export
-template<EventType::Key V>
+template<EventType::Key V> requires (V <= EventType::keyLast)
 struct keyData {
     static constexpr unsigned char value = V;
 
@@ -51,19 +54,18 @@ template <typename T>
 concept IsKeyData_c = isKeyData_t<std::decay_t<T>>()();
 
 export
-
 template<IsKeyData_c... KeyDataTypes> 
-struct KeyMap {
+class Keyboard {
     template <typename T>
     using decay = std::decay_t<T>;
+    public:
 
     std::tuple<decay<KeyDataTypes>...> keys;
     KeyState KeysState[sizeof...(KeyDataTypes)] {};
-    InputState* input = nullptr;
     int32_t inputAccumulator = 0;
     static constexpr auto indices = std::make_index_sequence<sizeof...(KeyDataTypes)>{};
 
-    constexpr KeyMap(InputState* is) : input(is) {}
+    constexpr Keyboard() {}
 
     void tickFrame() noexcept {
         for (size_t i = 0; i < sizeof...(KeyDataTypes); ++i) {
@@ -83,8 +85,7 @@ struct KeyMap {
 
     template<IsKeyData_c K>
     constexpr void isPressed(K& data) noexcept {
-        KeyState& sKeyState = KeysState[GetPosition(data.value)];
-        sKeyState.setRawDown(input->Keys[data.value]);
+        KeyState& sKeyState = KeysState[GetPosition<static_cast<EventType::Key>(decay<K>::value)>()];
         
         if (sKeyState.IsDown() || sKeyState.ChangedDown()) {
             data(); 
@@ -93,20 +94,30 @@ struct KeyMap {
 
     template<IsKeyData_c K>
     constexpr void gatherRawInputs(K& data) noexcept {
-        bool isCurrentlyHeld = input->Keys[data.value]; 
+        bool isCurrentlyHeld = (GetAsyncKeyState(EventType::toPlatform(K::value)) & 0x8000); 
         
-        KeysState[GetPosition(K::value)].setRawDown(isCurrentlyHeld);
+        KeysState[GetPosition<static_cast<EventType::Key>(decay<K>::value)>()].setRawDown(isCurrentlyHeld);
     }
 
     template<EventType::Key K> requires (K <= EventType::keyLast)
     constexpr auto& get() noexcept {
-        return std::get<GetPosition(K)>(keys);
+        static_assert(Exist<K>(),"Key Doesn't Exists");
+        return std::get<GetPosition<K>()>(keys);
     }
+    
     template<EventType::Key K> requires (K <= EventType::keyLast)
     constexpr KeyState& getState() noexcept {
-        return KeysState[GetPosition(K)];
+        static_assert(Exist<K>(),"Key Doesn't Exists");
+        return KeysState[GetPosition<K>()];
     }
-     private:
+    
+    private:
+    template <EventType::Key K>
+    static consteval bool Exist() noexcept {
+        if constexpr (sizeof...(KeyDataTypes) == 0) return false;
+        else return ((KeyDataTypes::value == K) or ...);
+    }
+
     template<size_t... Is>
     constexpr void updateKeysHelper(std::index_sequence<Is...>) noexcept {
         (isPressed(std::get<Is>(keys)), ...);
@@ -116,27 +127,26 @@ struct KeyMap {
         (gatherRawInputs(std::get<Is>(keys)), ...);
     }
 
-    static consteval size_t GetPosition(uint32 K) noexcept {
-        constexpr size_t numKeys = sizeof...(KeyDataTypes);
-        constexpr size_t keys[numKeys] = { static_cast<size_t>(decay<KeyDataTypes>::value)... };
-        for (size_t i = 0; i < numKeys; ++i) {
+    template <EventType::Key K> requires (K <= EventType::keyLast)
+    static consteval size_t GetPosition() noexcept {
+        static_assert(Exist<K>(),"Key Doesn't Exists");
+        constexpr std::array keys = { KeyDataTypes::value... };
+        for (size_t i = 0; i < keys.size(); ++i) {
             if (keys[i] == K) return i;
         }
-        compErr();
-        return 0;
+        return keys.at(keys.size()); 
     }
-    static consteval void compErr() noexcept;
+
     static consteval bool UniqueKeyError() noexcept {
         constexpr size_t numKeys = sizeof...(KeyDataTypes);
         constexpr size_t keys[numKeys] = { static_cast<size_t>(decay<KeyDataTypes>::value)... };
             for (size_t i = 0; i < numKeys; ++i) {
             for (size_t j = i + 1; j < numKeys; ++j) {
-                if (keys[i] == keys[j]) return false; // Found a duplicate!
+                if (keys[i] == keys[j]) return false;
             }
         }
         return true;
     }
     
     static_assert(UniqueKeyError(),"KeyMap Error: You cannot bind the same key to multiple actions!");
-
 };
