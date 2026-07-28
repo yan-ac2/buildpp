@@ -1,0 +1,371 @@
+module;
+#include <cstdlib>
+#include <cmath>
+export module utl;
+import lib.std;
+
+export {
+    template <class Ty, Ty Val>
+    struct integral_constant {
+        Ty value = Val;
+        using value_type = Ty;
+        using type       = integral_constant;
+        
+        consteval operator value_type() const noexcept   {return value;}
+        consteval value_type operator()() const noexcept {return value;}
+    };
+    template <bool Val> struct bool_constant : integral_constant<bool,Val> {};
+
+    using false_t = bool_constant<false>;
+    using true_t  = bool_constant<true>;
+    template<class T,class U> struct isSame_t      : false_t{};
+    template<class T>         struct isSame_t<T,T> : true_t {};
+    
+    template<typename  T,typename U> struct is_enum : false_t {};
+    
+    template<typename T> struct isPtr     : false_t {};
+    template<typename T> struct isPtr<T*> : true_t  {};
+    
+    template<typename T> struct remove_ptr           { using type = T;};
+    template<typename T> struct remove_ptr<T*>       { using type = T;};
+    template<typename T> struct remove_ptr<T* const> { using type = T;};
+    
+    template<typename F>                   struct isFn             : false_t {};
+    template<typename F, typename... Args> struct isFn<F(Args...)> : true_t {};
+    
+    template<typename F>                   struct isFn_ptr                : false_t {};
+    template<typename F,typename... Args>  struct isFn_ptr<F(*)(Args...)> : true_t {};
+    
+    
+}
+
+export
+namespace Math {
+    // template <typename T> concept 
+    template<typename T> requires (std::integral<std::decay_t<T>> || std::floating_point<std::decay_t<T>>)
+    inline consteval std::size_t maxDigits() {
+        using Unqualified = std::remove_cvref_t<T>;
+        if (std::integral<Unqualified>) {
+            constexpr bool isSigned = std::is_signed_v<Unqualified>;
+            return std::numeric_limits<Unqualified>::digits10 + 1 + (isSigned ? 1 : 0);
+        } else {
+            return 24;
+        }
+    }
+
+    inline constexpr double PI          = 3.14159265358979323846;
+    inline constexpr double TWO_PI      = 2.0 * PI;
+    inline constexpr double TWO_PI_DIV  = 1 / TWO_PI;
+    inline constexpr double HALF_PI     = PI / 2.0;
+    inline constexpr double E           = 2.71828182845904523536;
+    inline constexpr double DEG_TO_RAD  = PI / 180.0;
+    inline constexpr double RAD_TO_DEG  = 180.0 / PI;
+    inline constexpr double BRAD16_TO_RAD = (2.0 * Math::PI) / 65536.0;
+    inline constexpr double RAD_TO_BRAD16 = 65536.0 / (2.0 * Math::PI);
+    inline constexpr std::array<double, 19> CompactPow10 = []() consteval {
+        std::array<double, 19> arr{};
+        arr[0] = 1.0;
+        for (std::size_t i = 1; i < arr.size(); ++i) {
+            arr[i] = arr[i - 1] * 10.0;
+        }
+        return arr;
+    }();
+
+    template <typename T>
+    constexpr T abs(T x) noexcept {
+        return x >= 0 ? x : -x;
+    }
+
+    // --- Power (Integer Exponent) ---
+    template <typename T>
+    constexpr T pow(T base, int exp) noexcept {
+        if (std::is_constant_evaluated()) {
+            T result = 1;
+            bool negative = exp < 0;
+            exp = negative ? -exp : exp;
+            while (exp > 0) {
+                if (exp % 2 == 1) result *= base;
+                base *= base;
+                exp /= 2;
+            }
+            return negative ? T(1) / result : result;
+        }
+        return std::pow(base, exp);
+    }
+
+    // --- Square Root (Newton-Raphson Method for Compile-Time) ---
+    template <typename T>
+    constexpr T sqrt(T x) noexcept {
+        if (std::is_constant_evaluated()) {
+            if (x < 0) return std::numeric_limits<T>::quiet_NaN();
+            if (x == 0) return 0;
+            
+            T curr = x;
+            T prev = 0;
+            while (curr != prev) {
+                prev = curr;
+                curr = T(0.5) * (curr + x / curr);
+            }
+            return curr;
+        }
+        return std::sqrt(x);
+    }
+
+    // --- Min & Max ---
+    template <typename T>
+    constexpr T& max(T& a, T& b) noexcept {
+        return (a < b) ? b : a;
+    }
+
+    template <typename T>
+    constexpr T& min(T& a, T& b) noexcept {
+        return (a < b) ? a : b;
+    }
+
+    // --- Clamp ---
+    template <typename T>
+    constexpr T& clamp(T& val, T& low, T& high) noexcept {
+        return (val < low) ? low : (high < val) ? high : val;
+    }
+
+    // --- Sine ---
+    constexpr double sin(double x) noexcept {
+        if (std::is_constant_evaluated()) {
+            while (x > TWO_PI)  x -= TWO_PI;
+            while (x < 0.0)     x += TWO_PI;
+
+            double sign = 1.0;
+            if (x > PI) {
+                x -= PI;
+                sign = -1.0;
+            }
+            if (x > HALF_PI) {
+                x = PI - x;
+            }
+
+            // 10 terms on [0, PI/2] provides ~10^-16 precision!
+            double term = x;
+            double sum = x;
+            double x2 = x * x;
+
+            for (int i = 1; i <= 10; ++i) {
+                term *= -x2 / ((2 * i) * (2 * i + 1));
+                sum += term;
+            }
+            return sign * sum;
+        }
+        return std::sin(x);
+    }
+
+    // --- Cosine ---
+    constexpr double cos(double x) noexcept {
+        if (std::is_constant_evaluated()) {
+            while (x > TWO_PI)  x -= TWO_PI;
+            while (x < 0.0)     x += TWO_PI;
+            // Taylor series: 1 - x^2/2! + x^4/4! - x^6/6! + ...
+            double term = 1.0;
+            double sum = 1.0;
+            double x2 = x * x;
+
+            for (int i = 1; i <= 10; ++i) {
+                term *= -x2 / ((2 * i - 1) * (2 * i));
+                sum += term;
+            }
+            return sum;
+        }
+        return std::cos(x);
+    }
+
+    // --- Tangent ---
+    constexpr double tan(double x) noexcept {
+        if (std::is_constant_evaluated()) {
+            double c = Math::cos(x);
+            if (Math::abs(c) < 1e-15) {
+                return std::numeric_limits<double>::quiet_NaN();
+            }
+            return Math::sin(x) / c;
+        }
+        return std::tan(x);
+    }
+
+    // --- Natural Exponential (e^x) ---
+    constexpr double exp(double x) noexcept {
+        if (std::is_constant_evaluated()) {
+            // Taylor series: 1 + x + x^2/2! + x^3/3! + ...
+            double term = 1.0;
+            double sum = 1.0;
+            for (int i = 1; i <= 250; ++i) {
+                term *= x / i;
+                sum += term;
+            }
+            return sum;
+        }
+        return std::exp(x);
+    }
+
+    // --- Natural Logarithm (ln(x)) ---
+    constexpr double log(double x) noexcept {
+        if (std::is_constant_evaluated()) {
+            if (x <= 0.0) return std::numeric_limits<double>::quiet_NaN();
+            
+            // Halley's method iteration for fast convergence
+            double y = 1.0; // Initial guess
+            for (int i = 0; i < 100; ++i) {
+                double ey = Math::exp(y);
+                y = y + 2.0 * (x - ey) / (x + ey);
+            }
+            return y;
+        }
+        return std::log(x);
+    }
+
+    
+    
+    template <std::floating_point T>
+    inline constexpr size_t digitLength (const T& in,size_t precision = 0) {
+        if (in == 0) return 1;
+
+        bool isNeg = in < 0.0;
+        double absVal = static_cast<double>(isNeg ? -in : in);
+
+        if (absVal < 9.9) {
+            return 1 + precision + (isNeg ? 1 : 0);
+        }
+
+        // Fast unrolled binary search over the 19-element LUT
+        std::size_t digits = 1;
+        if (absVal >= Math::CompactPow10[10]) {
+            if (absVal >= Math::CompactPow10[14]) {
+                digits = (absVal >= Math::CompactPow10[16]) 
+                    ? (absVal >= Math::CompactPow10[17] ? (absVal >= Math::CompactPow10[18] ? 19 : 18) : 17)
+                    : (absVal >= Math::CompactPow10[15] ? 16 : 15);
+            } else {
+                digits = (absVal >= Math::CompactPow10[12]) 
+                    ? (absVal >= Math::CompactPow10[13] ? 14 : 13)
+                    : (absVal >= Math::CompactPow10[11] ? 12 : 11);
+            }
+        } else {
+            if (absVal >= Math::CompactPow10[5]) {
+                digits = (absVal >= Math::CompactPow10[7]) 
+                    ? (absVal >= Math::CompactPow10[8] ? (absVal >= Math::CompactPow10[9] ? 10 : 9) : 8)
+                    : (absVal >= Math::CompactPow10[6] ? 7 : 6);
+            } else {
+                digits = (absVal >= Math::CompactPow10[2]) 
+                    ? (absVal >= Math::CompactPow10[3] ? (absVal >= Math::CompactPow10[4] ? 5 : 4) : 3)
+                    : (absVal >= Math::CompactPow10[1] ? 2 : 1);
+            }
+        }
+
+        return digits + precision + (isNeg ? 1 : 0);
+    }
+
+    template <std::integral T>
+    inline constexpr size_t digitLength (const T& in) {
+        using UnsignedT = std::make_unsigned_t<T>;
+        bool isNeg = in < 0;
+        UnsignedT val = isNeg ? static_cast<UnsignedT>(-in) : static_cast<UnsignedT>(in);
+
+        if (val <= 9) return 1;
+
+        static constexpr uint8_t table[] = {
+            1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 9, 9, 9,
+            10, 10, 10, 10, 11, 11, 11, 12, 12, 12, 13, 13, 13, 13, 14, 14, 14, 15, 15, 15, 16, 16, 16, 16, 17, 17, 17, 18, 18, 18, 19, 19, 19, 19, 20
+        };
+
+        size_t bits = sizeof(UnsignedT) * 8 - std::countl_zero(val);
+        size_t digits = table[bits - 1];
+        digits -= (val < Math::CompactPow10[digits - 1]);
+
+        return digits + (isNeg ? 1 : 0);
+    }
+
+    struct Brad32 {
+        uint32_t brad{0};
+
+        constexpr Brad32() noexcept = default;
+
+        // Construct from degrees
+        constexpr explicit Brad32(double deg) noexcept 
+            : brad(static_cast<uint32_t>(static_cast<long long>(deg * (4294967296.0 / 360.0)))) {}
+
+        constexpr Brad32 operator+(Brad32 rhs) const noexcept {
+            Brad32 result;
+            result.brad = brad + rhs.brad;
+            return result;
+        }
+
+        constexpr Brad32 operator-(Brad32 rhs) const noexcept {
+            Brad32 result;
+            result.brad = brad - rhs.brad;
+            return result;
+        }
+
+        constexpr double toDegrees() const noexcept {
+            return brad * (360.0 / 4294967296.0);
+        }
+    };
+
+    struct Radians {
+        double value{0.0};
+
+        // Default constructor
+        constexpr Radians() noexcept = default;
+
+        // Direct construct from double radians (automatically wraps to [0, 2pi))
+        constexpr explicit Radians(double rad) noexcept : value(normalize(rad)) {}
+        // Factory method: Construct explicitly from degrees for clarity
+        static constexpr Radians fromDegrees(double deg) noexcept {
+            return Radians(deg * (DEG_TO_RAD));
+        }
+        // Convert back to degrees
+        [[nodiscard]] constexpr double toDegrees() const noexcept {
+            return value * (180.0 / Math::PI);
+        }
+
+        // Arithmetic operators with automatic range wrapping
+        constexpr Radians operator+(Radians rhs) const noexcept {
+            return Radians(value + rhs.value);
+        }
+        constexpr Radians operator-(Radians rhs) const noexcept {
+            return Radians(value - rhs.value);
+        }
+        constexpr Radians& operator+=(Radians rhs) noexcept {
+            value = normalize(value + rhs.value);
+            return *value_ptr();
+        }
+        constexpr Radians& operator-=(Radians rhs) noexcept {
+            value = normalize(value - rhs.value);
+            return *value_ptr();
+        }
+        // Direct conversion operator to double for seamless cmath usage
+        constexpr explicit operator double() const noexcept {
+            return value;
+        }
+
+    private:
+        constexpr Radians* value_ptr() noexcept { return this; }
+
+        // Helper method to wrap angles into [0, 2pi)
+        static constexpr double normalize(double rad) noexcept {
+            auto quotient = static_cast<long long>(rad * TWO_PI_DIV);
+            double wrapped = rad - (quotient * TWO_PI);
+
+            // 2. Adjust if negative
+            if (wrapped < 0.0) {
+                wrapped += TWO_PI;
+            }
+
+            // 3. Edge-case safety check for exact multiples of 2*pi
+            if (wrapped >= TWO_PI) {
+                wrapped = 0.0;
+            }
+
+            return wrapped;
+        }
+    };
+};
+// static constexpr pow10 test;
+// static constexpr double test2 = Math::sin(90.0 * Math::DEG_TO_RAD);
+// static_assert(Math::cachedSin(Math::BradDegree(10)) == Math::sin(10 * Math::DEG_TO_RAD)," " );
+static_assert(Math::Radians(Math::Radians::fromDegrees(90)).toDegrees() == 90," " );
+static_assert(Math::digitLength(123342) == 6," " );

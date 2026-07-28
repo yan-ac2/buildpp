@@ -3,11 +3,52 @@
 // #include <tuple>
 #include <synchapi.h>
 #include <GL/gl.h>
+#include <GL/glext.h>
 
 // import lib;
 import lib.std;
 import lib.types;
 import win;
+import utl;
+import image;
+
+GLuint loadTGATexture(const std::string& filename) {
+    TGAImage img;
+    if (!img.read_tga_file(filename)) {
+        return 0;
+    }
+
+    GLuint textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_2D, textureID);
+
+    // CRITICAL: TGA 3-byte RGB data is NOT 4-byte aligned! 
+    // Default OpenGL alignment assumption is 4, which causes skewed textures.
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+    // Upload texture data
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,                             // Mipmap level
+        img.getGLInternalFormat(),     // GL_RGB / GL_RGBA
+        img.width(),
+        img.height(),
+        0,                             // Legacy border flag
+        img.getGLFormat(),             // GL_BGR / GL_BGRA (TGA stores channels in reverse)
+        GL_UNSIGNED_BYTE,              // Type per channel
+        img.getData()                  // Raw data pointer
+    );
+
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    // Set standard texture parameters
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    return textureID;
+}
 
 int main() {
     using et = EventType;
@@ -50,17 +91,16 @@ int main() {
         std::cout << fmt(x," " ,y,"\n");
     });
 
+    unsigned int texture = loadTGATexture(fs::path("res/test.tga").string());
+    
     Shader shader("res");
     
-    float vertices[] {
-        -0.95f,-0.6f,0.0f,1.0f,0.0f,0.0f,0.0f,0.0f,
-        -0.5f,0.6f,0.0f,0.0f,1.0f,0.0f,1.0f,0.0f,
-        -0.1f,-0.6f, 0.0f,0.0f,0.0f,1.0f,0.5f,1.0f
-    };
-    float vertices2[] {
-        0.95f,-0.6f,0.0f,0.0f,1.0f,0.0f,0.0f,0.0f,
-        0.5f,0.6f,0.0f,1.0f,0.0f,0.0f,1.0f,0.0f,
-        0.1f,-0.6f, 0.0f,0.0f,0.0f,1.0f,0.5f,1.0f
+    float vertices[] = {
+    // positions // colors // texture coords
+    0.5f, 0.5f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, // top right
+    0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, // bottom right
+    -0.5f, -0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, // bottom left
+    -0.5f, 0.5f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f // top left
     };
 
 
@@ -76,9 +116,9 @@ int main() {
         1,2,3
     };
 
-    glCtx.initBuffer<3>({3,3,2},128);
-    glCtx.pushVertices(vertices,24);
-    glCtx.pushVertices(vertices2,24);
+    glCtx.initBuffer<3>({3,3,2},128,6);
+    glCtx.pushVertices(vertices,32);
+    glCtx.pushIndices(boxIndices,6);
 
     shader.CompileShader();
     shader.CompileProgram();
@@ -93,24 +133,23 @@ int main() {
             std::cout << fmt( "Monitor\n X: {} Y: {} {}x{} isPrimary: {}\n",monitor->x,monitor->y,monitor->width,monitor->height,monitor->isPrimary ? "true" : "false");   
             // std::cout << "\nMonitor \n"<< "X: "<< monitor->x << " Y: " << monitor->y << " Res: " << monitor->width  << "x" << monitor->height << " Is Primary: " << monitor->isPrimary << "\n";   
         }
-
         glClearColor(0.1f, 0.15f, 0.2f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        
+
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<float> duration = end - start;
         float second = (std::sin(duration.count()) * 0.5f) + 0.5f;
-
         int vertexColorLocation = glGetUniformLocation(shader.ID,"second");
         glUniform1f(vertexColorLocation,second);
 
-        glClearColor(0.0f,0.2f,0.2f,1.f);
-        glClear(GL_COLOR_BUFFER_BIT);
         
-        glBindVertexArray(glCtx.VAO);
         shader.use();
-    
-        glDrawArrays(GL_TRIANGLES,0,128);
+        // glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture);
+
+        glBindVertexArray(glCtx.VAO);
+        // glDrawArrays(GL_TRIANGLES,0,128);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
         glCtx.swapbuffer();
         KeyMap.update(8,times.delta_time());

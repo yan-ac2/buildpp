@@ -1,6 +1,0 @@
-module;
-export module lib;
-export import lib.iPtr;
-export import lib.RGFW;
-export import lib.renderer;
-export import lib.types;

@@ -5,6 +5,7 @@ module;
 export module win:event;
 import lib.std;
 import lib.types;
+import utl;
 import :common;
 
 export
@@ -101,19 +102,19 @@ class Keyboard {
 
     template<EventType::Key K> requires (K <= EventType::keyLast)
     constexpr auto& get() noexcept {
-        static_assert(Exist<K>(),"Key Doesn't Exists");
+        static_assert(isKeyExist<K>(),"Key Doesn't Exists");
         return std::get<GetPosition<K>()>(keys);
     }
     
     template<EventType::Key K> requires (K <= EventType::keyLast)
     constexpr KeyState& getState() noexcept {
-        static_assert(Exist<K>(),"Key Doesn't Exists");
+        static_assert(isKeyExist<K>(),"Key Doesn't Exists");
         return KeysState[GetPosition<K>()];
     }
     
     private:
-    template <EventType::Key K>
-    static consteval bool Exist() noexcept {
+    template <EventType::Key K> requires (K <= EventType::keyLast)
+    static consteval bool isKeyExist() noexcept {
         if constexpr (sizeof...(KeyDataTypes) == 0) return false;
         else return ((KeyDataTypes::value == K) or ...);
     }

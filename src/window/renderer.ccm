@@ -23,6 +23,7 @@ export module win:renderer;
 // import somethisng;
 import lib.std;
 import lib.types; // test
+import utl; // test
 import :common;
 
 enum class glType
@@ -625,6 +626,7 @@ class GlHints : public IRenderer {
         // Note: ReleaseDC is omitted here if you used CS_OWNDC in your Window Class.
         // Since your window class uses CS_HREDRAW | CS_VREDRAW, we release it safely:
         if (mHDC) {
+            ReleaseDC(mHWND, mHDC);
             // We'd need the HWND to safely call ReleaseDC. If you change your class 
             // style to include CS_OWNDC, you don't ever need to release this HDC!
         }
@@ -707,15 +709,19 @@ class Renderer<"GL"> {
     }
     
     template<int Attrib>
-    void initBuffer(std::array<int,Attrib> component,std::size_t maxVert,std::size_t maxIndices = 0) {
+    void initBuffer(std::array<int,Attrib> component,unsigned int maxVert,unsigned int maxIndices = 0) {
         glGenVertexArrays(1,&VAO);
+        glGenBuffers(1,&VBO);
+        glGenBuffers(1,&EBO);
+        
         glBindVertexArray(VAO);
         
-        
-        glGenBuffers(1,&VBO);
         glBindBuffer(GL_ARRAY_BUFFER,VBO);
         glBufferData(GL_ARRAY_BUFFER, maxVert * sizeof(float),nullptr,GL_DYNAMIC_DRAW);
         
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,EBO);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, maxIndices * sizeof(unsigned int),nullptr,GL_DYNAMIC_DRAW);
+
         GLsizei stride = std::reduce(component.begin(),component.end(),0) * sizeof(float);
         std::size_t offset = 0; 
         for (int i = 0; i < Attrib; ++i) {
@@ -730,33 +736,39 @@ class Renderer<"GL"> {
             offset += component[i] * sizeof(float);
         }
 
-        if (maxIndices > 0) {
-            glGenBuffers(1,&EBO);
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,EBO);
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, maxIndices * sizeof(unsigned int),nullptr,GL_DYNAMIC_DRAW);
-        }
-
         glBindVertexArray(0);
         glBindBuffer(GL_ARRAY_BUFFER,0);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+        // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
     }
 
     void pushVertices(float* vertices, size_t count) {
-        count = count * sizeof(float);
+        size_t sizeInBytes = count * sizeof(float);
 
         glBindBuffer(GL_ARRAY_BUFFER, VBO);
-        glBufferSubData(GL_ARRAY_BUFFER, VBOoffset,count,vertices);
-        VBOoffset += count;
+        glBufferSubData(GL_ARRAY_BUFFER, VBOoffset, sizeInBytes, vertices);
+        VBOoffset += sizeInBytes; // Offset increases safely by bytes
 
-        glBindBuffer(GL_ARRAY_BUFFER,0);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
 
-    void pushIndices(unsigned int* indices,size_t count) {
+   void pushIndices(unsigned int* indices, size_t count) {
         if (EBO == 0) return;
-        count = count * sizeof(unsigned int);
+        size_t sizeInBytes = count * sizeof(unsigned int);
+        
+        // CRITICAL: Prevent overriding the bound VAO's internal state
+        // Save current VAO bind if you want to be completely safe, 
+        // or just avoid unbinding 0 at the end.
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER,EBOoffset,count,indices);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, EBOoffset, sizeInBytes, indices);
+        EBOoffset += sizeInBytes; // Offset increases safely by bytes
+        
+        // DO NOT unbind GL_ELEMENT_ARRAY_BUFFER to 0 here 
+        // if there is any chance VAO is active!
+    }
+    
+    void clearOffsets() {
+        VBOoffset = 0;
+        EBOoffset = 0;
     }
 
 };
@@ -806,8 +818,9 @@ class Shader
         str base = fs::current_path().string();
         for(const auto& f : fs::directory_iterator(shaderPath)) {
             const auto& file = f.path();
+            if (file.extension() == ".tga") continue;
             std::cout << file.lexically_relative(base) << " test\n";
-            fileMap[file.lexically_relative(base).string()] = {file.extension().string() == ".fs" ?
+            fileMap[file.lexically_relative(base).string()] = {file.extension() == ".fs" ?
             fragment : vertex,0};
 
             if (f.last_write_time() > lastWrite) lastWrite = f.last_write_time();
@@ -908,7 +921,7 @@ class Renderer<"software"> {
     inline void clear() {
         for (int i = 0;; i+=100) {
             uint8* buffview = buffer + i;
-            for(int n = 0; n <= (i >= bufferSize ? mabs(bufferSize - i) : 100) ;++n) {
+            for(int n = 0; n <= (i >= bufferSize ? Math::abs(bufferSize - i) : 100) ;++n) {
                 *(buffview + n) = 0;
             }
             if(i >= bufferSize) break;
@@ -926,21 +939,21 @@ class Renderer<"software"> {
     }
 
     void line(int32 aix,int32 aiy,int32 bix,int32 biy,RGBA col) {
-        const bool steep = mabs(aix - bix) < mabs(aiy - biy);
+        const bool steep = Math::abs(aix - bix) < Math::abs(aiy - biy);
         if (steep) {
-            swap(&aix, &aiy);
-            swap(&bix, &biy);
+            std::swap(aix, aiy);
+            std::swap(bix, biy);
         }
         if (aix > bix) {
-            swap(&aix, &bix);
-            swap(&biy, &biy);
+            std::swap(aix, bix);
+            std::swap(biy, biy);
         }
         int y = aiy;
         int ierror = 0;
         for (int x = aix; x <= bix;x++) {
             if (steep) set(y,x,col);
             else       set(x,y,col);
-            ierror += 2 * mabs(biy - aiy);
+            ierror += 2 * Math::abs(biy - aiy);
             if (ierror > bix - aix) {
                 y += biy > aiy ? 1 : -1;
                 ierror -= 2 * (bix - aix);
@@ -953,10 +966,10 @@ class Renderer<"software"> {
         const auto signed_triangle_area = [](int ax, int ay, int bx, int by, int cx, int cy) -> double {
             return .5*((by-ay)*(bx+ax) + (cy-by)*(cx+bx) + (ay-cy)*(ax+cx));
         };
-        const int32 bbminx = min(min(aix,bix),cix) 
-        , bbmaxx = max(max(aix,bix),cix)
-        , bbminy = min(min(aiy,biy),ciy) 
-        , bbmaxy = max(max(aiy,biy),ciy);
+        const int32 bbminx = Math::min(Math::min(aix,bix),cix) 
+        , bbmaxx = Math::max(Math::max(aix,bix),cix)
+        , bbminy = Math::min(Math::min(aiy,biy),ciy) 
+        , bbmaxy = Math::max(Math::max(aiy,biy),ciy);
         const double total_area = 1 / signed_triangle_area(aix, aiy, bix, biy, cix, ciy);
         #pragma omp parallel for
         for (int x = bbminx; x <= bbmaxx; x++) {
