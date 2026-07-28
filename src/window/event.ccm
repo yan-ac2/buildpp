@@ -130,12 +130,12 @@ class Keyboard {
 
     template <EventType::Key K> requires (K <= EventType::keyLast)
     static consteval size_t GetPosition() noexcept {
-        static_assert(Exist<K>(),"Key Doesn't Exists");
+        static_assert(isKeyExist<K>(),"Key Doesn't Exists");
         constexpr std::array keys = { KeyDataTypes::value... };
         for (size_t i = 0; i < keys.size(); ++i) {
             if (keys[i] == K) return i;
         }
-        return keys.at(keys.size()); 
+        return -1; 
     }
 
     static consteval bool UniqueKeyError() noexcept {
