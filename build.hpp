@@ -1260,7 +1260,7 @@ class Project
                         V.setObjOutputName(&OutPath->objPath);
                         V.fileType  = File::Module;
                         std::string moPath = V.getModuleOutput(&OutPath->modulePath);
-                        V.compiled = fs::exists(V.objectPath);
+                        V.compiled = fs::exists(V.objectPath) && fs::exists(moPath) ? fs::last_write_time(V.Path) < fs::last_write_time(V.objectPath) : false;
                         exportModuleFound = true; // only one export module per file is allowed 
                     }
                 }

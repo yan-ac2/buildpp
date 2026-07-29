@@ -510,12 +510,14 @@ using GLTRANSFORMFEEDBACKVARYINGS   =  void ( APIENTRYP  ) ( GLuint program, GLs
 using GLBINDBUFFERBASE              =  void ( APIENTRYP  ) ( GLenum target, GLuint index, GLuint buffer );
 using GLBEGINTRANSFORMFEEDBACK      =  void ( APIENTRYP  ) ( GLenum primitiveMode );
 using GLENDTRANSFORMFEEDBACK        =  void ( APIENTRYP  ) ();
+
+using PFNGLBLITFRAMEBUFFEREXTPROC = void (APIENTRYP) (GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter);
 export {
     inline GLTRANSFORMFEEDBACKVARYINGS glTransformFeedbackVaryings = nullptr;
     inline GLBINDBUFFERBASE glBindBufferBase = nullptr;
     inline GLBEGINTRANSFORMFEEDBACK glBeginTransformFeedback = nullptr;
     inline GLENDTRANSFORMFEEDBACK glEndTransformFeedback = nullptr;
-
+    inline PFNGLBLITFRAMEBUFFEREXTPROC glBlitFramebuffer = nullptr;
 }
 
 inline void* LoadExtension( const char* name )
@@ -691,7 +693,100 @@ private:
     static void LoadExtensions();
 };
     
+export
+class Framebuffer {
+private:
+    GLuint mFBO = 0;
+    GLuint mColorTexture = 0;
+    GLuint mDepthStencilRBO = 0;
+    int mWidth = 0;
+    int mHeight = 0;
 
+public:
+    Framebuffer() = default;
+    Framebuffer(int width, int height) {
+        Resize(width, height);
+    }
+
+    ~Framebuffer() {
+        Cleanup();
+    }
+
+    // Disable copying to prevent double-deletion of GPU handles
+    Framebuffer(const Framebuffer&) = delete;
+    Framebuffer& operator=(const Framebuffer&) = delete;
+
+    // Enable move semantics
+    Framebuffer(Framebuffer&& other) noexcept 
+        : mFBO(other.mFBO), mColorTexture(other.mColorTexture), 
+          mDepthStencilRBO(other.mDepthStencilRBO), mWidth(other.mWidth), mHeight(other.mHeight) {
+        other.mFBO = 0;
+        other.mColorTexture = 0;
+        other.mDepthStencilRBO = 0;
+    }
+
+    void Resize(int width, int height) {
+        if (width <= 0 || height <= 0) return;
+        if (mWidth == width && mHeight == height && mFBO != 0) return;
+
+        mWidth = width;
+        mHeight = height;
+
+        Cleanup();
+
+        // 1. Create Framebuffer Container
+        glGenFramebuffers(1, &mFBO);
+        glBindFramebuffer(GL_FRAMEBUFFER, mFBO);
+
+        // 2. Color Attachment Texture
+        glGenTextures(1, &mColorTexture);
+        glBindTexture(GL_TEXTURE_2D, mColorTexture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mWidth, mHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mColorTexture, 0);
+
+        // 3. Depth/Stencil Attachment (Renderbuffer)
+        glGenRenderbuffers(1, &mDepthStencilRBO);
+        glBindRenderbuffer(GL_RENDERBUFFER, mDepthStencilRBO);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, mWidth, mHeight);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, mDepthStencilRBO);
+
+        // 4. Validate Framebuffer Status
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            std::cerr << "ERROR: Framebuffer is incomplete!\n";
+        }
+
+        // Restore default framebuffer target
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
+    /// Directs drawing operations into THIS off-screen framebuffer
+    void Bind() const {
+        glBindFramebuffer(GL_FRAMEBUFFER, mFBO);
+        glViewport(0, 0, mWidth, mHeight);
+    }
+
+    /// Restores drawing target back to the default screen buffer (ID 0)
+    static void Unbind(int screenWidth, int screenHeight) {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, screenWidth, screenHeight);
+    }
+
+    [[nodiscard]] GLuint GetColorTexture() const noexcept { return mColorTexture; }
+    [[nodiscard]] GLuint GetFBO() const noexcept { return mFBO; }
+    [[nodiscard]] int GetWidth() const noexcept { return mWidth; }
+    [[nodiscard]] int GetHeight() const noexcept { return mHeight; }
+
+private:
+    void Cleanup() {
+        if (mFBO) { glDeleteFramebuffers(1, &mFBO); mFBO = 0; }
+        if (mColorTexture) { glDeleteTextures(1, &mColorTexture); mColorTexture = 0; }
+        if (mDepthStencilRBO) { glDeleteRenderbuffers(1, &mDepthStencilRBO); mDepthStencilRBO = 0; }
+    }
+};
+
+export
 template<>
 class Renderer<"GL"> {
     GlHints* hints = nullptr;
@@ -704,8 +799,8 @@ class Renderer<"GL"> {
         hints = hint;
     }
 
-    void swapbuffer() {
-        if (hints->mHDC) ::SwapBuffers(hints->mHDC);
+    void Swapbuffer() {
+        hints->SwapBuffer();
     }
     
     template<int Attrib>
@@ -1143,4 +1238,6 @@ void GlHints::LoadExtensions() {
 		glBindBufferBase = (GLBINDBUFFERBASE)LoadExtension( "glBindBufferBase" );
 		glBeginTransformFeedback = (GLBEGINTRANSFORMFEEDBACK)LoadExtension( "glBeginTransformFeedback" );
 		glEndTransformFeedback = (GLENDTRANSFORMFEEDBACK)LoadExtension( "glEndTransformFeedback" );
+
+		glBlitFramebuffer = (PFNGLBLITFRAMEBUFFEREXTPROC)LoadExtension( "glBlitFramebuffer" );
 }

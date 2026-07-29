@@ -1,9 +1,11 @@
 module;
+#include <GL/gl.h>
+#include <GL/glext.h>
 export module image;
 import lib.std;
 import lib.types;
 import utl;
-
+#pragma pack(push, 1)
 export struct TGAHeader {
     std::uint8_t  idlength = 0;
     std::uint8_t  colormaptype = 0;
@@ -18,7 +20,7 @@ export struct TGAHeader {
     std::uint8_t  bitsperpixel = 0;
     std::uint8_t  imagedescriptor = 0;
 };
-
+#pragma pack(pop)
 export struct TGAColor {
     std::uint8_t bgra[4] = {0,0,0,0};
     std::uint8_t bytespp = 4;
@@ -156,9 +158,9 @@ export struct TGAImage {
     // Maps channels to internal GL format (e.g. GL_RGB, GL_RGBA, GL_RED)
     [[nodiscard]] std::uint32_t getGLInternalFormat() const {
         switch (bpp) {
-            case GRAYSCALE: return 0x1903; // GL_RED (or GL_LUMINANCE in legacy GL)
-            case RGB:       return 0x1907; // GL_RGB
-            case RGBA:      return 0x1908; // GL_RGBA
+            case GRAYSCALE: return GL_RED; //0x1903; // GL_RED (or GL_LUMINANCE in legacy GL)
+            case RGB:       return GL_RGB;//0x1907; // GL_RGB
+            case RGBA:      return GL_RGBA;0x1908; // GL_RGBA
             default:        return 0;
         }
     }
@@ -166,9 +168,9 @@ export struct TGAImage {
     // Maps TGA BGR/BGRA memory channel layout to GL pixel format
     [[nodiscard]] std::uint32_t getGLFormat() const {
         switch (bpp) {
-            case GRAYSCALE: return 0x1903; // GL_RED
-            case RGB:       return 0x80E0; // GL_BGR
-            case RGBA:      return 0x80E1; // GL_BGRA
+            case GRAYSCALE: return GL_RED;//0x1903; // GL_RED
+            case RGB:       return GL_BGR;//0x80E0; // GL_BGR
+            case RGBA:      return GL_BGRA; //0x80E1; // GL_BGRA
             default:        return 0;
         }
     }

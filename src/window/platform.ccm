@@ -55,7 +55,6 @@ class DisplayManager {
     std::vector<MonitorConfig> m_Monitors;
     size_t m_PreviousCount = 0;
 
-    // The hidden Win32 callback function
     static int CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) {
         auto* instance = reinterpret_cast<DisplayManager*>(dwData);
         
@@ -95,90 +94,32 @@ class Window {
     InputState* mInput = nullptr; 
     IRenderer* gfxCtx = nullptr; 
     
+    Window() = default;
+
+    ~Window() {
+        if (hdc && mHWND) ReleaseDC(mHWND, hdc);
+        if (mHWND)       DestroyWindow(mHWND);
+        if (!mClassName.empty()) {
+            UnregisterClassA(mClassName.c_str(), Desc.mHInstance);
+        }
+    }
 
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
-    Window() {
-        Desc.mHInstance = GetModuleHandleA(nullptr);
-        mClassName = "Win32Class_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+    
+    Window(const char* title, int32 width, int32 height, uint32 flags, Vec2<int32> pos = {CW_USEDEFAULT, CW_USEDEFAULT}, Window* parent = nullptr) {
+        Init(title,  width, height, flags, pos,parent);
     }
-
-    bool createWindow(const char* title,int32 width,int32 height,uint32 flags,Vec2<int32> pos = {CW_USEDEFAULT,CW_USEDEFAULT},Window* parent = nullptr) {
-        auto [style,exStyle] = WindowFlags::WindowStyles(flags);
-         
-        mWCA.style          = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
-        mWCA.lpfnWndProc    = Window::WndProc;
-        mWCA.cbClsExtra     = 0;
-        mWCA.cbWndExtra     = 0;
-        mWCA.hInstance      = Desc.mHInstance;
-        mWCA.hIcon          = LoadIcon(mWCA.hInstance, IDI_APPLICATION);
-        mWCA.hCursor        = LoadCursor(NULL, IDC_ARROW);
-        mWCA.hbrBackground  = nullptr;
-        mWCA.lpszMenuName   = NULL;
-        mWCA.lpszClassName  = mClassName.c_str();
-        if (!RegisterClassA(&mWCA))
-        {
-            MessageBox(nullptr,
-                "Call to RegisterClassA failed!",
-                "Windows Desktop Guided Tour",
-                MB_ICONERROR | MB_OK);
-        }
-
-        bool haveDisplayManager = (mDispMgr != nullptr);
-        pos.x = (haveDisplayManager && (flags & WindowFlags::WinCenter)) ? (mDispMgr->GetPrimaryMonitor()->width - width) * 0.5 : pos.x;
-        pos.y = (haveDisplayManager && (flags & WindowFlags::WinCenter)) ? (mDispMgr->GetPrimaryMonitor()->height - height) * 0.5 : pos.y;
-
-        mHWND = CreateWindowExA(
-            exStyle,
-            mWCA.lpszClassName,   // Must match the registered class name
-            title,
-            style, // Standard window decor (Minimize, Maximize, Close)
-            pos.x , pos.y, // Initial x, y positions
-            width, height,                // Dimensions
-            !parent ? nullptr : parent->mHWND, nullptr, Desc.mHInstance, this
-        );
-        if (!mHWND) {
-            MessageBoxA(nullptr, "Window Creation Failed!", "Error", MB_ICONERROR | MB_OK);
-            return false;
-        }
-        // if (flags & WindowFlags::WinOGL) {
-        //     gfxCtx = std::make_unique<Renderer<"GL">>();
-        // }
-
-        // if (gfxCtx) {
-        //     gfxCtx->Initialize(mHWND, width, height);
-        // }
-        
-        if (!sRootWindow) sRootWindow = this;
-        
-        Desc.title = title;
-        Desc.width = width;
-        Desc.height = height;
-        Desc.flags = flags;
-        Desc.assigned = this;
-
-        ShowWindow(mHWND, SW_SHOW);
-        UpdateWindow(mHWND);
-        mRunning = true;
-        return true;
+    void InitChild(Window* parent, const char* title, int32 width, int32 height,uint32 flags = 0, Vec2<int32> pos = {0, 0}) 
+    {
+        Init(title, width, height, flags, pos, parent);
     }
-
-    ~Window() {
-        if (mHWND)  DestroyWindow(mHWND);
-        UnregisterClassA(mClassName.c_str(), Desc.mHInstance);
-    }
-
     [[nodiscard]] const InputState& GetInput() const noexcept { return *mInput; }
     [[nodiscard]] InputState&       GetInputMutable() noexcept { return *mInput; }
     [[nodiscard]] static Window&    GetRoot() { return *sRootWindow; }
     [[nodiscard]] bool IsRunning() const noexcept { return mRunning; }
     [[nodiscard]] HWND GetNativeHandle() noexcept { return mHWND; }
-    // [[nodiscard]] IRenderer* GetGfxCtx()  { 
-    //     if (Desc.flags & WindowFlags::WinOGL) {
-    //         return static_cast<Renderer<"GL">*>(gfxCtx); 
-    //     }
-    //     return gfxCtx;
-    // }
+    
     void CloseApp() noexcept { mRunning = false; }
 
     void addDisplayManager(DisplayManager* disp) {
@@ -309,79 +250,64 @@ class Window {
         if (pWindow) return pWindow->mWinProc(hwnd, uMsg, wParam, lParam);
         return DefWindowProcA(hwnd, uMsg, wParam, lParam);
     }
+
+    void Init(const char* title, int32 width, int32 height, uint32 flags, Vec2<int32> pos, Window* parent) {
+        Desc.mHInstance = GetModuleHandleA(nullptr);
+        mClassName = "Win32Class_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+
+        auto [style, exStyle] = WindowFlags::WindowStyles(flags);
+        
+        mWCA.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+        mWCA.lpfnWndProc   = Window::WndProc;
+        mWCA.cbClsExtra    = 0;
+        mWCA.cbWndExtra    = 0;
+        mWCA.hInstance     = Desc.mHInstance;
+        mWCA.hIcon         = LoadIcon(mWCA.hInstance, IDI_APPLICATION);
+        mWCA.hCursor       = LoadCursor(NULL, IDC_ARROW);
+        mWCA.hbrBackground = nullptr; // Set background so child is visible
+        mWCA.lpszMenuName  = NULL;
+        mWCA.lpszClassName = mClassName.c_str();
+
+        RegisterClassA(&mWCA);
+
+        HWND parentHandle = nullptr;
+        if (parent != nullptr) {
+            parentHandle = parent->mHWND;
+            style |= WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
+            style &= ~WS_POPUP;
+        }
+        int32 px = pos.x;
+        int32 py = pos.y;
+        if (flags & WindowFlags::WinCenter) {
+            px = (GetSystemMetrics(SM_CXSCREEN) - width) / 2;
+            py = (GetSystemMetrics(SM_CYSCREEN) - height) / 2;
+        }
+
+        // 3. Create Window with Parent HWND
+        mHWND = CreateWindowExA(
+            exStyle,
+            mWCA.lpszClassName,
+            title,
+            style,
+            px, py,
+            width, height,
+            parentHandle, // Parent HWND
+            nullptr,                          // Menu/Child ID
+            Desc.mHInstance,
+            this
+        );
+
+        if (mHWND) {
+            hdc = GetDC(mHWND);
+            ShowWindow(mHWND, SW_SHOW);
+            UpdateWindow(mHWND);
+            mRunning = true;
+        }
+        Desc.title = title;
+        Desc.width = width;
+        Desc.height = height;
+        Desc.flags = flags;
+        Desc.assigned = this;
+        if (!sRootWindow) sRootWindow = this;
+    }
 };
-
-    // class ChildWindow {
-    // public:
-    //     ChildWindow(Window& parent, const char* title, int32 x, int32 y, int32 width, int32 height) {
-    //         m_hInstance = GetModuleHandleA(nullptr);
-    //         m_ClassName = "ModernChildWinClass_" + std::to_string(reinterpret_cast<uintptr_t>(this));
-
-    //         WNDCLASSA wca{};
-    //         wca.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
-    //         wca.lpfnWndProc   = ChildWndProc; // Dedicated child wndproc
-    //         wca.hInstance     = m_hInstance;
-    //         wca.hCursor       = LoadCursor(nullptr, IDC_ARROW);
-    //         wca.lpszClassName = m_ClassName.c_str();
-
-    //         RegisterClassA(&wca);
-
-    //         // Enforce WS_CHILD and link directly to parent HWND
-    //         m_hWnd = CreateWindowExA(
-    //             0, m_ClassName.c_str(), title, 
-    //             WS_CHILD | WS_VISIBLE | WS_BORDER,
-    //             x, y, width, height,
-    //             parent.GetNativeHandle(), nullptr, m_hInstance, this
-    //         );
-    //     }
-
-    //     ~ChildWindow() {
-    //         if (m_hWnd) DestroyWindow(m_hWnd);
-    //         UnregisterClassA(m_ClassName.c_str(), m_hInstance);
-    //     }
-
-    //     [[nodiscard]] HWND GetNativeHandle() const noexcept { return m_hWnd; }
-
-    //     private:
-    //         static LRESULT CALLBACK ChildWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    //             ChildWindow* childPtr = nullptr;
-    //             if (uMsg == WM_NCCREATE) {
-    //                 auto* createStruct = reinterpret_cast<CREATESTRUCTA*>(lParam);
-    //                 childPtr = static_cast<ChildWindow*>(createStruct->lpCreateParams);
-    //                 SetWindowLongPtrA(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(childPtr));
-    //                 childPtr->m_hWnd = hwnd;
-    //             } else {
-    //                 childPtr = reinterpret_cast<ChildWindow*>(GetWindowLongPtrA(hwnd, GWLP_USERDATA));
-    //             }
-
-    //             if (childPtr) {
-    //                 // Route input directly to the single root instance!
-    //                 InputState& rootInput = Window::GetRoot().GetInputMutable();
-    //                 size_t keyboard = EventType::castPlatform(wParam);
-    //                 size_t mouse = EventType::castMouse(uMsg, wParam);
-
-    //                 switch (uMsg) {
-    //                     case WM_KEYDOWN: case WM_SYSKEYDOWN:
-    //                         if (keyboard < 256) rootInput.Keys[keyboard] = true;
-    //                         return 0;
-    //                     case WM_KEYUP: case WM_SYSKEYUP:
-    //                         if (keyboard < 256) rootInput.Keys[keyboard] = false;
-    //                         return 0;
-    //                     case WM_LBUTTONDOWN: case WM_RBUTTONDOWN:
-    //                         rootInput.Mouse[mouse] = true;
-    //                         return 0;
-    //                     case WM_LBUTTONUP: case WM_RBUTTONUP:
-    //                         rootInput.Mouse[mouse] = false;
-    //                         return 0;
-    //                 }
-    //             }
-    //             return DefWindowProcA(hwnd, uMsg, wParam, lParam);
-    //         }
-
-    //         HWND m_hWnd = nullptr;
-    //         HINSTANCE m_hInstance = nullptr;
-    //         std::string m_ClassName;
-    //     };
-    // }
-
-

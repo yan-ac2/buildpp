@@ -24,7 +24,7 @@ GLuint loadTGATexture(const std::string& filename) {
 
     // CRITICAL: TGA 3-byte RGB data is NOT 4-byte aligned! 
     // Default OpenGL alignment assumption is 4, which causes skewed textures.
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    // glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
     // Upload texture data
     glTexImage2D(
@@ -52,8 +52,9 @@ GLuint loadTGATexture(const std::string& filename) {
 
 int main() {
     using et = EventType;
-    Window app;
-    
+    Window child;
+    Window app("MainWindow",800,600,WindowFlags::WinOGL | WindowFlags::WinCenter ,{100,100});
+    // child.InitChild(&app,"ChildWindow",800,600,WindowFlags::NoBorder);
     InputState input;
     GlHints glHints;
     Renderer<"GL"> glCtx(&glHints);
@@ -62,7 +63,6 @@ int main() {
     app.addDisplayManager(&disp);
     app.addInputState(&input);
     app.addRenderer(&glHints);
-    app.createWindow("MainWindow",800,600,WindowFlags::WinOGL,{10,22});
     glHints.Initialize(app.mHWND, 4, 3);
     glHints.Resize(app.Desc.width, app.Desc.height);
     
@@ -122,6 +122,8 @@ int main() {
 
     shader.CompileShader();
     shader.CompileProgram();
+
+    Framebuffer fmain(800,600);
     
     auto start = std::chrono::high_resolution_clock::now();
     auto& times = Clock::get();
@@ -133,26 +135,34 @@ int main() {
             std::cout << fmt( "Monitor\n X: {} Y: {} {}x{} isPrimary: {}\n",monitor->x,monitor->y,monitor->width,monitor->height,monitor->isPrimary ? "true" : "false");   
             // std::cout << "\nMonitor \n"<< "X: "<< monitor->x << " Y: " << monitor->y << " Res: " << monitor->width  << "x" << monitor->height << " Is Primary: " << monitor->isPrimary << "\n";   
         }
+        KeyMap.update(8,times.delta_time());
+
+        fmain.Bind();
         glClearColor(0.1f, 0.15f, 0.2f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        // auto end = std::chrono::high_resolution_clock::now();
+        // std::chrono::duration<float> duration = end - start;
+        // float second = (std::sin(duration.count()) * 0.5f) + 0.5f;
+        // int vertexColorLocation = glGetUniformLocation(shader.ID,"second");
+        // glUniform1f(vertexColorLocation,second);
 
-        auto end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<float> duration = end - start;
-        float second = (std::sin(duration.count()) * 0.5f) + 0.5f;
-        int vertexColorLocation = glGetUniformLocation(shader.ID,"second");
-        glUniform1f(vertexColorLocation,second);
-
-        
         shader.use();
-        // glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, texture);
 
         glBindVertexArray(glCtx.VAO);
         // glDrawArrays(GL_TRIANGLES,0,128);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        Framebuffer::Unbind(800, 600);
 
-        glCtx.swapbuffer();
-        KeyMap.update(8,times.delta_time());
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fmain.GetFBO()); 
+        glBlitFramebuffer(
+            0, 0, 800, 600,     // Source dimensions
+            0, 0, 800, 600,     // Destination dimensions
+            GL_COLOR_BUFFER_BIT,           // Clear copy mask
+            GL_LINEAR                      // Filter type if stretching occurs
+        );
+
+        glCtx.Swapbuffer();
         auto timeSleep = times.end(Clock::ms(16));
         // std::cout << fmt("time: {}ms dt: {}ms\n",timeSleep.count(),times.delta_time());
         std::this_thread::sleep_for(timeSleep);
