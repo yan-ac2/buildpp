@@ -139,10 +139,9 @@ class Keyboard {
     }
 
     static consteval bool UniqueKeyError() noexcept {
-        constexpr size_t numKeys = sizeof...(KeyDataTypes);
-        constexpr size_t keys[numKeys] = { static_cast<size_t>(decay<KeyDataTypes>::value)... };
-            for (size_t i = 0; i < numKeys; ++i) {
-            for (size_t j = i + 1; j < numKeys; ++j) {
+        constexpr std::array keys = { KeyDataTypes::value... };
+            for (size_t i = 0; i < keys.size(); ++i) {
+            for (size_t j = i + 1; j < keys.size(); ++j) {
                 if (keys[i] == keys[j]) return false;
             }
         }
