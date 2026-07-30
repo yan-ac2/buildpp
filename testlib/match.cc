@@ -1,5 +1,6 @@
 #include <iostream>
 #include <type_traits>
+#include <utility>
 
 
 // ============================================================================
@@ -7,47 +8,50 @@
 // ============================================================================
 namespace mini_std {
     using size_t = decltype(sizeof(0));
+
     template <class Ty, Ty Val>
     struct integral_constant {
-        enum : Ty {value = Val};
+        enum : Ty { value = Val };
         using value_type = Ty;
         using type       = integral_constant;
         
-        consteval operator value_type() const noexcept   {return static_cast<value_type>(value);}
-        consteval value_type operator()() const noexcept {return static_cast<value_type>(value);}
+        consteval operator value_type() const noexcept   { return static_cast<value_type>(value); }
+        consteval value_type operator()() const noexcept { return static_cast<value_type>(value); }
     };
-    template <bool Val> struct bool_constant : integral_constant<bool,Val> {};
+
+    template <bool Val> struct bool_constant : integral_constant<bool, Val> {};
     using false_t = bool_constant<false>;
     using true_t  = bool_constant<true>;
 
-    template<class T,class U> struct is_same : false_t{};
-    template<class T> struct is_same<T,T>    : true_t {};
+    template<class T, class U> struct is_same : false_t {};
+    template<class T> struct is_same<T, T>    : true_t {};
     template <typename T, typename U> constexpr bool is_same_v = is_same<T, U>::value;
 
-    template<typename  T,typename U> struct is_enum : false_t {};
-
-
-    template<typename T> struct is_ptr     :false_t {};
-    template<typename T> struct is_ptr<T*> :true_t  {};
-    
-    // Type-decay structural primitives
     template <typename T> struct remove_reference      { using type = T; };
     template <typename T> struct remove_reference<T&>  { using type = T; };
     template <typename T> struct remove_reference<T&&> { using type = T; };
     template <typename T> using remove_reference_t = typename remove_reference<T>::type;
 
+    template <typename T> struct add_lvalue_reference { using type = T&; };
+    template <> struct add_lvalue_reference<void> { using type = void; };
+    template <> struct add_lvalue_reference<const void> { using type = const void; };
+    template <typename T> using add_lvalue_reference_t = typename add_lvalue_reference<T>::type;
+
+    template <typename T> struct add_rvalue_reference { using type = T&&; };
+    template <> struct add_rvalue_reference<void> { using type = void; };
+    template <> struct add_rvalue_reference<const void> { using type = const void; };
+    template <typename T> using add_rvalue_reference_t = typename add_rvalue_reference<T>::type;
+
+    template <typename T>
+    add_rvalue_reference_t<T> declval() noexcept;
+
     template <typename T> struct remove_extent          { using type = T; };
     template <typename T> struct remove_extent<T[]>     { using type = T; };
     template <typename T, size_t N> struct remove_extent<T[N]> { using type = T; };
 
-    template<class T>
-    struct is_array : false_t {};
-
-    template<class T>
-    struct is_array<T[]> : true_t {};
-
-    template<class T, std::size_t N>
-    struct is_array<T[N]> : true_t {};;
+    template<class T> struct is_array : false_t {};
+    template<class T> struct is_array<T[]> : true_t {};
+    template<class T, size_t N> struct is_array<T[N]> : true_t {};
     
     template <bool B, typename T, typename U> struct conditional { using type = T; };
     template <typename T, typename U> struct conditional<false, T, U> { using type = U; };
@@ -63,62 +67,48 @@ namespace mini_std {
     struct remove_cv {
         using type = typename remove_volatile<typename remove_const<T>::type>::type;
     };
+    template <typename T> using remove_cv_t = typename remove_cv<T>::type;
 
-    template <typename T>
-    using remove_cv_t = typename remove_cv<T>::type;
-
-    // 3. Combine both to form remove_cvref
     template <typename T>
     struct remove_cvref {
         using type = remove_cv_t<remove_reference_t<T>>;
     };
+    template <typename T> using remove_cvref_t = typename remove_cvref<T>::type;
 
-    template <typename T>
-    using remove_cvref_t = typename remove_cvref<T>::type;
-
-    namespace addPtrdetail
-    {
-        template<class T>
-        struct type_identity { using type = T; };
-    
-        template<class T>
-        auto try_add_pointer(int)
-        -> type_identity<typename std::remove_reference<T>::type*>;
+    namespace addPtrdetail {
+        template<class T> struct type_identity { using type = T; };
 
         template<class T>
-        auto try_add_pointer(...)
-        -> type_identity<T>;  
+        auto try_add_pointer(int) -> type_identity<typename remove_reference<T>::type*>;
+
+        template<class T>
+        auto try_add_pointer(...) -> type_identity<T>;  
     } 
-    
-    template<class T>
-    struct add_pointer : decltype(addPtrdetail::try_add_pointer<T>(0)) {};
+    template<class T> struct add_pointer : decltype(addPtrdetail::try_add_pointer<T>(0)) {};
+    template<class T> using add_pointer_t = typename add_pointer<T>::type;
 
     template<typename F>                   struct is_function : false_t {};
     template<typename F, typename... Args> struct is_function<F(Args...)> : true_t {};
-
-    template<typename F>                   struct is_function_Ptr : false_t {};
-    template<typename F,typename... Args>  struct is_function_Ptr<F(*)(Args...)> : true_t {};
 
     template <typename T>
     struct decay {
     private:
         using U = remove_reference_t<T>;
-        using D = __decay(T);
     public:
-        using type = typename conditional<
+        using type = conditional_t<
             is_array<U>::value,
             typename add_pointer<typename remove_extent<U>::type>::type,
-            typename std::conditional< 
+            conditional_t<
                 is_function<U>::value,
                 typename add_pointer<U>::type,
-                typename remove_cv<U>::type
-            >::type
-        >::type;
+                remove_cv_t<U>
+            >
+        >;
     };
     template <typename T> using decay_t = typename decay<T>::type;
 
-    template <typename T> struct is_pointer { static constexpr bool value = false; };
-    template <typename T> struct is_pointer<T*> { static constexpr bool value = true; };
+    template <typename T> struct is_pointer : false_t {};
+    template <typename T> struct is_pointer<T*> : true_t {};
     template <typename T> constexpr bool is_pointer_v = is_pointer<T>::value;
 
     template <typename T> constexpr T&& forward(remove_reference_t<T>& t) noexcept { return static_cast<T&&>(t); }
@@ -132,55 +122,68 @@ namespace mini_std {
 
     template <typename... Args> struct tuple;
     template <> struct tuple<> {};
-    template <typename Head, typename... Tail> struct tuple<Head, Tail...> : tuple<Tail...> {
-        constexpr tuple(Head h, Tail... t) : tuple<Tail...>(forward<Tail>(t)...), value(forward<Head>(h)) {}
+    
+    template <typename Head, typename... Tail> 
+    struct tuple<Head, Tail...> : tuple<Tail...> {
+        constexpr tuple(Head h, Tail... t) 
+            : tuple<Tail...>(forward<Tail>(t)...), value(forward<Head>(h)) {}
         Head value;
     };
 
+    // --- ADD THESE DEDUCTION GUIDES ---
+    tuple() -> tuple<>;
+
+    template <typename... Args>
+    tuple(Args...) -> tuple<Args...>;
+
     template <size_t I, typename Tuple> struct tuple_element;
-    template <typename Head, typename... Tail> struct tuple_element<0, tuple<Head, Tail...>> {
+
+    template <typename Head, typename... Tail>
+    struct tuple_element<0, tuple<Head, Tail...>> {
         using type = Head;
-        static constexpr type& get(tuple<Head, Tail...>& t) noexcept { return t.value; }
-        static constexpr const type& get(const tuple<Head, Tail...>& t) noexcept { return t.value; }
     };
 
-    template <size_t I, typename Head, typename... Tail> struct tuple_element<I, tuple<Head, Tail...>> {
+    template <size_t I, typename Head, typename... Tail>
+    struct tuple_element<I, tuple<Head, Tail...>> {
         using type = typename tuple_element<I - 1, tuple<Tail...>>::type;
-        static constexpr type& get(tuple<Head, Tail...>& t) noexcept { 
-            return tuple_element<I - 1, tuple<Tail...>>::get(static_cast<tuple<Tail...>&>(t)); 
-        }
-        static constexpr const type& get(const tuple<Head, Tail...>& t) noexcept { 
-            return tuple_element<I - 1, tuple<Tail...>>::get(static_cast<const tuple<Tail...>&>(t)); 
-        }
     };
 
-    template <typename T>
-    struct tuple_size;
+    template <size_t I, typename Tuple>
+    using tuple_element_t = typename tuple_element<I, Tuple>::type;
 
-    template <typename... Types>
-    struct tuple_size<tuple<Types...>> {
+    template <typename T> struct tuple_size;
+    template <typename... Types> struct tuple_size<tuple<Types...>> {
         static constexpr size_t value = sizeof...(Types);
     };
+    template <typename T> inline constexpr size_t tuple_size_v = tuple_size<T>::value;
 
     template <size_t I, typename Head, typename... Tail>
-    [[nodiscard]] constexpr auto& get(tuple_element<I, Head>& leaf) noexcept {
-        return leaf.value;
-    }
-
-    // Get const lvalue reference
-    template <size_t I, typename Head, typename... Tail>
-    [[nodiscard]] constexpr const auto& get(const tuple_element<I, Head>& leaf) noexcept {
-        return leaf.value;
+    [[nodiscard]] constexpr decltype(auto) get(tuple<Head, Tail...>& t) noexcept {
+        if constexpr (I == 0) {
+            return (t.value);
+        } else {
+            return mini_std::get<I - 1>(static_cast<tuple<Tail...>&>(t));
+        }
     }
 
     template <size_t I, typename Head, typename... Tail>
-    [[nodiscard]] constexpr auto&& get(tuple_element<I, Head>&& leaf) noexcept {
-        return move(leaf.value);
+    [[nodiscard]] constexpr decltype(auto) get(const tuple<Head, Tail...>& t) noexcept {
+        if constexpr (I == 0) {
+            return (t.value);
+        } else {
+            return mini_std::get<I - 1>(static_cast<const tuple<Tail...>&>(t));
+        }
     }
-    
-    template <typename T>
-    inline constexpr size_t tuple_size_v = tuple_size<T>::value;
-    
+
+    template <size_t I, typename Head, typename... Tail>
+    [[nodiscard]] constexpr decltype(auto) get(tuple<Head, Tail...>&& t) noexcept {
+        if constexpr (I == 0) {
+            return mini_std::move(t.value);
+        } else {
+            return mini_std::get<I - 1>(static_cast<tuple<Tail...>&&>(t));
+        }
+    }
+
     struct string_view {
         const char* data_ptr = nullptr;
         size_t len = 0;
@@ -192,8 +195,8 @@ namespace mini_std {
             return true;
         }
     };
+
     namespace strHash {
-        // 64-bit FNV-1a Compile-Time String Hash Constants
         constexpr unsigned long long fnv_basis = 14695981039346656037ULL;
         constexpr unsigned long long fnv_prime = 1099511628211ULL;
 
@@ -208,7 +211,6 @@ namespace mini_std {
             }
             return hash;
         }
-
     }
 
     template <typename T>
@@ -244,10 +246,10 @@ namespace mini_std {
 namespace used_std {
     using namespace std; 
     
-    template<typename... T>
-    using tuple = mini_std::tuple<T...>;
-    template<mini_std::size_t I,typename Tuple>
-    using tuple_element = mini_std::tuple_element<I, Tuple>;
+    // template<typename... T>
+    // using tuple = mini_std::tuple<T...>;
+    // template<mini_std::size_t I,typename Tuple>
+    // using tuple_element = mini_std::tuple_element<I, Tuple>;
     template<typename T>
     using UniversalView = mini_std::UniversalView<T>;
     // template<typename T>
@@ -315,7 +317,7 @@ struct FieldRule {
         const auto& target_field = obj.*member_ptr;
         switch (op_tag) {
             case Op::Eq:  return evaluate_match(target_field, value);
-            case Op::Neq: return !evaluate_match(target_field, value);
+            case Op::Neq: !evaluate_match(target_field, value);
             case Op::Gt:  return target_field > value;
             case Op::Gte: return target_field >= value;
             case Op::Lt:  return target_field < value;
@@ -335,7 +337,7 @@ struct MultiFieldPredicate {
 private:
     template <used_std::size_t... Is>
     constexpr bool evaluate_all(const ClassType& obj, used_std::index_sequence<Is...>) const noexcept {
-        return (used_std::tuple_element<Is, used_std::tuple<Rules...>>::get(const_cast<used_std::tuple<Rules...>&>(rules)).eval(obj) && ...);
+        return (used_std::get<Is>(rules).eval(obj) && ...);
     }
 };
 
@@ -447,10 +449,11 @@ namespace mini_concepts {
     concept MatchesPredicate = requires(KeyType k, TargetType t) { { k.matches(t) };  };
 
     template <typename ActionType, typename... Args>
-    concept InvocableAction = requires(ActionType a, Args&&... args) { a(static_cast<Args&&>(args)...); };
-    
+    concept InvocableAction = requires(ActionType a, Args&&... args) { used_std::forward(a)(used_std::forward(args)...); };
+
     template <typename ActionType>
-    concept InvocableActionNoargs = requires(ActionType a) { a(); };
+    concept InvocableActionNoargs = requires(ActionType a) { used_std::forward(a)(); };
+
 
     template <typename T> concept IsWildcard = used_std::is_same_v<used_std::decay_t<T>, AnyType>;
     template <typename T> concept IsPureFallthrough = used_std::is_same_v<used_std::decay_t<T>, fallthrough_t>;
@@ -601,7 +604,7 @@ struct SugarProxyKey {
     template <typename ActionType>
     constexpr auto operator>>(ActionType&& action) && noexcept {
         return ImplCase<LabelID, KeyType, used_std::decay_t<ActionType>, Hint>{
-            static_cast<KeyType&&>(key), used_std::forward<ActionType>(action)
+            used_std::forward<KeyType>(key), used_std::forward<ActionType>(action)
         };
     }
 };
@@ -622,53 +625,72 @@ template <BranchHint Hint>
     else { return condition; }
 }
 
-template <typename Action, typename... ContextArgs>
-constexpr decltype(auto) execute_action(Action&& action, used_std::tuple<ContextArgs...>& ctx) {
-    // auto unpacker = [&]<used_std::size_t... Is>(used_std::index_sequence<Is...>) -> decltype(auto) {
-    using ActionDecay = used_std::decay_t<Action>;
-    if constexpr (mini_concepts::InvocableAction<ActionDecay, typename used_std::tuple<ContextArgs...>>) {
-        return action(ctx);
-    } else if constexpr (mini_concepts::InvocableActionNoargs<ActionDecay>) {
-        return action();
+template <typename ActionType, typename ContextType>
+constexpr decltype(auto) execute_action(ActionType&& action, ContextType& ctx) {
+    if constexpr (mini_concepts::InvocableAction<ActionType, ContextType&>) {
+        return used_std::forward<ActionType>(action)(ctx);
+    } else {
+        return used_std::forward<ActionType>(action)();
     }
-    // };
-    // return unpacker(used_std::make_index_sequence<sizeof...(ContextArgs)>{});
 }
 
 template <typename T>
-struct UnwrapReturnType { using type = T; };
+struct UnwrapReturnType { using type = used_std::remove_cvref_t<T>; };
 
 template <typename T>
 requires mini_concepts::IsValueFallthrough<T> || mini_concepts::IsValueGoto<T>
-struct UnwrapReturnType<T> { using type = decltype(std::declval<T>().value); };
-
+struct UnwrapReturnType<T> { 
+    using type = used_std::remove_cvref_t<decltype(std::declval<T>().value)>; 
+};
 // Unrolled Matrix State Router Engine Loop
-template <typename TargetType, typename DefaultType, typename ContextTuple, typename... CaseTypes>
-constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& default_action, ContextTuple& ctx, CaseTypes&&... cases) {
-    constexpr used_std::size_t TotalCases = sizeof...(CaseTypes);
+template <typename TargetType, typename DefaultType, typename ContextTuple, typename CasesTuple>
+constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& default_action, ContextTuple& ctx, CasesTuple&& cases) {
+    constexpr used_std::size_t TotalCases = used_std::tuple_size_v<used_std::remove_cvref_t<CasesTuple>>;
+    
     using CoreReturnType = decltype(execute_action(default_action, ctx));
-    using CleanReturnType = used_std::remove_cvref_t<CoreReturnType>;//typename UnwrapReturnType<used_std::remove_cvref_t<CoreReturnType>>::type;
+    using CleanReturnType = typename UnwrapReturnType<CoreReturnType>::type;
     
     auto unrolled_matrix_router = [&]<used_std::size_t... Is>(used_std::index_sequence<Is...>) -> CleanReturnType {
         CleanReturnType result{};
         bool matched = false;
         bool force_execute_next = false;
         bool jump_requested = false;
-        using FirstCaseType = used_std::remove_cvref_t<typename mini_pack::pack_element<0, CaseTypes...>::type>;
-        auto target_jump_label = FirstCaseType::label;
+        
+        // FIX HERE: Strip 'const' from LabelType so it can be assigned inside the loop
+        using RawFirstCase = used_std::remove_cvref_t<decltype(used_std::get<0>(cases))>;
+        using LabelType    = used_std::remove_cvref_t<decltype(RawFirstCase::label)>;
+        
+        LabelType target_jump_label{};
+        
         used_std::size_t loop_guard = 0;
         constexpr used_std::size_t MaxAllowedJumps = TotalCases * 2;
+        
         while (loop_guard++ < MaxAllowedJumps) {
-            jump_requested = false;
-            ([&]<typename CaseType>(CaseType&& current_case) {
-                using RawCaseType = used_std::remove_cvref_t<CaseType>;
-                if ((!jump_requested && force_execute_next) || 
-                    (!jump_requested && !matched && apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key))) ||
-                    (jump_requested && (current_case.label == target_jump_label))) 
-                {
+            bool current_iteration_jumped = false;
+            
+            ([&]() {
+                if (matched && !force_execute_next && !jump_requested) return;
+
+                auto&& current_case = used_std::get<Is>(cases);
+                using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
+                
+                bool should_execute = false;
+                
+                if (jump_requested) {
+                    if (current_case.label == target_jump_label) {
+                        should_execute = true;
+                    }
+                } else if (force_execute_next) {
+                    should_execute = true;
+                } else if (!matched) {
+                    should_execute = apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key));
+                }
+
+                if (should_execute) {
                     matched = true;
                     force_execute_next = false;
                     jump_requested = false;
+                    
                     decltype(auto) action_res = execute_action(current_case.action, ctx);
 
                     if constexpr (mini_concepts::IsPureFallthrough<decltype(action_res)>) {
@@ -681,22 +703,32 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
                     else if constexpr (mini_concepts::IsPureGoto<decltype(action_res)>) {
                         target_jump_label = mini_concepts::is_goto_case<decltype(action_res)>::label;
                         jump_requested = true;
+                        current_iteration_jumped = true;
                     }
                     else if constexpr (mini_concepts::IsValueGoto<decltype(action_res)>) {
                         if constexpr (!used_std::is_same_v<CleanReturnType, void>) { result = action_res.value; }
                         target_jump_label = mini_concepts::is_goto_value<decltype(action_res)>::label;
                         jump_requested = true;
+                        current_iteration_jumped = true;
                     }
                     else {
                         if constexpr (!used_std::is_same_v<CleanReturnType, void>) { result = action_res; }
                     }
                 }
-            }(cases), ...);
-            if (!jump_requested) break;
+            }(), ...);
+
+            if (!current_iteration_jumped && !force_execute_next) {
+                break;
+            }
         }
-        if (matched && !force_execute_next && !jump_requested) return result;
+        
+        if (matched && !force_execute_next && !jump_requested) {
+            return result;
+        }
+        
         return execute_action(default_action, ctx);
     };
+
     return unrolled_matrix_router(used_std::make_index_sequence<TotalCases>{});
 }
 
@@ -718,11 +750,27 @@ namespace mini_pack {
         }
     };
 
+    template <typename Tuple, used_std::size_t... Is>
+    constexpr auto make_cases_tuple_impl(Tuple&& full_tuple, used_std::index_sequence<Is...>) {
+        // Explicitly specify element types in tuple template arguments
+        return used_std::tuple<
+            used_std::remove_cvref_t<decltype(used_std::get<Is>(full_tuple))>...
+        >(used_std::get<Is>(used_std::forward<Tuple>(full_tuple))...);
+    }
+
     template <used_std::size_t... Is, typename TargetType, typename DefaultType, typename ContextTuple, typename CasesTuple>
     constexpr auto evaluate_sorted_matrix(used_std::index_sequence<Is...>, const TargetType& target, DefaultType&& default_action, ContextTuple& ctx, CasesTuple&& cases) {
-        return universal_switch_matrix(
-            target, used_std::forward<DefaultType>(default_action), ctx,
-            used_std::tuple_element<Is, used_std::remove_reference_t<CasesTuple>>::get(cases)...);
+        if constexpr (sizeof...(Is) > 0) {
+            // Pass cases as a single tuple argument (4 parameters total)
+            return universal_switch_matrix(
+                target, 
+                used_std::forward<DefaultType>(default_action), 
+                ctx,
+                used_std::forward<CasesTuple>(cases)
+            );
+        } else {
+            return execute_action(used_std::forward<DefaultType>(default_action), ctx);
+        }
     }
 }
 
@@ -730,13 +778,31 @@ template <typename TargetType, typename ContextTuple, typename... AllTrailingArg
 constexpr auto universal_switch(const TargetType& target, ContextTuple& ctx, AllTrailingArgs&&... args) {
     constexpr used_std::size_t TotalArgs = sizeof...(AllTrailingArgs);
     static_assert(TotalArgs >= 1, "Library Error: You must supply a terminal fallback default action.");
+    
     constexpr used_std::size_t CaseCount = TotalArgs - 1;
+    
+    // Extract default action (the last argument)
     decltype(auto) default_action = mini_pack::pack_element<CaseCount, AllTrailingArgs...>::get(used_std::forward<AllTrailingArgs>(args)...);
+    
     if constexpr (CaseCount == 0) {
         return execute_action(used_std::forward<decltype(default_action)>(default_action), ctx);
     } else {
-        auto cases_tuple = used_std::tuple<typename used_std::remove_reference_t<AllTrailingArgs>...>(used_std::forward<AllTrailingArgs>(args)...);
-        return mini_pack::evaluate_sorted_matrix(used_std::make_index_sequence<CaseCount>{}, target, used_std::forward<decltype(default_action)>(default_action), ctx, cases_tuple);
+        // Pack all arguments into a temporary full tuple
+        auto full_tuple = used_std::tuple<typename used_std::remove_reference_t<AllTrailingArgs>...>(used_std::forward<AllTrailingArgs>(args)...);
+        
+        // Extract ONLY the cases (indices 0 to CaseCount - 1)
+        auto cases_tuple = mini_pack::make_cases_tuple_impl(
+            used_std::move(full_tuple), 
+            used_std::make_index_sequence<CaseCount>{}
+        );
+
+        return mini_pack::evaluate_sorted_matrix(
+            used_std::make_index_sequence<CaseCount>{}, 
+            target, 
+            used_std::forward<decltype(default_action)>(default_action), 
+            ctx, 
+            cases_tuple
+        );
     }
 }
 
@@ -746,15 +812,10 @@ constexpr auto universal_switch(const TargetType& target, ContextTuple& ctx, All
 template <typename TargetType, typename ContextTuple>
 struct SwitchPipelineProxy {
     const TargetType& target;
-    ContextTuple ctx;
+    ContextTuple ctx; // Correctly holds tuple of references
 
     template <typename... CaseTypes>
     constexpr decltype(auto) operator()(CaseTypes&&... cases) && {
-        return universal_switch(target, ctx, used_std::forward<CaseTypes>(cases)...);
-    }
-
-    template <typename... CaseTypes>
-    constexpr decltype(auto) operator=(CaseTypes&&... cases) && {
         return universal_switch(target, ctx, used_std::forward<CaseTypes>(cases)...);
     }
 };
@@ -762,12 +823,19 @@ struct SwitchPipelineProxy {
 template <typename TargetType>
 struct SwitchTargetProxy {
     const TargetType& target;
-    
+
+    // Fix: Capture arguments as lvalue references std::tuple<ContextArgs&...>
     template <typename... ContextArgs>
-    constexpr auto operator[](ContextArgs&&... args) && noexcept {
-        using TupleType = used_std::tuple<ContextArgs&&...>;
-        return SwitchPipelineProxy<TargetType, TupleType>{ target, used_std::tuple<ContextArgs...>(used_std::forward<ContextArgs>(args)...) };
+    constexpr auto operator[](ContextArgs&... args) && noexcept {
+        using TupleType = used_std::tuple<ContextArgs&...>;
+        return SwitchPipelineProxy<TargetType, TupleType>{ target, TupleType(args...) };
     }
+
+    // // Overload for cases where no context variables are passed: Match(val)[]
+    // constexpr auto operator[]() && noexcept {
+    //     using TupleType = used_std::tuple<>;
+    //     return SwitchPipelineProxy<TargetType, TupleType>{ target, TupleType{} };
+    // }
 };
 
 template <typename TargetType>
@@ -777,12 +845,13 @@ constexpr auto Match(const TargetType& target) noexcept {
 
 int main () {
     int num = 0;
-    int ret = Match(num)[num]  (
-        Case(10) >> [](auto& i){used_std::get<0>(i) = 0; return 5;},
-        Case(0) >> [](auto& i){used_std::get<0>(i) = 0; return 10;},
-        [](){return 0;}
+    int ret = Match(num)[]  (
+        Case(10) >> [] { return 5; },
+        label_Case<1>(make_range(2,9)) >> [&] {num++; return 5; },
+        Case(0)  >> [] { return goto_case<1>(); },
+        []{return 555;}
     );
 
-    std::cout << ret;
+    std::cout << ret << " "<< num;
     return ret;
 }
