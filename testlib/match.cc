@@ -1,4 +1,5 @@
 #include <iostream>
+#include <type_traits>
 
 
 // ============================================================================
@@ -191,21 +192,23 @@ namespace mini_std {
             return true;
         }
     };
+    namespace strHash {
+        // 64-bit FNV-1a Compile-Time String Hash Constants
+        constexpr unsigned long long fnv_basis = 14695981039346656037ULL;
+        constexpr unsigned long long fnv_prime = 1099511628211ULL;
 
-    // 64-bit FNV-1a Compile-Time String Hash Constants
-    constexpr unsigned long long fnv_basis = 14695981039346656037ULL;
-    constexpr unsigned long long fnv_prime = 1099511628211ULL;
-
-    constexpr unsigned long long hash_str(const char* str) noexcept {
-        unsigned long long hash = fnv_basis;
-        size_t i = 0;
-        if (!str) return hash;
-        while (str[i] != '\0') {
-            hash ^= static_cast<unsigned long long>(str[i]);
-            hash *= fnv_prime;
-            ++i;
+        constexpr unsigned long long hash_str(const char* str) noexcept {
+            unsigned long long hash = fnv_basis;
+            size_t i = 0;
+            if (!str) return hash;
+            while (str[i] != '\0') {
+                hash ^= static_cast<unsigned long long>(str[i]);
+                hash *= fnv_prime;
+                ++i;
+            }
+            return hash;
         }
-        return hash;
+
     }
 
     template <typename T>
@@ -239,12 +242,16 @@ namespace mini_std {
 }
 
 namespace used_std {
-    using namespace mini_std; 
+    using namespace std; 
     
+    template<typename... T>
+    using tuple = mini_std::tuple<T...>;
+    template<mini_std::size_t I,typename Tuple>
+    using tuple_element = mini_std::tuple_element<I, Tuple>;
     template<typename T>
     using UniversalView = mini_std::UniversalView<T>;
     // template<typename T>
-    auto hash_str = mini_std::hash_str;
+    using namespace mini_std::strHash;
 }
 // Global user-defined string literal hash shortcut
 constexpr unsigned long long operator""_hash(const char* str, used_std::size_t) noexcept {
@@ -441,6 +448,9 @@ namespace mini_concepts {
 
     template <typename ActionType, typename... Args>
     concept InvocableAction = requires(ActionType a, Args&&... args) { a(static_cast<Args&&>(args)...); };
+    
+    template <typename ActionType>
+    concept InvocableActionNoargs = requires(ActionType a) { a(); };
 
     template <typename T> concept IsWildcard = used_std::is_same_v<used_std::decay_t<T>, AnyType>;
     template <typename T> concept IsPureFallthrough = used_std::is_same_v<used_std::decay_t<T>, fallthrough_t>;
@@ -614,15 +624,15 @@ template <BranchHint Hint>
 
 template <typename Action, typename... ContextArgs>
 constexpr decltype(auto) execute_action(Action&& action, used_std::tuple<ContextArgs...>& ctx) {
-    auto unpacker = [&]<used_std::size_t... Is>(used_std::index_sequence<Is...>) -> decltype(auto) {
-        using ActionDecay = used_std::decay_t<Action>;
-        if constexpr (mini_concepts::InvocableAction<ActionDecay, typename used_std::tuple_element<Is, used_std::tuple<ContextArgs...>>::type...>) {
-            return action(used_std::tuple_element<Is, used_std::tuple<ContextArgs...>>::get(ctx)...);
-        } else {
-            return action;
-        }
-    };
-    return unpacker(used_std::make_index_sequence<sizeof...(ContextArgs)>{});
+    // auto unpacker = [&]<used_std::size_t... Is>(used_std::index_sequence<Is...>) -> decltype(auto) {
+    using ActionDecay = used_std::decay_t<Action>;
+    if constexpr (mini_concepts::InvocableAction<ActionDecay, typename used_std::tuple<ContextArgs...>>) {
+        return action(ctx);
+    } else if constexpr (mini_concepts::InvocableActionNoargs<ActionDecay>) {
+        return action();
+    }
+    // };
+    // return unpacker(used_std::make_index_sequence<sizeof...(ContextArgs)>{});
 }
 
 template <typename T>
@@ -637,7 +647,7 @@ template <typename TargetType, typename DefaultType, typename ContextTuple, type
 constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& default_action, ContextTuple& ctx, CaseTypes&&... cases) {
     constexpr used_std::size_t TotalCases = sizeof...(CaseTypes);
     using CoreReturnType = decltype(execute_action(default_action, ctx));
-    using CleanReturnType = typename UnwrapReturnType<used_std::remove_cvref_t<CoreReturnType>>::type;
+    using CleanReturnType = used_std::remove_cvref_t<CoreReturnType>;//typename UnwrapReturnType<used_std::remove_cvref_t<CoreReturnType>>::type;
     
     auto unrolled_matrix_router = [&]<used_std::size_t... Is>(used_std::index_sequence<Is...>) -> CleanReturnType {
         CleanReturnType result{};
@@ -752,25 +762,25 @@ struct SwitchPipelineProxy {
 template <typename TargetType>
 struct SwitchTargetProxy {
     const TargetType& target;
-    template <typename... ContextArgs>
     
+    template <typename... ContextArgs>
     constexpr auto operator[](ContextArgs&&... args) && noexcept {
         using TupleType = used_std::tuple<ContextArgs&&...>;
-        return SwitchPipelineProxy<TargetType, TupleType>{ target, TupleType(used_std::forward<ContextArgs>(args)...) };
+        return SwitchPipelineProxy<TargetType, TupleType>{ target, used_std::tuple<ContextArgs...>(used_std::forward<ContextArgs>(args)...) };
     }
 };
 
 template <typename TargetType>
-constexpr auto uswitch(const TargetType& target) noexcept {
+constexpr auto Match(const TargetType& target) noexcept {
     return SwitchTargetProxy<TargetType>{ target };
 }
 
 int main () {
-    int num = 10;
-    int ret = uswitch(num)[num]  (
-        Case(10) >> [](int& i){i = 0; return 0;},
-        Case(0) >> [](int& i){i = 0; return 10;},
-        [](int&){return 0;}
+    int num = 0;
+    int ret = Match(num)[num]  (
+        Case(10) >> [](auto& i){used_std::get<0>(i) = 0; return 5;},
+        Case(0) >> [](auto& i){used_std::get<0>(i) = 0; return 10;},
+        [](){return 0;}
     );
 
     std::cout << ret;
