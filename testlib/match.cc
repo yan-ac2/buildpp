@@ -811,28 +811,6 @@ struct FnPredicate {
     }
 };
 
-
-
-// ---  (Target is the instance) ---
-// template <typename MemFn> 
-// requires (used_std::is_member_function_pointer_v<MemFn>)
-// struct MemFnPredicate {
-//     MemFn mem_fn;
-
-//     template <typename Target>
-//     constexpr bool operator()(const Target& target) const {
-//         if constexpr (std::is_member_function_pointer_v<MemFn>) {
-//             return (target.*mem_fn)();
-//         }
-//     }
-// };
-
-// template <typename MemFn>
-// requires (used_std::is_member_function_pointer_v<MemFn>)
-// constexpr auto MemFnMatch(MemFn mem_fn) {
-//     return MemFnPredicate<MemFn>{ mem_fn };
-// }
-
 // --- Bound Member Function Predicate (Instance + Member Function) ---
 template <typename Class, typename MemFn> 
 requires (used_std::is_class<Class>::value && used_std::is_member_function_pointer_v<MemFn>)
