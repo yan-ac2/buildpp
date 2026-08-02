@@ -852,16 +852,12 @@ template <typename MemFn, typename ExpectedPattern> requires (used_std::is_membe
 struct ProjectionCaseimpl {
     MemFn mem_fn;
     ExpectedPattern pattern;
-    using fnTraits = used_std::callable_traits_t<MemFn>;
+    using fnTraits = used_std::callable_traits_t<decltype(mem_fn)>;
     template <typename Target>
     constexpr bool operator()(const Target& target) const {
-        if constexpr (fnTraits::args == 0) {
-            decltype(auto) extracted_val = used_std::invoke(mem_fn);
-            return evaluate_match(extracted_val, target);
-        } else {
-            decltype(auto) extracted_val = used_std::invoke(mem_fn,target);
-            return evaluate_match(extracted_val, pattern);
-        }
+        auto instance = static_cast<fnTraits::class_type>(target);
+        decltype(auto) extracted_val = used_std::invoke(mem_fn,instance,target);
+        return evaluate_match(extracted_val, pattern);
     }
 };
 
@@ -1973,21 +1969,21 @@ int main () {
     showcase_branch_hints(500);
     // std::printf("%d %d" , ret , num);
 
-    constexpr struct s {
+    struct s {
         int i;
         constexpr s(int i) : i(i){}
-        constexpr int get(int s) {
-            return i + s;
+        constexpr int get(int s) const {
+            return s;
         }
-    } t(10);
-    
+    };
+    constexpr s test = 20;
     constexpr int num = 20;
     static_assert(Match(num)[__] (
         Case(RangeCompound{make_range(0,10),make_range(20,30)}) >> []{return true;},
         []{return false;}), "" );
         
     Match(num)[__] (
-        Case(ProjectionCase(10,&s::get)) >> []{
+        Case(ProjectionCase(test.i,&s::get)) >> []{
             std::cout << "is in range";
         },
         []{
