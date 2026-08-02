@@ -71,7 +71,7 @@ int test()
 
     #ifdef _WIN32
     test.setCompiler("clang++")
-    .setOptions("-O2 -ffreestanding -flto -Wall -std=c++26 -fno-rtti")
+    .setOptions("-O2 -flto -Wall -std=c++20 -fno-rtti")
     .setLdOptions("-s ")
     #elif __unix__
     test.setCompiler("clang++")

@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <tuple>
 
 using size_t = decltype(sizeof(0));
 using nullptr_t = decltype(nullptr);
@@ -89,7 +90,35 @@ using type_t = StaticMap<
     varUtl<int,2,"int">{},
     varUtl<f32,3,"float">{},
     varUtl<double,4,"double">{}
->;
+>; 
+
+void hello(int,int) {}
+
+// 1. Primary template takes EXACTLY ONE type (the function signature or pointer)
+template <typename T>
+struct function_traits;
+
+// 2. Specialization for free function signatures: Fn(Args...)
+template <typename Fn, typename... Args>
+struct function_traits<Fn(Args...)> {
+    using return_type = Fn;
+    using args_tuple  = std::tuple<Args...>;
+    
+    static constexpr std::size_t args = sizeof...(Args);
+
+    template <std::size_t N>
+    using arg_type = std::tuple_element_t<N, args_tuple>;
+};
+
+// 3. Specialization for function pointers: Fn(*)(Args...)
+template <typename Fn, typename... Args>
+struct function_traits<Fn(*)(Args...)> : function_traits<Fn(Args...)> {};
+
+// 4. Specialization for function references: Fn(&)(Args...)
+template <typename Fn, typename... Args>
+struct function_traits<Fn(&)(Args...)> : function_traits<Fn(Args...)> {};
+
+    static_assert(function_traits<decltype(&hello)>::args == 2, "" );
 auto main() -> int {
     double var = 12.123;
     printf("%s",type_t::getname(1.689f + 2));
