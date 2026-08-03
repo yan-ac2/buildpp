@@ -544,6 +544,9 @@ namespace used_std {
 
     template <template <typename...> class TemplateClass, typename... Args1, typename... Args2>
     struct is_same_template<TemplateClass<Args1...>, TemplateClass<Args2...>> : used_std::true_type {};
+
+    template <typename T, typename U>
+    inline constexpr bool is_same_template_v = used_std::is_same_template<T, U>::value;
     // 1. Primary template takes EXACTLY ONE type (the function signature or pointer)
     template <typename T>
     struct function_traits;
@@ -621,24 +624,78 @@ namespace used_std {
     };
 
 
-    // Overload + operator to merge std::index_sequence types
-    template <used_std::size_t... Is, used_std::size_t... Js>
-    constexpr auto operator+(used_std::index_sequence<Is...>, used_std::index_sequence<Js...>) {
-        return used_std::index_sequence<Is..., Js...>{};
+    // Internal helper using fold expressions over an index pack
+    template <typename T, typename TupleB, used_std::size_t... Js>
+    constexpr int count_element_matches_impl(used_std::index_sequence<Js...>) {
+        return (
+            (static_cast<int>(
+                used_std::is_same_v<
+                    std::remove_cvref_t<T>,
+                    std::remove_cvref_t<used_std::tuple_element_t<Js, TupleB>>
+                >
+            )) + ... + 0
+        );
     }
 
-    // Internal helper using fold expressions over an index pack
+    template <typename T, typename TupleB>
+    constexpr int count_element_matches() {
+        return count_element_matches_impl<T, TupleB>(
+            used_std::make_index_sequence<used_std::tuple_size_v<TupleB>>{}
+        );
+    }
+
     template <typename TupleA, typename TupleB, used_std::size_t... Is>
-    constexpr auto get_matching_indices_impl(used_std::index_sequence<Is...>) {
+    constexpr int count_total_matches_impl(used_std::index_sequence<Is...>) {
         return (
-            used_std::conditional_t<
-                used_std::is_same_v<
-                    used_std::remove_cvref_t<used_std::tuple_element_t<Is, TupleA>>, 
-                    used_std::remove_cvref_t<used_std::tuple_element_t<Is, TupleB>>
-                >,
-                used_std::index_sequence<Is>,
-                used_std::index_sequence<>
-            >{} + ... + used_std::index_sequence<>{}
+            count_element_matches<used_std::tuple_element_t<Is, TupleA>, TupleB>() + ... + 0
+        );
+    }
+    template <typename TupleA, typename TupleB>
+    constexpr bool is_one_matching_index_safe_t = count_total_matches_impl<TupleA, TupleB>(
+        used_std::make_index_sequence<used_std::tuple_size_v<TupleA>>{}
+    ) == 1;
+    
+    static_assert(is_one_matching_index_safe_t<used_std::tuple<int,int,double,float>,used_std::tuple<char,float>>, "");
+
+    template <typename Seq1, typename Seq2>
+    struct concat_index_sequence;
+
+    template <used_std::size_t... Is1, used_std::size_t... Is2>
+    struct concat_index_sequence<used_std::index_sequence<Is1...>, used_std::index_sequence<Is2...>> {
+        using type = used_std::index_sequence<Is1..., Is2...>;
+    };
+
+    template <typename Seq1, typename Seq2>
+    using concat_index_sequence_t = typename concat_index_sequence<Seq1, Seq2>::type;
+
+    template <used_std::size_t... Is1, used_std::size_t... Is2>
+    constexpr auto operator+(used_std::index_sequence<Is1...>, used_std::index_sequence<Is2...>) {
+        return concat_index_sequence_t<used_std::index_sequence<Is1...>, used_std::index_sequence<Is2...>>{};
+    }
+
+    template <typename T, typename TupleB, std::size_t... Js>
+    constexpr bool contains_type_impl(std::index_sequence<Js...>) {
+        return (
+            std::is_same_v<
+                std::remove_cvref_t<T>,
+                std::remove_cvref_t<std::tuple_element_t<Js, TupleB>>
+            > || ...
+        );
+    }
+
+    template <typename T, typename TupleB>
+    constexpr bool contains_type_v = contains_type_impl<T, TupleB>(
+        std::make_index_sequence<std::tuple_size_v<TupleB>>{}
+    );
+
+    template <typename TupleA, typename TupleB, std::size_t... Is>
+    constexpr auto get_matching_indices_impl(std::index_sequence<Is...>) {
+        return (
+            std::conditional_t<
+                contains_type_v<std::tuple_element_t<Is, TupleA>, TupleB>,
+                std::index_sequence<Is>,
+                std::index_sequence<>
+            >{} + ... + std::index_sequence<>{}
         );
     }
     // Public alias template
@@ -649,19 +706,10 @@ namespace used_std {
         )
     );
 
-    template <typename TupleA, typename TupleB>
-    using get_matching_indices_safe_t = decltype(
-        get_matching_indices_impl<TupleA, TupleB>(
-            // Only check up to the bounds of the smaller tuple
-            used_std::make_index_sequence<
-                (used_std::tuple_size_v<TupleA> < used_std::tuple_size_v<TupleB>) ? 
-                used_std::tuple_size_v<TupleA> : used_std::tuple_size_v<TupleB>
-            >{}
-        )
-    );
-
-    template <typename T, typename U>
-    inline constexpr bool is_same_template_v = used_std::is_same_template<T, U>::value;
+    using Tuple1 = std::tuple<int,  char, float, double>;
+    using Tuple2 = std::tuple<short,double>;
+    using testmatching = get_matching_indices_t<Tuple1, Tuple2>;
+    static_assert(used_std::is_same_v<testmatching, used_std::index_sequence<3>>,"");
     
     struct string_view {
             const char* data_ptr = nullptr;
@@ -768,6 +816,11 @@ struct StaticLabel {
 
     constexpr StaticLabel& operator=(int val) noexcept {
         *this = StaticLabel<0>(val);
+        return *this;
+    }
+    template<used_std::size_t M>
+    constexpr StaticLabel& operator=(const StaticLabel<M>& other) noexcept {
+        this->hash = other.hash;
         return *this;
     }
 };
@@ -1061,6 +1114,89 @@ template <StaticLabel LabelID> constexpr auto goto_case() noexcept { return goto
 template <StaticLabel LabelID, typename T> struct GotoValue { T value; };
 template <StaticLabel LabelID, typename T> constexpr auto pass_and_goto(T&& val) noexcept { return GotoValue<LabelID, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
 
+template <typename T>
+struct is_goto_case {
+    static constexpr bool value = false;
+};
+
+template <StaticLabel LabelID>
+struct is_goto_case<goto_case_t<LabelID>> {
+    static constexpr bool value = true;
+    static constexpr auto label = LabelID;
+};
+
+template <typename T>
+concept IsPureGoto = is_goto_case<used_std::decay_t<T>>::value;
+
+template <typename T>
+struct is_goto_value {
+    static constexpr bool value = false;
+};
+
+template <StaticLabel LabelID, typename T>
+struct is_goto_value<GotoValue<LabelID, T>> {
+    static constexpr bool value = true;
+    static constexpr auto label = LabelID;
+    using value_type = T;
+};
+
+template <typename T>
+concept IsValueGoto = is_goto_value<used_std::decay_t<T>>::value;
+
+template <typename T>
+concept IsGotoSignal = IsPureGoto<T> || IsValueGoto<T>;
+
+template <typename Action, typename... Args>
+using get_action_return_type_t = decltype(
+    used_std::declval<Action>()(used_std::declval<Args>()...)
+);
+template <typename Action>
+using get_nullary_return_type_t = decltype(
+    used_std::declval<Action>()()
+);
+template <typename Case, StaticLabel TargetLabel>
+struct case_returns_label {
+private:
+    // Helper to evaluate return type safely regardless of lambda parameters
+    template <typename C>
+    static auto test(int) -> typename used_std::conditional_t<
+        // Check if Action can be called with 0 arguments
+        used_std::is_invocable_v<typename C::ActionType>,
+        is_goto_case<used_std::invoke_result_t<typename C::ActionType>>,
+        // Fallback: If it takes arguments (e.g., std::string_view&)
+        is_goto_case<used_std::invoke_result_t<typename C::ActionType, std::string_view&>>
+    >;
+
+public:
+    static constexpr bool value = []() {
+        using Trait = decltype(test<Case>(0));
+        if constexpr (Trait::is_goto) {
+            return Trait::label == TargetLabel;
+        } {
+            return false;
+        }
+    }();
+};
+
+template <typename Case, StaticLabel TargetLabel>
+inline constexpr bool case_returns_label_v = case_returns_label<Case, TargetLabel>::value;
+template <StaticLabel TargetLabel, typename TupleA, std::size_t... Is>
+constexpr auto find_target_label_index_impl(used_std::index_sequence<Is...>) {
+    return (
+        used_std::conditional_t<
+            (used_std::tuple_element_t<Is, TupleA>::label == TargetLabel),
+            used_std::index_sequence<Is>,
+            used_std::index_sequence<>
+        >{} + ... + used_std::index_sequence<>{}
+    );
+}
+
+template <StaticLabel TargetLabel, typename CasesTuple>
+using find_target_label_index_t = decltype(
+    find_target_label_index_impl<TargetLabel, CasesTuple>(
+        used_std::make_index_sequence<used_std::tuple_size_v<CasesTuple>>{}
+    )
+);
 struct Wildcard {};
 [[maybe_unused]] inline constexpr Wildcard __{};
 
@@ -1202,38 +1338,6 @@ namespace mini_concepts {
     template <typename T>
     concept IsFallthroughSignal = IsPureFallthrough<T> || IsValueFallthrough<T>;
 
-    template <typename T>
-    struct is_goto_case {
-        static constexpr bool value = false;
-    };
-
-    template <StaticLabel LabelID>
-    struct is_goto_case<goto_case_t<LabelID>> {
-        static constexpr bool value = true;
-        static constexpr auto label = LabelID;
-    };
-
-    template <typename T>
-    concept IsPureGoto = is_goto_case<used_std::decay_t<T>>::value;
-
-    template <typename T>
-    struct is_goto_value {
-        static constexpr bool value = false;
-    };
-
-    template <StaticLabel LabelID, typename T>
-    struct is_goto_value<GotoValue<LabelID, T>> {
-        static constexpr bool value = true;
-        static constexpr auto label = LabelID;
-        using value_type = T;
-    };
-
-    template <typename T>
-    concept IsValueGoto = is_goto_value<used_std::decay_t<T>>::value;
-
-    template <typename T>
-    concept IsGotoSignal = IsPureGoto<T> || IsValueGoto<T>;
-
     template <typename T> concept IsAwaitable = requires(T t) { { t.operator co_await() }; } || requires(T t) { { t.await_ready() }; };
 
     template <typename T> struct is_tuple_iterator { static constexpr bool value = false; };
@@ -1373,17 +1477,6 @@ template <typename TargetType, typename KeyType>
     else if constexpr (mini_concepts::IsCallablePredicate<KeyType, TargetType>) {
         return used_std::invoke(key, target);
     } 
-    // else if constexpr (is_fnpredicate<KeyType>) {
-    //     return used_std::invoke(key, target);
-    // } 
-    // else if constexpr (is_boundfn_predicate<TargetType,KeyType>) {
-    //     return used_std::invoke(key, target);
-    // } 
-    // else if constexpr (requires {target.mem_fn && target.pattern;}) {
-    //     decltype(auto) extracted_val = used_std::invoke(target.mem_fn, target.pattern);
-    //     return evaluate_match(target,extracted_val);
-    //     // return used_std::invoke(key, target);
-    // } 
     else if constexpr (requires { { target == key } -> mini_concepts::convertible_to<bool>; }) {
         return (target == key);
     } 
@@ -1464,7 +1557,7 @@ constexpr decltype(auto) execute_action(ActionType&& action, ContextType& ctx) {
     using FnTrait = used_std::callable_traits_t<ActionType>;
 
     // 1. Passive signals and primitives
-    if constexpr (mini_concepts::IsGotoSignal<ActionDecay> || 
+    if constexpr (IsGotoSignal<ActionDecay> || 
                   mini_concepts::IsFallthroughSignal<ActionDecay> || 
                   mini_concepts::Primitive<ActionDecay>) 
     {
@@ -1483,7 +1576,7 @@ constexpr decltype(auto) execute_action(ActionType&& action, ContextType& ctx) {
         using FnArgsTuple = typename FnTrait::args_tuple;
         
         // Fix 2: Compare Tuple to Tuple (FnArgsTuple vs CleanContext)
-        using ResultSequence = used_std::get_matching_indices_safe_t<FnArgsTuple, CleanContext>;
+        using ResultSequence = used_std::get_matching_indices_t<FnArgsTuple, CleanContext>;
         
         // Pass the calculated compile-time matching indices down to invoke std::get
         return []<used_std::size_t... Is>(auto&& act, auto& context, used_std::index_sequence<Is...>) -> decltype(auto) {
@@ -1511,13 +1604,14 @@ struct UnwrapReturnType<FallthroughValue<T>> {
 
 template <auto LabelID>
 struct UnwrapReturnType<goto_case_t<LabelID>> {
-    using type = void;
+    using type = decltype(LabelID);
 };
 
 template <auto LabelID, typename T>
 struct UnwrapReturnType<GotoValue<LabelID, T>> {
     using type = T;
 };
+
 
 template <typename T>
 using unwrap_return_type_t = typename UnwrapReturnType<used_std::decay_t<T>>::type;
@@ -1579,13 +1673,13 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
                         if constexpr (mini_concepts::IsPureFallthrough<ActionDecay> || mini_concepts::IsValueFallthrough<ActionDecay>) {
                             force_execute_next = true;
                         }
-                        else if constexpr (mini_concepts::IsPureGoto<ActionDecay>) {
-                            target_jump_label = mini_concepts::is_goto_case<ActionDecay>::label;
+                        else if constexpr (IsPureGoto<ActionDecay>) {
+                            target_jump_label = is_goto_case<ActionDecay>::label;
                             jump_requested = true;
                             current_iteration_jumped = true;
                         }
-                        else if constexpr (mini_concepts::IsValueGoto<ActionDecay>) {
-                            target_jump_label = mini_concepts::is_goto_value<ActionDecay>::label;
+                        else if constexpr (IsValueGoto<ActionDecay>) {
+                            target_jump_label = is_goto_value<ActionDecay>::label;
                             jump_requested = true;
                             current_iteration_jumped = true;
                         }
@@ -1641,14 +1735,14 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
                             result = action_res.value;
                             force_execute_next = true;
                         }
-                        else if constexpr (mini_concepts::IsPureGoto<ActionDecay>) {
-                            target_jump_label = mini_concepts::is_goto_case<ActionDecay>::label;
+                        else if constexpr (IsPureGoto<ActionDecay>) {
+                            target_jump_label = is_goto_case<ActionDecay>::label;
                             jump_requested = true;
                             current_iteration_jumped = true;
                         }
-                        else if constexpr (mini_concepts::IsValueGoto<ActionDecay>) {
+                        else if constexpr (IsValueGoto<ActionDecay>) {
                             result = action_res.value;
-                            target_jump_label = mini_concepts::is_goto_value<ActionDecay>::label;
+                            target_jump_label = is_goto_value<ActionDecay>::label;
                             jump_requested = true;
                             current_iteration_jumped = true;
                         }
@@ -1839,9 +1933,9 @@ void showcase_hash_labels(std::string_view command) {
 
     std::string_view response = Match(command)(command,cmd_hash) (
         Case("start")  >> [] { return "System Starting..."; },
-        Case("stop")   >> [] { return "System Stopping..."; },
+        label_Case<"stop">("stop")   >> [] { return goto_case<"err">(); },
         Case("pause")  >> [] { return "System Paused."; },
-        Case(__)       >> [](std::string_view& s) { return s.data(); },
+        label_Case<"err">(__)       >> [](std::string_view& s) { return s.data(); },
         []{return "UNDEFINED!";}
     );
 
@@ -1938,6 +2032,7 @@ int main () {
 
     // 4. Compile-Time Hash Labels Showcase
     showcase_hash_labels("start");
+    showcase_hash_labels("stop");
     showcase_hash_labels("pause");
     showcase_hash_labels("reboot");
     showcase_hash_labels("rebootss");
@@ -1961,13 +2056,15 @@ int main () {
         []{return false;}), "" );
         
     Match(num)[__] (
-        Case(ProjectionCase(test.i,&s::get)) >> []{
+        Case(ProjectionCase(10,&s::get)) >> []{
             std::cout << "is in range";
         },
         []{
             std::cout << "is not range";
         }
     );
-    
     return 1;
 }
+using testcase = used_std::tuple<ImplCase<"LabelID",int,int,BranchHint::None>,ImplCase<"range",int,int,BranchHint::None>,ImplCase<"shit",int,int,BranchHint::None>>;
+using testindex = find_target_label_index_t<"range", testcase>;
+// static_assert(used_std::is_same_v<testindex, used_std::index_sequence<1>>,"" );
