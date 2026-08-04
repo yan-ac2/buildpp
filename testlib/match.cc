@@ -728,6 +728,7 @@ template <typename Action>
 using get_nullary_return_type_t = decltype(
     used_std::declval<Action>()()
 );
+
 template <typename Case, StaticLabel TargetLabel>
 struct case_returns_label {
 private:
@@ -760,15 +761,29 @@ namespace detail
     }
     template <typename Case, StaticLabel TargetLabel>
     inline constexpr bool case_returns_label_v = case_returns_label<Case, TargetLabel>::value;
+
+    // template <StaticLabel TargetLabel, typename TupleA, used_std::size_t... Is>
+    // constexpr auto find_target_label_index_impl(used_std::index_sequence<Is...>) {
+    //     return (
+    //         used_std::conditional_t<
+    //             (used_std::remove_cvref_t<used_std::tuple_element_t<Is, TupleA>>::label == TargetLabel),
+    //             used_std::index_sequence<Is>,
+    //             used_std::index_sequence<>
+    //         >{} + ... + used_std::index_sequence<>{}
+    //     );
+    // }
     template <StaticLabel TargetLabel, typename TupleA, used_std::size_t... Is>
-    constexpr auto find_target_label_index_impl(used_std::index_sequence<Is...>) {
-        return (
-            used_std::conditional_t<
-                (used_std::remove_cvref_t<used_std::tuple_element_t<Is, TupleA>>::label == TargetLabel),
-                used_std::index_sequence<Is>,
-                used_std::index_sequence<>
-            >{} + ... + used_std::index_sequence<>{}
-        );
+    constexpr used_std::size_t find_target_label_index_impl(used_std::index_sequence<Is...>) {
+        using CleanTuple = used_std::remove_cvref_t<TupleA>;
+        
+        // Folds over the indices and returns the matching index (or total element count if not found)
+        used_std::size_t found_index = used_std::tuple_size_v<CleanTuple>;
+        
+        ((used_std::remove_cvref_t<used_std::tuple_element_t<Is, CleanTuple>>::label == TargetLabel 
+            ? (found_index = Is) 
+            : false) || ...);
+
+        return found_index;
     }
 }
 
@@ -778,6 +793,14 @@ using find_target_label_index_t = decltype(
         used_std::make_index_sequence<used_std::tuple_size_v<CasesTuple>>{}
     )
 );
+
+template <StaticLabel TargetLabel, typename CasesTuple>
+inline constexpr used_std::size_t find_target_label_index_v = 
+    detail::find_target_label_index_impl<TargetLabel, CasesTuple>(
+        used_std::make_index_sequence<
+            used_std::tuple_size_v<used_std::remove_cvref_t<CasesTuple>>
+        >{}
+    );
 struct Wildcard {};
 [[maybe_unused]] inline constexpr Wildcard __{};
 
@@ -1100,21 +1123,38 @@ template <RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None
 }
 template <RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T,size_t N> requires (used_std::is_arithmetic_v<T>) constexpr auto Case(const T(&range)[N][2]) noexcept { 
      return []<used_std::size_t... Is>(const T (&arr)[N][2], used_std::index_sequence<Is...>) {
-        
         auto compound = make_compound_range(
             Range<T, iType>{arr[Is][0], arr[Is][1]}...
         );
-
         return SugarProxyKey<0, Hint, decltype(compound)>{ used_std::move(compound) };
-
     }(range, used_std::make_index_sequence<N>{});
 }
-
 template <typename T> constexpr auto likely_Case(T&& val) noexcept { return SugarProxyKey<0, BranchHint::Likely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
 template <typename T> constexpr auto unlikely_Case(T&& val) noexcept { return SugarProxyKey<0, BranchHint::Unlikely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
-template <StaticLabel LabelID, typename T> constexpr auto label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::None, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
-template <StaticLabel LabelID, typename T> constexpr auto likely_label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::Likely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
-template <StaticLabel LabelID, typename T> constexpr auto unlikely_label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::Unlikely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
+
+
+
+template <StaticLabel LabelID, typename T> 
+constexpr auto label_Case(T&& val) noexcept { 
+    return SugarProxyKey<LabelID, BranchHint::None, used_std::decay_t<T>>{ used_std::forward<T>(val) }; 
+}
+template <StaticLabel LabelID,RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T> requires (used_std::is_arithmetic_v<T>) 
+constexpr auto label_Case(const T(&range)[2]) noexcept { 
+    return SugarProxyKey<LabelID, Hint, Range<T,iType>>{ {.min=range[0],.max=range[1]}}; 
+}
+template <StaticLabel LabelID,RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T,size_t N> requires (used_std::is_arithmetic_v<T>) 
+constexpr auto label_Case(const T(&range)[N][2]) noexcept { 
+     return []<used_std::size_t... Is>(const T (&arr)[N][2], used_std::index_sequence<Is...>) {
+        auto compound = make_compound_range(
+            Range<T, iType>{arr[Is][0], arr[Is][1]}...
+        );
+        return SugarProxyKey<LabelID, Hint, decltype(compound)>{ used_std::move(compound) };
+    }(range, used_std::make_index_sequence<N>{});
+}
+template <StaticLabel LabelID, typename T> 
+constexpr auto likely_label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::Likely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
+template <StaticLabel LabelID, typename T> 
+constexpr auto unlikely_label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::Unlikely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
 
 // Hardware Prediction Branch Optimizer Hints Primitive Mapping
 template <BranchHint Hint>
@@ -1192,7 +1232,11 @@ struct UnwrapReturnType { using type = used_std::remove_cvref_t<T>;};
 
 template <>
 struct UnwrapReturnType<fallthrough_t> {
-    using type = void;
+    using type = Wildcard;
+};
+template <>
+struct UnwrapReturnType<void> {
+    using type = Wildcard;
 };
 
 template <typename T>
@@ -1210,177 +1254,217 @@ struct UnwrapReturnType<GotoValue<LabelID, T>> {
     using type = T;
 };
 
-
-template <typename T>
-using unwrap_return_type_t = typename UnwrapReturnType<used_std::decay_t<T>>::type;
-
-// Unrolled Matrix State Router Engine Loop
 template <typename TargetType, typename DefaultType, typename ContextTuple, typename CasesTuple> 
-requires (mini_concepts::TupleLike<used_std::remove_cvref_t<ContextTuple>> && mini_concepts::TupleLike<used_std::remove_cvref_t<CasesTuple>>)
+requires (mini_concepts::TupleLike<used_std::remove_cvref_t<ContextTuple>> && 
+          mini_concepts::TupleLike<used_std::remove_cvref_t<CasesTuple>>)
 constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& default_action, ContextTuple& ctx, CasesTuple&& cases) {
     constexpr used_std::size_t TotalCases = used_std::tuple_size_v<used_std::remove_cvref_t<CasesTuple>>;
-    
-    // Updated: Pass target to resolve correct return type
+
     using CoreReturnType  = decltype(execute_action(default_action, ctx));
     using CleanReturnType = typename UnwrapReturnType<CoreReturnType>::type;
-    
-    auto unrolled_matrix_router = []<used_std::size_t... Is>(const TargetType& target, DefaultType&& default_action, 
-        ContextTuple& ctx, CasesTuple&& cases,used_std::index_sequence<Is...>) -> CleanReturnType {
-        using RawFirstCase = used_std::remove_cvref_t<decltype(used_std::get<0>(cases))>;
-        using LabelType    = used_std::remove_cvref_t<decltype(RawFirstCase::label)>;
-        
-        LabelType target_jump_label{};
-        bool matched = false;
-        bool force_execute_next = false;
-        bool jump_requested = false;
-        
-        used_std::size_t loop_guard = 0;
-        constexpr used_std::size_t MaxAllowedJumps = TotalCases * 2;
 
-        // Separate void and non-void return type pathways
-        if constexpr (used_std::is_same_v<CleanReturnType, void>) {
-            while (loop_guard++ < MaxAllowedJumps) {
-                bool current_iteration_jumped = false;
-                
-                ([&]() {
-                    if (matched && !force_execute_next && !jump_requested) return;
-                    
-                    auto&& current_case = used_std::get<Is>(cases);
-                    using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
-                    
-                    bool should_execute = false;
-                    
-                    if (jump_requested) {
-                        if (current_case.label == target_jump_label) {
-                            should_execute = true;
-                        }
-                    } else if (force_execute_next) {
-                        should_execute = true;
-                    } else if (!matched) {
-                        should_execute = apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key));
+    used_std::size_t active_index = 0;
+
+    // Iterative loop handles all jumps, fallthroughs, and sequential progression
+    while (active_index < TotalCases) {
+        bool jump_taken = false;
+        bool executed   = false;
+
+        // std::tuple<CleanReturnType,Wildcard> result;
+
+        // Dispatch logic for the current active_index
+        auto [ret,w] = [&]<used_std::size_t... Is>(used_std::index_sequence<Is...>) -> std::tuple<CleanReturnType,Wildcard> {
+            ((active_index == Is ? (void)[&]() {
+                auto&& current_case = used_std::get<Is>(cases);
+                using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
+
+                // Check key match
+                if (apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key))) {
+                    using RawActionResult = decltype(execute_action(current_case.action, ctx));
+                    using CaseActionDecay = used_std::decay_t<RawActionResult>;
+
+                    // 1. Handle Goto Jump
+                    if constexpr (IsPureGoto<CaseActionDecay> || IsValueGoto<CaseActionDecay>) {
+                        constexpr auto TargetIndex = find_target_label_index_v<CaseActionDecay::label, used_std::remove_cvref_t<CasesTuple>>;
+                        active_index = TargetIndex; // Update target for next iteration
+                        jump_taken = true;
+                    } 
+                    // 2. Handle Fallthrough
+                    else if constexpr (mini_concepts::IsPureFallthrough<CaseActionDecay> || mini_concepts::IsValueFallthrough<CaseActionDecay>) {
+                        active_index = Is + 1; // Fall through to next case
+                        jump_taken = true;
                     }
-
-                    if (should_execute) {
-                        matched = true;
-                        force_execute_next = false;
-                        jump_requested = false;
-                        
-                        execute_action(current_case.action, ctx);
-                        using ActionDecay = used_std::decay_t<CleanReturnType>;
-
-                        if constexpr (mini_concepts::IsPureFallthrough<ActionDecay> || mini_concepts::IsValueFallthrough<ActionDecay>) {
-                            force_execute_next = true;
+                    // 3. Regular Terminal Execution
+                    else {
+                        if constexpr (used_std::is_same_v<CleanReturnType, Wildcard>) {
+                            return execute_action(current_case.action, ctx);
+                        } else {
+                            return execute_action(current_case.action, ctx);
                         }
-                        else if constexpr (IsPureGoto<ActionDecay>) {
-                            target_jump_label = is_goto_case<ActionDecay>::label;
-                            constexpr auto StaticLabel = is_goto_value<ActionDecay>::label;
-                            auto labelIndex = find_target_label_index_t<StaticLabel, CasesTuple>{};
-                            std::cout << used_std::get<labelIndex>(cases).label.data << "\n";
-                            jump_requested = true;
-                            current_iteration_jumped = true;
-                        }
-                        else if constexpr (IsValueGoto<ActionDecay>) {
-                            target_jump_label = is_goto_value<ActionDecay>::label;
-                            auto labelIndex = find_target_label_index_t<target_jump_label.data, CasesTuple>{};
-                            []<size_t... Iss> (std::index_sequence<Iss...>){
-                                ((std::cout << Iss << " "),...);
-                            }(labelIndex);
-                            jump_requested = true;
-                            current_iteration_jumped = true;
-                        }
+                        executed = true;
                     }
-                }(), ...);
-                if (!current_iteration_jumped && !force_execute_next) {
-                    break;
                 }
+                return execute_action(current_case.action, ctx);
+            }() : (void)0), ...);
+            return {};
+        }(used_std::make_index_sequence<TotalCases>{});
+
+        // Terminal case executed -> Exit loop and return
+        if (executed) {
+            if constexpr (!used_std::is_same_v<CleanReturnType, Wildcard>) {
+                return ret;
+            } else {
+                return;
             }
-            
-            if (!matched || force_execute_next || jump_requested) {
-                // Updated: Passed target to default execute_action
-                execute_action(default_action, ctx);
-            }
-        } 
-        else {
-            CleanReturnType result{};
-
-            while (loop_guard++ < MaxAllowedJumps) {
-                bool current_iteration_jumped = false;
-                
-                ([&]() {
-                    if (matched && !force_execute_next && !jump_requested) return;
-
-                    auto&& current_case = used_std::get<Is>(cases);
-                    using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
-                    
-                    bool should_execute = false;
-                    
-                    if (jump_requested) {
-                        if (current_case.label == target_jump_label) {
-                            should_execute = true;
-                        }
-                    } else if (force_execute_next) {
-                        should_execute = true;
-                    } else if (!matched) {
-                        should_execute = apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key));
-                    }
-
-                    if (should_execute) {
-                        matched = true;
-                        force_execute_next = false;
-                        jump_requested = false;
-                        
-                        // Updated: Passed target to execute_action
-                        decltype(auto) action_res = execute_action(current_case.action, ctx);
-                        using ActionDecay = used_std::decay_t<decltype(action_res)>;
-
-                        if constexpr (mini_concepts::IsPureFallthrough<ActionDecay>) {
-                            force_execute_next = true;
-                        }
-                        else if constexpr (mini_concepts::IsValueFallthrough<ActionDecay>) {
-                            result = action_res.value;
-                            force_execute_next = true;
-                        }
-                        else if constexpr (IsPureGoto<ActionDecay>) {
-                            target_jump_label = is_goto_case<ActionDecay>::label;
-                            
-                            // constexpr auto StaticLabel = is_goto_case<ActionDecay>::label;
-                            auto labelIndex = find_target_label_index_t<ActionDecay::label, used_std::remove_cvref_t<CasesTuple>>{};
-                            static_assert(used_std::is_same_v<decltype(labelIndex), used_std::index_sequence<3>>,"");
-                            []<size_t... Iss> (std::index_sequence<Iss...>){
-                                ((std::cout << Iss << " \n"), ...);
-                            }(labelIndex);
-                            // std::cout << used_std::get<labelIndex>(cases).label.data << "\n";
-                            jump_requested = true;
-                            current_iteration_jumped = true;
-                        }
-                        else if constexpr (IsValueGoto<ActionDecay>) {
-                            result = action_res.value;
-                            target_jump_label = is_goto_value<ActionDecay>::label;
-                            jump_requested = true;
-                            current_iteration_jumped = true;
-                        }
-                        else {
-                            result = action_res;
-                        }
-                    }
-                }(), ...);
-
-                if (!current_iteration_jumped && !force_execute_next) {
-                    break;
-                }
-            }
-            
-            if (matched && !force_execute_next && !jump_requested) {
-                return result;
-            }
-            
-            // Updated: Passed target to default execute_action
-            return execute_action(default_action, ctx);
         }
-    };
 
-    return unrolled_matrix_router(target, used_std::forward<DefaultType>(default_action), ctx, used_std::forward<CasesTuple>(cases),used_std::make_index_sequence<TotalCases>{});
+        // If no match occurred and no goto jump was triggered, proceed sequentially
+        if (!jump_taken) {
+            active_index++;
+        }
+    }
+
+    // Default Action (if no match or out-of-bounds jump)
+    if constexpr (used_std::is_same_v<CleanReturnType, Wildcard>) {
+        execute_action(default_action, ctx);
+    } else {
+        return execute_action(default_action, ctx);
+    }
 }
+// template <typename TargetType, typename DefaultType, typename ContextTuple, typename CasesTuple> 
+// requires (mini_concepts::TupleLike<used_std::remove_cvref_t<ContextTuple>> && 
+//           mini_concepts::TupleLike<used_std::remove_cvref_t<CasesTuple>>)
+// constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& default_action, ContextTuple& ctx, CasesTuple&& cases) {
+//     constexpr used_std::size_t TotalCases = used_std::tuple_size_v<used_std::remove_cvref_t<CasesTuple>>;
+
+//     using CoreReturnType  = decltype(execute_action(default_action, ctx));
+//     using CleanReturnType = typename UnwrapReturnType<CoreReturnType>::type;
+
+//     auto unrolled_matrix_router = []<used_std::size_t... Is>(
+//         const TargetType& target, 
+//         DefaultType&& default_action, 
+//         ContextTuple& ctx, 
+//         CasesTuple&& cases,
+//         used_std::index_sequence<Is...>
+//     ) -> CleanReturnType {
+        
+//         // Helper lambda to sequentially iterate without triggering all lambdas or default actions repeatedly
+//         auto evaluate_case = [&]<used_std::size_t I>() -> CleanReturnType {
+//             auto&& current_case = used_std::get<I>(cases);
+
+//             using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
+//             using RawActionResult   = decltype(execute_action(current_case.action, ctx));
+//             using CaseActionDecay   = used_std::decay_t<RawActionResult>;
+            
+//             if (apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key))) {
+
+//                 // Handle Fallthrough Cases
+//                 if constexpr (mini_concepts::IsPureFallthrough<CaseActionDecay> || mini_concepts::IsValueFallthrough<CaseActionDecay>) {
+//                     if constexpr (I + 1 < TotalCases) { // FIX 1: Prevent out-of-bounds access
+//                         auto&& next_case = used_std::get<I + 1>(cases);
+//                         using RawNextCase = used_std::remove_cvref_t<decltype(next_case)>;
+                        
+//                         if (evaluate_match(target, next_case.key)) {
+//                             if constexpr (used_std::is_same_v<RawNextCase, Wildcard>) {
+//                                 execute_action(next_case.action, ctx);
+//                                  // Signal execution handled
+//                             } else {
+//                                 return execute_action(next_case.action, ctx);
+//                             }
+//                         }
+//                     }
+//                 }
+//                 // Handle Pure Goto
+//                 else if constexpr (IsPureGoto<CaseActionDecay>) {
+//                     constexpr auto labelIndex = find_target_label_index_v<CaseActionDecay::label, used_std::remove_cvref_t<CasesTuple>>;
+                    
+//                     auto&& jump_case = used_std::get<labelIndex>(cases);
+//                     if (evaluate_match(target, jump_case.key)) {
+//                         if constexpr (used_std::is_same_v<CleanReturnType, Wildcard>) {
+//                             execute_action(jump_case.action, ctx); // FIX 4: Call jump_case.action, not current_case.action
+//                             return Wildcard{};
+//                         } else {
+//                             return execute_action(jump_case.action, ctx);
+//                         }
+//                     }
+//                 }
+//                 // Handle Value Goto
+//                 else if constexpr (IsPureGoto<CaseActionDecay>) {
+//                     constexpr auto labelIndex = find_target_label_index_v<CaseActionDecay::label, used_std::remove_cvref_t<CasesTuple>>;
+                    
+//                     auto&& jump_case = used_std::get<labelIndex>(cases);
+//                     if (evaluate_match(target, jump_case.key)) {
+//                         if constexpr (used_std::is_same_v<CleanReturnType, Wildcard>) {
+//                             execute_action(jump_case.action, ctx);
+//                             return Wildcard{};
+//                         } else {
+//                             return execute_action(jump_case.action, ctx);
+//                         }
+//                     }
+//                 }
+//                 // Regular Match Case
+//                 else {
+//                     if constexpr (used_std::is_same_v<CleanReturnType, Wildcard>) {
+//                         execute_action(current_case.action, ctx);
+//                         return Wildcard{};
+//                     } else {
+//                         return execute_action(current_case.action, ctx);
+//                     }
+//                 }
+//             }
+//             return {}; // No match on this case
+//         };
+        
+//         if constexpr (used_std::is_same_v<CleanReturnType, Wildcard>) {
+//             bool executed = false;
+//             // Short-circuit iteration as soon as a case matches
+//             ((!executed && (
+//                 [](const TargetType& target,CasesTuple&& cases,bool* cnd,auto* ev) {
+//                     auto&& current_case = used_std::get<Is>(cases);
+//                     using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
+//                     if (apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key))) {
+//                         ev->template operator()<Is>();
+//                         *cnd = true;
+//                     }
+//                 }(target,used_std::forward<CasesTuple>(cases),&executed,&evaluate_case), 0
+//             )), ...);
+
+//             if (!executed) {
+//                 execute_action(default_action, ctx);
+//             }
+//         } else {
+//             bool executed = false;
+//             CleanReturnType result{};
+            
+//             // FIX 3: Short-circuiting expansion for returning non-void types
+//             ((!executed && (
+//                 [](const TargetType& target,CasesTuple&& cases,CleanReturnType* ret,bool* cnd,auto* ev) {
+//                     auto&& current_case = used_std::get<Is>(cases);
+//                     using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
+//                     if (apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key))) {
+//                         *ret = ev->template operator()<Is>();
+//                         *cnd = true;
+//                     }
+//                 }(target,used_std::forward<CasesTuple>(cases),&result,&executed,&evaluate_case), 0
+//             )), ...);
+
+//             if (executed) {
+//                 return result;
+//             }
+//             return execute_action(default_action, ctx);
+//         }
+//         return {};
+//     };
+
+//     return unrolled_matrix_router(
+//         target, 
+//         used_std::forward<DefaultType>(default_action), 
+//         ctx, 
+//         used_std::forward<CasesTuple>(cases),
+//         used_std::make_index_sequence<TotalCases>{}
+//     );
+// }
+
 
 // ============================================================================
 // 9. PACK SEPARATION & DELAYED UNIVERSAL INITIALIZATION
@@ -1487,7 +1571,7 @@ struct SwitchTargetProxy {
     requires (sizeof...(ContextArgs) > 0) 
     constexpr auto operator[](ContextArgs&&... args) && noexcept {
         // FIX: Capture exact lvalue/rvalue reference categories to prevent dangling references
-        auto ctx_tuple = used_std::forward_as_tuple(used_std::forward<ContextArgs>(args)...);
+        auto ctx_tuple = used_std::tuple<ContextArgs...>(used_std::forward<ContextArgs>(args)...);
         using TupleType = decltype(ctx_tuple);
         static_assert(
             mini_concepts::TupleOfRefsOrPointers<TupleType>,
@@ -1498,8 +1582,7 @@ struct SwitchTargetProxy {
     template <typename... ContextArgs>
     requires (sizeof...(ContextArgs) > 0) 
     constexpr auto operator()(ContextArgs&&... args) && noexcept {
-        // FIX: Capture exact lvalue/rvalue reference categories to prevent dangling references
-        auto ctx_tuple = used_std::forward_as_tuple(used_std::forward<ContextArgs>(args)...);
+        auto ctx_tuple = used_std::tuple<ContextArgs...>(used_std::forward<ContextArgs>(args)...);
         using TupleType = decltype(ctx_tuple);
         static_assert(
             mini_concepts::TupleOfRefsOrPointers<TupleType>,
@@ -1549,7 +1632,7 @@ void showcase_hash_labels(std::string_view command) {
         Case("start")  >> [] { return "System Starting..."; },
         label_Case<"stop">("stop")   >> [] { return goto_case<"err">(); },
         Case("pause")  >> [] { return "System Paused."; },
-        label_Case<"err">(__)       >> [](std::string_view& s) { return s.data(); },
+        label_Case<"err">(__)       >> [](std::string_view& s) { return "err"; },
         []{return "UNDEFINED!";}
     );
 
@@ -1669,13 +1752,19 @@ int main () {
     };
     constexpr s test = 20;
     constexpr int num = 30;
-    static_assert(Match(num)[__] (
-        Case({{0,10},{20,30}}) >> []{return true;},
-        []{return false;}), "" );
+    // static_assert(Match(num)[__] (
+    //     Case({{0,10},{20,30}}) >> []{return true;},
+    //     []{return false;}), "" );
         
-    Match(num)[__] (
-        Case(ProjectionCase(20,&s::add,&test,num)) >> []{
+    int num2 = 30;
+    Match(num2)[&num2] (
+        label_Case<"inRange">({0,10}) >> []{
             std::cout << "is in range";
+        },
+        Case(__) >> [](int* i) {
+            --*i;
+            std::cout << "decrease" << *i << '\n';
+            return goto_case<"inRange">();
         },
         []{
             std::cout << "is not range";
@@ -1684,5 +1773,175 @@ int main () {
     return 1;
 }
 using testcase = used_std::tuple<ImplCase<"LabelID",int,int,BranchHint::None>,ImplCase<"range",int,int,BranchHint::None>,ImplCase<"shit",int,int,BranchHint::None>>;
-using testindex = find_target_label_index_t<"range", testcase>;
-static_assert(used_std::is_same_v<testindex, used_std::index_sequence<1>>,"" );
+constexpr auto testindex = find_target_label_index_v<"range", testcase>;
+
+static_assert(testindex == 1,"" );
+// static_assert(used_std::is_same_v<testindex, used_std::index_sequence<1>>,"" );
+
+// Unrolled Matrix State Router Engine Loop
+// template <typename TargetType, typename DefaultType, typename ContextTuple, typename CasesTuple> 
+// requires (mini_concepts::TupleLike<used_std::remove_cvref_t<ContextTuple>> && mini_concepts::TupleLike<used_std::remove_cvref_t<CasesTuple>>)
+// constexpr auto universal_switch_matrix2(const TargetType& target, DefaultType&& default_action, ContextTuple& ctx, CasesTuple&& cases) {
+//     constexpr used_std::size_t TotalCases = used_std::tuple_size_v<used_std::remove_cvref_t<CasesTuple>>;
+    
+//     using CoreReturnType  = decltype(execute_action(default_action, ctx));
+//     using CleanReturnType = typename UnwrapReturnType<CoreReturnType>::type;
+//     // Updated: Pass target to resolve correct return type
+    
+//     auto unrolled_matrix_router = []<used_std::size_t... Is>(const TargetType& target, DefaultType&& default_action, 
+//         ContextTuple& ctx, CasesTuple&& cases,used_std::index_sequence<Is...>) -> CleanReturnType {
+//         using RawFirstCase = used_std::remove_cvref_t<decltype(used_std::get<0>(cases))>;
+//         using LabelType    = used_std::remove_cvref_t<decltype(RawFirstCase::label)>;
+        
+//         LabelType target_jump_label{};
+//         bool matched = false;
+//         bool force_execute_next = false;
+//         bool jump_requested = false;
+        
+//         used_std::size_t loop_guard = 0;
+//         constexpr used_std::size_t MaxAllowedJumps = TotalCases * 2;
+
+//         // Separate void and non-void return type pathways
+//         if constexpr (used_std::is_same_v<CleanReturnType, void>) {
+//             while (loop_guard++ < MaxAllowedJumps) {
+//                 bool current_iteration_jumped = false;
+                
+//                 ([&]() {
+//                     if (matched && !force_execute_next && !jump_requested) return;
+                    
+//                     auto&& current_case = used_std::get<Is>(cases);
+//                     using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
+                    
+//                     bool should_execute = false;
+                    
+//                     if (jump_requested) {
+//                         if (current_case.label == target_jump_label) {
+//                             should_execute = true;
+//                         }
+//                     } else if (force_execute_next) {
+//                         should_execute = true;
+//                     } else if (!matched) {
+//                         should_execute = apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key));
+//                     }
+
+//                     if (should_execute) {
+//                         matched = true;
+//                         force_execute_next = false;
+//                         jump_requested = false;
+                        
+//                         execute_action(current_case.action, ctx);
+//                         using ActionDecay = used_std::decay_t<CleanReturnType>;
+
+//                         if constexpr (mini_concepts::IsPureFallthrough<ActionDecay> || mini_concepts::IsValueFallthrough<ActionDecay>) {
+//                             force_execute_next = true;
+//                         }
+//                         else if constexpr (IsPureGoto<ActionDecay>) {
+//                             target_jump_label = is_goto_case<ActionDecay>::label;
+//                             constexpr auto StaticLabel = is_goto_value<ActionDecay>::label;
+//                             auto labelIndex = find_target_label_index_t<StaticLabel, CasesTuple>{};
+//                             std::cout << used_std::get<labelIndex>(cases).label.data << "\n";
+//                             jump_requested = true;
+//                             current_iteration_jumped = true;
+//                         }
+//                         else if constexpr (IsValueGoto<ActionDecay>) {
+//                             target_jump_label = is_goto_value<ActionDecay>::label;
+//                             auto labelIndex = find_target_label_index_t<target_jump_label.data, CasesTuple>{};
+//                             []<size_t... Iss> (std::index_sequence<Iss...>){
+//                                 ((std::cout << Iss << " "),...);
+//                             }(labelIndex);
+//                             jump_requested = true;
+//                             current_iteration_jumped = true;
+//                         }
+//                     }
+//                 }(), ...);
+//                 if (!current_iteration_jumped && !force_execute_next) {
+//                     break;
+//                 }
+//             }
+            
+//             if (!matched || force_execute_next || jump_requested) {
+//                 // Updated: Passed target to default execute_action
+//                 execute_action(default_action, ctx);
+//             }
+//         } 
+//         else {
+//             CleanReturnType result{};
+
+//             while (loop_guard++ < MaxAllowedJumps) {
+//                 bool current_iteration_jumped = false;
+                
+//                 ([&]() {
+//                     if (matched && !force_execute_next && !jump_requested) return;
+
+//                     auto&& current_case = used_std::get<Is>(cases);
+//                     using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
+                    
+//                     bool should_execute = false;
+                    
+//                     if (jump_requested) {
+//                         if (current_case.label == target_jump_label) {
+//                             should_execute = true;
+//                         }
+//                     } else if (force_execute_next) {
+//                         should_execute = true;
+//                     } else if (!matched) {
+//                         should_execute = apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key));
+//                     }
+
+//                     if (should_execute) {
+//                         matched = true;
+//                         force_execute_next = false;
+//                         jump_requested = false;
+                        
+//                         // Updated: Passed target to execute_action
+//                         decltype(auto) action_res = execute_action(current_case.action, ctx);
+//                         using ActionDecay = used_std::decay_t<decltype(action_res)>;
+
+//                         if constexpr (mini_concepts::IsPureFallthrough<ActionDecay>) {
+//                             force_execute_next = true;
+//                         }
+//                         else if constexpr (mini_concepts::IsValueFallthrough<ActionDecay>) {
+//                             result = action_res.value;
+//                             force_execute_next = true;
+//                         }
+//                         else if constexpr (IsPureGoto<ActionDecay>) {
+//                             target_jump_label = is_goto_case<ActionDecay>::label;
+                            
+//                             // constexpr auto StaticLabel = is_goto_case<ActionDecay>::label;
+//                             auto labelIndex = find_target_label_index_t<ActionDecay::label, used_std::remove_cvref_t<CasesTuple>>{};
+//                             static_assert(used_std::is_same_v<decltype(labelIndex), used_std::index_sequence<3>>,"");
+//                             []<size_t... Iss> (std::index_sequence<Iss...>){
+//                                 ((std::cout << Iss << " \n"), ...);
+//                             }(labelIndex);
+//                             // std::cout << used_std::get<labelIndex>(cases).label.data << "\n";
+//                             jump_requested = true;
+//                             current_iteration_jumped = true;
+//                         }
+//                         else if constexpr (IsValueGoto<ActionDecay>) {
+//                             result = action_res.value;
+//                             target_jump_label = is_goto_value<ActionDecay>::label;
+//                             jump_requested = true;
+//                             current_iteration_jumped = true;
+//                         }
+//                         else {
+//                             result = action_res;
+//                         }
+//                     }
+//                 }(), ...);
+
+//                 if (!current_iteration_jumped && !force_execute_next) {
+//                     break;
+//                 }
+//             }
+            
+//             if (matched && !force_execute_next && !jump_requested) {
+//                 return result;
+//             }
+            
+//             // Updated: Passed target to default execute_action
+//             return execute_action(default_action, ctx);
+//         }
+//     };
+
+//     return unrolled_matrix_router(target, used_std::forward<DefaultType>(default_action), ctx, used_std::forward<CasesTuple>(cases),used_std::make_index_sequence<TotalCases>{});
+// }
