@@ -110,6 +110,68 @@ namespace used_std {
         used_std::invoke(used_std::forward<Fn>(a),used_std::forward<Args>(args)...);
     };
 
+    template <typename ContextTuple>
+    using CleanContextDecayed = decltype([]<typename... Ts>(used_std::tuple<Ts...>*) {
+        return used_std::tuple<used_std::decay_t<Ts>...>{};
+    }(static_cast<used_std::remove_cvref_t<ContextTuple>*>(nullptr)));
+
+    struct string_view {
+            const char* data_ptr = nullptr;
+            used_std::size_t len = 0;
+            constexpr string_view() = default;
+            constexpr string_view(const char* str) noexcept : data_ptr(str) { while (str[len] != '\0') { ++len; } }
+            constexpr bool operator==(const string_view& other) const noexcept {
+                if (len != other.len) return false;
+                for (used_std::size_t i = 0; i < len; ++i) { if (data_ptr[i] != other.data_ptr[i]) return false; }
+                return true;
+            }
+        };
+
+    namespace strHash {
+        constexpr unsigned int fnv1a_hash(const char* str, used_std::size_t length) noexcept {
+            used_std::size_t hash = static_cast<used_std::size_t>(2166136261U);
+            const used_std::size_t prime = static_cast<used_std::size_t>(16777619U);
+            
+            for (used_std::size_t i = 0; i < length; ++i) {
+                hash ^= static_cast<used_std::size_t>(str[i]);
+                hash *= prime;
+            }
+            return hash;
+        }
+    }
+
+    template <typename T>
+    struct UniversalView {
+        const T* ptr = nullptr;
+        used_std::size_t length = 0;
+
+        constexpr UniversalView() = default;
+
+        template <used_std::size_t N>
+        constexpr UniversalView(const T (&arr)[N]) noexcept : ptr(arr), length(N) {}
+
+        template <typename ContainerType>
+        constexpr UniversalView(const ContainerType& container) noexcept 
+            : ptr(container.data()), length(container.size()) {}
+
+        template <typename IteratorType>
+        constexpr UniversalView(IteratorType first, IteratorType last) noexcept {
+            if constexpr (used_std::is_pointer_v<IteratorType>) {
+                ptr = first;
+                length = static_cast<used_std::size_t>(last - first);
+            } else {
+                ptr = &(*first);
+                length = static_cast<used_std::size_t>(last - first);
+            }
+        }
+
+        constexpr const T* data() const noexcept { return ptr; }
+        constexpr used_std::size_t size() const noexcept { return length; }
+    };
+
+    //tuple stuff
+
+    
     template <typename Seq1, typename Seq2>
     struct concat_index_sequence;
 
@@ -241,72 +303,35 @@ namespace used_std {
     template <typename TupleA, typename TupleB>
     constexpr bool is_one_matching_index_t = (count_total_matches_t<TupleA, TupleB> == 1);
 
-    template <typename ContextTuple>
-    using CleanContextDecayed = decltype([]<typename... Ts>(used_std::tuple<Ts...>*) {
-        return used_std::tuple<used_std::decay_t<Ts>...>{};
-    }(static_cast<used_std::remove_cvref_t<ContextTuple>*>(nullptr)));
-
+    
     using Tuple1 = used_std::tuple<int, short, char, float, double,short>;
     using Tuple2 = used_std::tuple<short,double,short>;
-    using testmatching = get_unique_indices_t<Tuple1, Tuple2>;
-    static_assert(used_std::is_same_v<testmatching, used_std::index_sequence<1,4>>,"");
+    using testmatching = get_matching_indices_t<Tuple1, Tuple2>;
+    static_assert(used_std::is_same_v<testmatching, used_std::index_sequence<1,4,5>>,"");
     
-    struct string_view {
-            const char* data_ptr = nullptr;
-            used_std::size_t len = 0;
-            constexpr string_view() = default;
-            constexpr string_view(const char* str) noexcept : data_ptr(str) { while (str[len] != '\0') { ++len; } }
-            constexpr bool operator==(const string_view& other) const noexcept {
-                if (len != other.len) return false;
-                for (used_std::size_t i = 0; i < len; ++i) { if (data_ptr[i] != other.data_ptr[i]) return false; }
-                return true;
-            }
-        };
 
-    namespace strHash {
-        constexpr unsigned int fnv1a_hash(const char* str, used_std::size_t length) noexcept {
-            used_std::size_t hash = static_cast<used_std::size_t>(2166136261U);
-            const used_std::size_t prime = static_cast<used_std::size_t>(16777619U);
-            
-            for (used_std::size_t i = 0; i < length; ++i) {
-                hash ^= static_cast<used_std::size_t>(str[i]);
-                hash *= prime;
-            }
-            return hash;
-        }
+    template <auto Accessor, auto Value, typename Tuple>
+    inline constexpr used_std::size_t find_index_v = []<used_std::size_t... Is>(used_std::index_sequence<Is...>) {
+        using CleanTuple = used_std::remove_cvref_t<Tuple>;
+        used_std::size_t found_index = used_std::tuple_size_v<CleanTuple>;
+
+        ((void)((Accessor.template operator()<used_std::remove_cvref_t<used_std::tuple_element_t<Is, CleanTuple>>>() == Value)
+                ? (found_index = Is)
+                : 0
+        ), ...);
+
+        return found_index;
+    }(used_std::make_index_sequence<used_std::tuple_size_v<used_std::remove_cvref_t<Tuple>>>{});
+
+    template <auto Accessor,typename T,typename CasesTuple, used_std::size_t... Is>
+    constexpr used_std::size_t find_by_value(T target_hash, used_std::index_sequence<Is...>) {
+        using CleanTuple = used_std::remove_cvref_t<CasesTuple>;
+        used_std::size_t found_index = static_cast<used_std::size_t>(-1);
+        ((Accessor.template operator()<used_std::remove_cvref_t<used_std::tuple_element_t<Is, CleanTuple>>>() == target_hash ? (found_index = Is) : 0), ...);
+        
+        return found_index;
     }
-
-    template <typename T>
-    struct UniversalView {
-        const T* ptr = nullptr;
-        used_std::size_t length = 0;
-
-        constexpr UniversalView() = default;
-
-        template <used_std::size_t N>
-        constexpr UniversalView(const T (&arr)[N]) noexcept : ptr(arr), length(N) {}
-
-        template <typename ContainerType>
-        constexpr UniversalView(const ContainerType& container) noexcept 
-            : ptr(container.data()), length(container.size()) {}
-
-        template <typename IteratorType>
-        constexpr UniversalView(IteratorType first, IteratorType last) noexcept {
-            if constexpr (used_std::is_pointer_v<IteratorType>) {
-                ptr = first;
-                length = static_cast<used_std::size_t>(last - first);
-            } else {
-                ptr = &(*first);
-                length = static_cast<used_std::size_t>(last - first);
-            }
-        }
-
-        constexpr const T* data() const noexcept { return ptr; }
-        constexpr used_std::size_t size() const noexcept { return length; }
-    };
-
 }
-
 
 // Global user-defined string literal hash shortcut
 constexpr unsigned long long operator""_hash(const char* str, used_std::size_t) noexcept {
@@ -466,88 +491,6 @@ template <typename Action>
 using get_nullary_return_type_t = decltype(
     used_std::declval<Action>()()
 );
-
-template <typename Case, StaticLabel TargetLabel>
-struct case_returns_label {
-private:
-    // Helper to evaluate return type safely regardless of lambda parameters
-    template <typename C>
-    static auto test(int) -> typename used_std::conditional_t<
-        // Check if Action can be called with 0 arguments
-        used_std::is_invocable_v<typename C::ActionType>,
-        is_goto_case<used_std::invoke_result_t<typename C::ActionType>>,
-        // Fallback: If it takes arguments (e.g., used_std::string_view&)
-        is_goto_case<used_std::invoke_result_t<typename C::ActionType, used_std::string_view&>>
-    >;
-
-public:
-    static constexpr bool value = []() {
-        using Trait = decltype(test<Case>(0));
-        if constexpr (Trait::is_goto) {
-            return Trait::label == TargetLabel;
-        } {
-            return false;
-        }
-    }();
-};
-
-namespace detail 
-{
-    template <used_std::size_t... Is1, used_std::size_t... Is2>
-        constexpr auto operator+(used_std::index_sequence<Is1...>, used_std::index_sequence<Is2...>) {
-            return used_std::concat_index_sequence_t<used_std::index_sequence<Is1...>, used_std::index_sequence<Is2...>>{};
-    }
-    template <typename Case, StaticLabel TargetLabel>
-    inline constexpr bool case_returns_label_v = case_returns_label<Case, TargetLabel>::value;
-
-    // template <StaticLabel TargetLabel, typename TupleA, used_std::size_t... Is>
-    // constexpr auto find_target_label_index_impl(used_std::index_sequence<Is...>) {
-    //     return (
-    //         used_std::conditional_t<
-    //             (used_std::remove_cvref_t<used_std::tuple_element_t<Is, TupleA>>::label == TargetLabel),
-    //             used_std::index_sequence<Is>,
-    //             used_std::index_sequence<>
-    //         >{} + ... + used_std::index_sequence<>{}
-    //     );
-    // }
-    template <StaticLabel TargetLabel, typename TupleA, used_std::size_t... Is>
-    constexpr used_std::size_t find_target_label_index_impl(used_std::index_sequence<Is...>) {
-        using CleanTuple = used_std::remove_cvref_t<TupleA>;
-        
-        // Folds over the indices and returns the matching index (or total element count if not found)
-        used_std::size_t found_index = used_std::tuple_size_v<CleanTuple>;
-        
-        ((used_std::remove_cvref_t<used_std::tuple_element_t<Is, CleanTuple>>::label == TargetLabel 
-            ? (found_index = Is) 
-            : false) || ...);
-
-        return found_index;
-    }
-}
-
-template <StaticLabel TargetLabel, typename CasesTuple>
-using find_target_label_index_t = decltype(
-    detail::find_target_label_index_impl<TargetLabel, CasesTuple>(
-        used_std::make_index_sequence<used_std::tuple_size_v<CasesTuple>>{}
-    )
-);
-
-template <StaticLabel TargetLabel, typename CasesTuple>
-inline constexpr used_std::size_t find_target_label_index_v = 
-    detail::find_target_label_index_impl<TargetLabel, CasesTuple>(
-        used_std::make_index_sequence<
-            used_std::tuple_size_v<used_std::remove_cvref_t<CasesTuple>>
-        >{}
-    );
-
-template <typename CasesTuple, used_std::size_t... Is>
-constexpr used_std::size_t find_label_by_hash(unsigned int target_hash, used_std::index_sequence<Is...>) {
-    using CleanTuple = used_std::remove_cvref_t<CasesTuple>;
-    used_std::size_t found_index = static_cast<used_std::size_t>(-1);
-    ((used_std::remove_cvref_t<used_std::tuple_element_t<Is, CleanTuple>>::label == target_hash ? (found_index = Is) : 0), ...);
-    
-    return found_index;
-}
 
 struct Wildcard {};
 [[maybe_unused]] inline constexpr Wildcard __{};
@@ -1258,7 +1201,7 @@ constexpr decltype(auto) execute_action(ActionType&& action, ContextType& ctx) {
         
         using DecayedContext = used_std::CleanContextDecayed<CleanContext>;
         // Fix 2: Compare Tuple to Tuple (FnArgsTuple vs CleanContext)
-        using ResultSequence = used_std::get_unique_indices_t<FnArgsTuple, DecayedContext>;
+        using ResultSequence = used_std::get_matching_indices_t<FnArgsTuple, DecayedContext>;
         
         // Pass the calculated compile-time matching indices down to invoke used_std::get
         return []<used_std::size_t... Is>(auto&& act, auto& context, used_std::index_sequence<Is...>) -> decltype(auto) {
@@ -1349,11 +1292,11 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
 
                         // Signal: Goto Jump
                         if constexpr (IsPureGoto<CaseActionDecay> || IsValueGoto<CaseActionDecay>) {
-                            active_index = find_target_label_index_v<CaseActionDecay::label, used_std::remove_cvref_t<CasesTuple>>;
+                            active_index = used_std::find_index_v<[]<typename T>{return T::label;},CaseActionDecay::label, used_std::remove_cvref_t<CasesTuple>>;
                             jump_taken = true;
                         } 
                         else if constexpr (IsHashGoto<CaseActionDecay>) {
-                            active_index = find_label_by_hash<used_std::remove_cvref_t<CasesTuple>>(
+                            active_index = used_std::find_by_value<[]<typename T>{return T::label;},unsigned int,used_std::remove_cvref_t<CasesTuple>>(
                                 action_result.hash, 
                                 used_std::make_index_sequence<TotalCases>{}
                             );
@@ -1509,6 +1452,6 @@ constexpr auto Match(const TargetType& target) noexcept {
 #endif
 
 using testcase = used_std::tuple<ImplCase<"LabelID",int,int,BranchHint::None>,ImplCase<"range",int,int,BranchHint::None>,ImplCase<"shit",int,int,BranchHint::None>>;
-constexpr auto testindex = find_target_label_index_v<"range", testcase>;
+constexpr auto testindex = used_std::find_index_v<[]<typename T>{return T::label;},"range"_hash, testcase>;
 
 static_assert(testindex == 1,"" );

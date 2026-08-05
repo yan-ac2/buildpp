@@ -79,8 +79,8 @@ int test()
     #endif
     .setProjectPath(rootPath.string())
     .addSourcePath("testlib")
-    .addSource({(test.Path / test.getMainPath() / "match.cc").string()})
-    .setMain("match.cc");
+    .addSource({(test.Path / test.getMainPath() / "match_test.cc").string()})
+    .setMain("match_test.cc");
     // .getCppFile();
     
     #ifdef __unix__
