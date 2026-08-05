@@ -1,9 +1,12 @@
-#include <iostream>
-#include <string_view>
-#include <type_traits>
-#include <tuple>
-#include <utility>
 
+#ifndef MATCH_H
+#define MATCH_H
+
+
+    // #include <type_traits>
+    // #include <tuple>
+    // #include <utility>
+    #include "mini_std.hpp"
 
 
 // ============================================================================
@@ -11,7 +14,7 @@
 // ============================================================================
 
 namespace used_std {
-    using namespace std; 
+    using namespace mini_std; 
 
     template <typename T, typename = void>
     struct is_tuple_like : used_std::false_type {};
@@ -38,9 +41,7 @@ namespace used_std {
     struct function_traits_base {
         using return_type = Ret;
         using args_tuple  = used_std::tuple<Args...>;
-        using args_tuple_temp = decltype(
-            used_std::tuple{used_std::forward<Args>(used_std::declval<Args>())...}
-        );
+        using args_tuple_temp = used_std::tuple<used_std::decay_t<Args>&&...>;
         using args_tuple_ptr = used_std::tuple<used_std::add_pointer_t<used_std::decay_t<Args>>...>;
         using Idx_seq = used_std::make_index_sequence<sizeof...(Args)>;
 
@@ -77,19 +78,16 @@ namespace used_std {
     struct function_traits<Ret(Class::*)(Args...)> : function_traits_base<Ret, Args...> {
         using class_type = Class;
         using fn_type    = Ret(Class::*)(Args...);
-        using args_tuple_class_temp = decltype(
-            used_std::tuple{used_std::add_pointer_t<used_std::decay_t<decltype(used_std::declval<Class>())>>{},used_std::forward<Args>(used_std::declval<Args>())...}
-        );
+        using args_tuple_class_temp = used_std::tuple<used_std::add_pointer_t<used_std::decay_t<class_type>>,used_std::decay_t<Args>&&...>;
     };
 
     // 7. Const member function: Ret(Class::*)(Args...) const
     template <typename Ret, typename Class, typename... Args>
     struct function_traits<Ret(Class::*)(Args...) const> : function_traits_base<Ret, Args...> {
-        using class_type = Class;
+        using class_type = const Class;
         using fn_type    = Ret(Class::*)(Args...) const;
-        using args_tuple_class_temp = decltype(
-            used_std::tuple{used_std::add_pointer_t<const used_std::decay_t<decltype(used_std::declval<Class>())>>{},used_std::forward<Args>(used_std::declval<Args>())...}
-        );
+        using args_tuple_class_temp = used_std::tuple<used_std::add_pointer_t<const used_std::decay_t<class_type>>,used_std::decay_t<Args>&&...>;
+        
     };
 
     template <typename T>
@@ -243,6 +241,11 @@ namespace used_std {
     template <typename TupleA, typename TupleB>
     constexpr bool is_one_matching_index_t = (count_total_matches_t<TupleA, TupleB> == 1);
 
+    template <typename ContextTuple>
+    using CleanContextDecayed = decltype([]<typename... Ts>(used_std::tuple<Ts...>*) {
+        return used_std::tuple<used_std::decay_t<Ts>...>{};
+    }(static_cast<used_std::remove_cvref_t<ContextTuple>*>(nullptr)));
+
     using Tuple1 = used_std::tuple<int, short, char, float, double,short>;
     using Tuple2 = used_std::tuple<short,double,short>;
     using testmatching = get_unique_indices_t<Tuple1, Tuple2>;
@@ -350,6 +353,10 @@ struct StaticLabel {
     constexpr bool operator==(const StaticLabel<M>& other) const noexcept {  
         return hash == other.hash;
     }
+    
+    constexpr bool operator==(const unsigned int& other) const noexcept {  
+        return hash == other;
+    }
 
     constexpr StaticLabel& operator=(int val) noexcept {
         *this = StaticLabel<0>(val);
@@ -381,299 +388,10 @@ namespace mini_pack {
 
 template <typename TargetType, typename KeyType>
 [[nodiscard]] constexpr bool evaluate_match(const TargetType& target, const KeyType& key) noexcept;
-// ============================================================================
-// 1. FUNCTION PREDICATES DEFINITIONS
-// ============================================================================
-// --- Free Function / Lambda Predicate Wrapper / Unbound Member Function Predicate ---
-template <typename Fn> requires 
-(used_std::is_function<typename used_std::callable_traits_t<Fn>::fn_type>::value || 
-    used_std::is_member_function_pointer_v<typename used_std::callable_traits_t<Fn>::fn_type>)
-struct FnPredicate {
-    Fn fn;
 
-    template <typename Target> requires (used_std::invocable<Fn,Target>)
-    constexpr bool operator()(const Target& target) const {
-        if constexpr (used_std::is_member_function_pointer_v<Fn>) {
-            return (target.*fn)();
-        } else{
-            return used_std::invoke(fn, target);
-        }
-    }
-};
-
-// --- Bound Member Function Predicate (Instance + Member Function) ---
-template <typename Class, typename MemFn> 
-requires (used_std::is_class<Class>::value && used_std::is_member_function_pointer_v<MemFn>)
-struct BoundMemFnPredicate {
-    Class& instance;
-    MemFn mem_fn;
-
-    template <typename Target>
-    constexpr bool operator()(const Target& target) const {
-        return used_std::invoke(mem_fn, instance, target);
-    }
-};
-
-
-// --- Projection Case (Pattern + Member Function Extractor) ---
-template <typename Fn, typename ExpectedPattern> 
-requires (used_std::is_member_function_pointer_v<Fn> || used_std::is_function_v<Fn> ||
-(used_std::is_pointer_v<Fn> && used_std::is_function_v<used_std::remove_pointer_t<Fn>>))
-struct ProjectionCaseimpl {
-    using fnTraits = used_std::callable_traits_t<Fn>;
-    fnTraits::fn_type fn;
-    used_std::conditional_t<used_std::is_member_function_pointer_v<Fn>, 
-    typename fnTraits::args_tuple_class_temp, 
-    typename fnTraits::args_tuple_temp> args;
-    ExpectedPattern pattern;
-    template <typename Target>
-    constexpr bool operator()(const Target& target) const {
-        if constexpr (fnTraits::args > 0) {
-            if constexpr (used_std::is_member_function_pointer_v<Fn>) {
-                // using classRemoved = typename used_std::remove_index<0, fnTraits::args>::type;
-                decltype(auto) extracted_val = []<used_std::size_t...Is> (Fn fn,auto& args,auto& instance,used_std::index_sequence<Is...>) { 
-                    return used_std::invoke(fn,instance,used_std::get<Is>(args)...);
-                }(fn,args,used_std::get<0>(args),used_std::make_index_sequence_from_t<fnTraits::args>{});
-                return evaluate_match(extracted_val, pattern);
-            } else {
-                decltype(auto) extracted_val = []<used_std::size_t...Is> (Fn fn,auto& args,used_std::index_sequence<Is...>) { 
-                    return used_std::invoke(fn,used_std::get<Is>(args)...);
-                }(fn,args,typename fnTraits::Idx_seq{});
-                return evaluate_match(extracted_val, pattern);
-                
-            }
-
-        } else {
-            auto instance = static_cast<fnTraits::class_type>(target);
-            decltype(auto) extracted_val = used_std::invoke(fn,instance,pattern);
-            return evaluate_match(extracted_val, target);
-            
-        }
-    }
-};
-
-template <typename Fn>
-struct is_afnpredicate : used_std::false_type {};
-template <typename Fn>
-struct is_afnpredicate<FnPredicate<Fn>> : used_std::true_type {};
-template <typename Fn>
-concept is_fnpredicate = is_afnpredicate<FnPredicate<Fn>>::value;
-
-
-template <typename Fn>
-struct is_aboundfn_predicate : used_std::false_type {};
-template <typename Class, typename MemFn>
-struct is_aboundfn_predicate<BoundMemFnPredicate<Class,MemFn>> : used_std::true_type {};
-template <typename Class, typename MemFn>
-concept is_boundfn_predicate = is_aboundfn_predicate<BoundMemFnPredicate<Class,MemFn>>::value;
-
-template <typename Fn>
-struct is_projection_caseimpl : used_std::false_type {};
-template <typename MemFn, typename ExpectedPattern>
-struct is_projection_caseimpl<ProjectionCaseimpl<MemFn,ExpectedPattern>> : used_std::true_type {};
-template <typename MemFn, typename ExpectedPattern>
-concept is_projection_case = is_projection_caseimpl<ProjectionCaseimpl<MemFn,ExpectedPattern>>::value;
-
-
-template <typename Fn> requires 
-(used_std::is_function<typename used_std::callable_traits_t<Fn>::fn_type>::value || 
-    used_std::is_member_function_pointer_v<typename used_std::callable_traits_t<Fn>::fn_type>)
-constexpr auto Predicate(Fn&& fn) {
-    return FnPredicate<Fn>{ used_std::forward<Fn>(fn) };
-}
-
-template <typename Class, typename MemFn>
-requires (used_std::is_member_function_pointer_v<MemFn>)
-constexpr auto BoundPredicate(Class& obj, MemFn mem_fn) {
-    return BoundMemFnPredicate<Class, MemFn>{ obj, mem_fn };
-}
-
-// Helper builder function for Case(Pattern, &Class::member_fn)
-template <typename ExpectedPattern, typename Fn,typename... Args>
-requires (used_std::is_function_v<Fn> ||
-(used_std::is_pointer_v<Fn> && used_std::is_function_v<used_std::remove_pointer_t<Fn>>))
-constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn fn,Args&&... args) {
-    return ProjectionCaseimpl<typename used_std::callable_traits_t<used_std::remove_cvref_t<Fn>>::fn_type, used_std::decay_t<ExpectedPattern>>{
-        .fn = fn, 
-        .args = used_std::forward_as_tuple(used_std::forward<Args>(args)...),
-        .pattern = used_std::forward<ExpectedPattern>(pattern)
-    };
-}
-template <typename ExpectedPattern, typename Fn,typename Class,typename... Args>
-requires (used_std::is_function_v<Fn> || used_std::is_member_function_pointer_v<Fn>||
-(used_std::is_pointer_v<Fn> && used_std::is_function_v<used_std::remove_pointer_t<Fn>>))
-constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn fn,Class* instance,Args&&... args) {
-    return ProjectionCaseimpl<typename used_std::callable_traits_t<used_std::remove_cvref_t<Fn>>::fn_type, used_std::decay_t<ExpectedPattern>>{
-        .fn = fn, 
-        .args = used_std::forward_as_tuple(instance,used_std::forward<Args>(args)...),
-        .pattern = used_std::forward<ExpectedPattern>(pattern)
-    };
-}
-
-
-// 1. Free function / Lambda predicate matcher overload
-// template <typename Target, typename Fn>
-// constexpr bool evaluate_match(const Target& target, const FnPredicate<Fn>& pred) {
-//     return pred(target);
-// }
-
-// 2. Unbound member function matcher (Returns bool -> Predicate)
-// template <typename Target, typename MemFn>
-// constexpr bool evaluate_match(const Target& target, const MemFnPredicate<MemFn>& matcher) {
-//     return (target.*matcher.mem_fn)();
-// }
-
-// 3. Projection matcher (Extracts value via member function, tests against pattern)
-// template <typename Target, typename MemFn, typename ExpectedPattern>
-// requires (!used_std::is_same_v<used_std::invoke_result_t<MemFn, const Target&>, bool>)
-// constexpr bool evaluate_match(const Target& target, const ProjectionCaseimpl<MemFn, ExpectedPattern>& proj_case) {
-//     decltype(auto) extracted_val = used_std::invoke(proj_case.mem_fn, target);
-//     return evaluate_match(extracted_val, proj_case.pattern);
-// }
-
-// // 4. Bound member function matcher (Instance + Member Function)
-// template <typename Target, typename Class, typename MemFn>
-// constexpr bool evaluate_match(const Target& target, const BoundMemFnPredicate<Class, MemFn>& pred) {
-//     return pred(target);
-// }
-// ============================================================================
-// 2. MATHEMATICAL INTERVAL DEFINITIONS
-// ============================================================================
-enum class RangeType  { Closed, Open, HalfOpenLeft, HalfOpenRight };
-
-template <typename T,RangeType  iType = RangeType ::Closed> requires (used_std::is_arithmetic_v<T>)
-struct Range {
-    T min;
-    T max;
-    
-    constexpr bool contains(const T& target) const noexcept {
-        if constexpr (iType == RangeType::Closed) {
-            return (target >= min) && (target <= max);
-        } 
-        else if constexpr (iType == RangeType::Open) {
-            return (target > min) && (target < max);
-        }
-        else if constexpr (iType == RangeType::HalfOpenLeft) {
-            return (target > min) && (target <= max);
-        }
-        else if constexpr (iType == RangeType::HalfOpenRight) {
-            return (target >= min) && (target < max);
-        } else {
-            return false;
-        }
-    }
-};
-template <typename T> requires (used_std::is_arithmetic_v<T>)
-Range(T,T) -> Range<T>;
-
-template <typename T>
-struct is_range_inst : used_std::false_type {};
-
-template <typename T, RangeType  iType>
-struct is_range_inst<Range<T, iType>> : used_std::true_type {};
-
-template <typename T>
-concept is_range_instance = is_range_inst<used_std::remove_cvref_t<T>>::value;
-
-template <typename T,RangeType iType = RangeType::Closed> constexpr auto make_range(T min, T max) noexcept { return Range<T,iType>{min, max}; }
-template <typename T,RangeType iType = RangeType::Open> constexpr auto make_range_exclusive(T min, T max) noexcept { return Range<T,iType>{min, max}; }
-template <typename T,RangeType iType = RangeType::HalfOpenLeft> constexpr auto make_range_left_open(T min, T max) noexcept { return Range<T,iType>{min, max}; }
-template <typename T,RangeType iType = RangeType::HalfOpenRight> constexpr auto make_range_right_open(T min, T max) noexcept { return Range<T,iType>{min, max}; }
-
-
-template <typename... Ranges> requires (is_range_instance<Ranges> && ...)
-struct RangeCompound {
-    used_std::tuple<Ranges...> ranges;
-
-    constexpr explicit RangeCompound(Ranges... r) : ranges(used_std::move(r)...) {}
-
-    template <typename T>
-    constexpr bool contains(const T& target) const noexcept {
-        return used_std::apply([&target](const auto&... r) {
-            return (r.contains(target) || ...);
-        }, ranges);
-    }
-};
-template <typename... Ranges> 
-requires (is_range_instance<Ranges> && ...)
-RangeCompound(Ranges...) -> RangeCompound<Ranges...>;
-
-template <typename... Ranges>
-constexpr auto make_compound_range(Ranges&&... ranges) noexcept {
-    return RangeCompound<used_std::decay_t<Ranges>...>{used_std::forward<Ranges>(ranges)...};
-}
-// RangeCompound test {Range<int>{0,12},Range<int>{20,30}};
-// ============================================================================
-// 3. COMPLEX RELATIONAL MULTI-FIELD PREDICATES
-// ============================================================================
-enum class Op { Eq, Neq, Gt, Gte, Lt, Lte };
-
-
-template <typename ClassType, typename MemberType> requires 
-(used_std::is_class<ClassType>::value && (used_std::is_member_object_pointer_v<MemberType> || used_std::is_member_pointer<class Tp>::value))
-struct FieldRule {
-    MemberType ClassType::*member_ptr;
-    Op op_tag = Op::Eq;
-    MemberType value;
-
-    constexpr bool eval(const ClassType& obj) const noexcept {
-        const auto& target_field = obj.*member_ptr;
-        switch (op_tag) {
-            case Op::Eq:  return evaluate_match(target_field, value);
-            case Op::Neq: !evaluate_match(target_field, value);
-            case Op::Gt:  return target_field > value;
-            case Op::Gte: return target_field >= value;
-            case Op::Lt:  return target_field < value;
-            case Op::Lte: return target_field <= value;
-        }
-        return false;
-    }
-};
-
-template <typename T>
-struct is_field_rule : used_std::false_type {};
-
-template <typename Class, typename Member>
-struct is_field_rule<FieldRule<Class, Member>> : used_std::true_type {
-    using class_type = Class;
-};
-
-template <typename ClassType, typename... Rules> requires ((is_field_rule<Rules>::value && ...))
-struct MultiFieldPredicate {
-    used_std::tuple<Rules...> rules;
-
-    constexpr bool matches(const ClassType& obj) const noexcept {
-        return evaluate_all(obj, used_std::make_index_sequence<sizeof...(Rules)>{});
-    }
-private:
-    template <used_std::size_t... Is>
-    constexpr bool evaluate_all(const ClassType& obj, used_std::index_sequence<Is...>) const noexcept {
-        return (used_std::get<Is>(rules).eval(obj) && ...);
-    }
-};
-template <typename HeadRule, typename... TailRules>
-requires (is_field_rule<used_std::decay_t<HeadRule>>::value && 
-         (is_field_rule<used_std::decay_t<TailRules>>::value && ...))
-MultiFieldPredicate(HeadRule, TailRules...) 
-    -> MultiFieldPredicate<typename is_field_rule<used_std::decay_t<HeadRule>>::class_type, HeadRule, TailRules...>;
-
-template <typename ClassType, typename MemberType>
-constexpr auto field(MemberType ClassType::*member, Op op, MemberType&& val) noexcept {
-    return FieldRule<ClassType, used_std::decay_t<MemberType>>{member, op, used_std::forward<MemberType>(val)};
-}
-
-template <typename ClassType, typename MemberType>
-constexpr auto field(MemberType ClassType::*member, MemberType&& val) noexcept {
-    return FieldRule<ClassType, used_std::decay_t<MemberType>>{member, Op::Eq, used_std::forward<MemberType>(val)};
-}
-
-template <typename ClassType, typename... Rules>
-constexpr auto fields_match(Rules&&... rules) noexcept {
-    return MultiFieldPredicate<ClassType, used_std::decay_t<Rules>...>{ used_std::tuple<used_std::decay_t<Rules>...>(used_std::forward<Rules>(rules)...) };
-}
 
 // ============================================================================
-// 4. FLOW CONTROL STATE TRACE SIGNALS AND ENUMS
+// 1. FLOW CONTROL STATE TRACE SIGNALS AND ENUMS
 // ============================================================================
 enum class BranchHint { None, Likely, Unlikely };
 struct fallthrough_t {};
@@ -681,9 +399,20 @@ constexpr fallthrough_t fallthrough_to_next() noexcept { return fallthrough_t{};
 
 template <typename T> struct FallthroughValue { T value; };
 template <typename T> constexpr auto pass_and_fallthrough(T&& val) noexcept { return FallthroughValue<used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
-
+struct goto_hash_t {
+    unsigned int hash;
+};
 template <StaticLabel LabelID> struct goto_case_t {static constexpr auto label = LabelID;};
 template <StaticLabel LabelID> constexpr auto goto_case() noexcept { return goto_case_t<LabelID>{}; }
+template <used_std::size_t N>
+constexpr goto_hash_t goto_case(const char (&input)[N]) {
+    return goto_hash_t { used_std::strHash::fnv1a_hash(input, N - 1) };
+}
+
+template <used_std::size_t N>
+constexpr goto_hash_t goto_case(StaticLabel<N> label) {
+    return goto_hash_t{ label.hash };
+}
 
 template <StaticLabel LabelID, typename T> struct GotoValue { T value; };
 template <StaticLabel LabelID, typename T> constexpr auto pass_and_goto(T&& val) noexcept { return GotoValue<LabelID, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
@@ -718,7 +447,16 @@ template <typename T>
 concept IsValueGoto = is_goto_value<used_std::decay_t<T>>::value;
 
 template <typename T>
-concept IsGotoSignal = IsPureGoto<T> || IsValueGoto<T>;
+struct IsHashGoto_t : used_std::false_type {};
+
+template <>
+struct IsHashGoto_t<goto_hash_t> : used_std::true_type {};
+
+template <typename T>
+concept IsHashGoto = IsHashGoto_t<used_std::remove_cvref_t<T>>::value;
+
+template <typename T>
+concept IsGotoSignal = IsPureGoto<T> || IsValueGoto<T> || IsHashGoto<T>;;
 
 template <typename Action, typename... Args>
 using get_action_return_type_t = decltype(
@@ -801,8 +539,303 @@ inline constexpr used_std::size_t find_target_label_index_v =
             used_std::tuple_size_v<used_std::remove_cvref_t<CasesTuple>>
         >{}
     );
+
+template <typename CasesTuple, used_std::size_t... Is>
+constexpr used_std::size_t find_label_by_hash(unsigned int target_hash, used_std::index_sequence<Is...>) {
+    using CleanTuple = used_std::remove_cvref_t<CasesTuple>;
+    used_std::size_t found_index = static_cast<used_std::size_t>(-1);
+    ((used_std::remove_cvref_t<used_std::tuple_element_t<Is, CleanTuple>>::label == target_hash ? (found_index = Is) : 0), ...);
+    
+    return found_index;
+}
+
 struct Wildcard {};
 [[maybe_unused]] inline constexpr Wildcard __{};
+
+// ============================================================================
+// 2. FUNCTION PREDICATES DEFINITIONS
+// ============================================================================
+// --- Free Function / Lambda Predicate Wrapper / Unbound Member Function Predicate ---
+template <typename Fn> requires 
+(used_std::is_function<typename used_std::callable_traits_t<Fn>::fn_type>::value || 
+    used_std::is_member_function_pointer_v<typename used_std::callable_traits_t<Fn>::fn_type>)
+struct FnPredicate {
+    Fn fn;
+
+    template <typename Target> requires (used_std::invocable<Fn,Target>)
+    constexpr bool operator()(const Target& target) const {
+        if constexpr (used_std::is_member_function_pointer_v<Fn>) {
+            return (target.*fn)();
+        } else{
+            return used_std::invoke(fn, target);
+        }
+    }
+};
+
+// --- Bound Member Function Predicate (Instance + Member Function) ---
+template <typename Class, typename MemFn> 
+requires (used_std::is_class<Class>::value && used_std::is_member_function_pointer_v<MemFn>)
+struct BoundMemFnPredicate {
+    Class& instance;
+    MemFn mem_fn;
+
+    template <typename Target>
+    constexpr bool operator()(const Target& target) const {
+        return used_std::invoke(mem_fn, instance, target);
+    }
+};
+
+
+// --- Projection Case (Pattern + Member Function Extractor) ---
+template <typename Fn, typename ExpectedPattern> 
+requires (used_std::is_member_function_pointer_v<Fn> || used_std::is_function_v<Fn> ||
+(used_std::is_pointer_v<Fn> && used_std::is_function_v<used_std::remove_pointer_t<Fn>>))
+struct ProjectionCaseimpl {
+    using fnTraits = used_std::callable_traits_t<Fn>;
+    fnTraits::fn_type fn;
+    used_std::conditional_t<used_std::is_member_function_pointer_v<Fn>, 
+    typename fnTraits::args_tuple_class_temp, 
+    typename fnTraits::args_tuple_temp> args;
+    ExpectedPattern pattern;
+    template <typename Target>
+    constexpr bool operator()(const Target& target) const {
+        if constexpr (fnTraits::args > 0) {
+            if constexpr (used_std::is_member_function_pointer_v<Fn>) {
+                decltype(auto) extracted_val = []<used_std::size_t...Is> (Fn fn,auto& args,auto& instance,used_std::index_sequence<Is...>) { 
+                    return used_std::invoke(fn,instance,used_std::get<Is>(args)...);
+                }(fn,args,used_std::get<Instance>(args),used_std::make_index_sequence_from_t<fnTraits::args>{});
+                return evaluate_match(extracted_val, pattern);
+            } else {
+                decltype(auto) extracted_val = []<used_std::size_t...Is> (Fn fn,auto& args,used_std::index_sequence<Is...>) { 
+                    return used_std::invoke(fn,used_std::get<Is>(args)...);
+                }(fn,args,typename fnTraits::Idx_seq{});
+                return evaluate_match(extracted_val, pattern);
+            }
+        } else {
+            if constexpr (used_std::is_member_function_pointer_v<Fn>) {
+                decltype(auto) extracted_val = used_std::invoke(fn,used_std::get<Instance>(args));
+                return evaluate_match(extracted_val, pattern);
+            } else {
+                decltype(auto) extracted_val = used_std::invoke(fn);
+                return evaluate_match(extracted_val, pattern);
+            }
+        }
+    }
+    private:
+    enum __ {
+        Instance = 0
+    };
+};
+
+template <typename Fn>
+struct is_afnpredicate : used_std::false_type {};
+template <typename Fn>
+struct is_afnpredicate<FnPredicate<Fn>> : used_std::true_type {};
+template <typename Fn>
+concept is_fnpredicate = is_afnpredicate<FnPredicate<Fn>>::value;
+
+
+template <typename Fn>
+struct is_aboundfn_predicate : used_std::false_type {};
+template <typename Class, typename MemFn>
+struct is_aboundfn_predicate<BoundMemFnPredicate<Class,MemFn>> : used_std::true_type {};
+template <typename Class, typename MemFn>
+concept is_boundfn_predicate = is_aboundfn_predicate<BoundMemFnPredicate<Class,MemFn>>::value;
+
+template <typename Fn>
+struct is_projection_caseimpl : used_std::false_type {};
+template <typename MemFn, typename ExpectedPattern>
+struct is_projection_caseimpl<ProjectionCaseimpl<MemFn,ExpectedPattern>> : used_std::true_type {};
+template <typename MemFn, typename ExpectedPattern>
+concept is_projection_case = is_projection_caseimpl<ProjectionCaseimpl<MemFn,ExpectedPattern>>::value;
+
+
+template <typename Fn> requires 
+(used_std::is_function<typename used_std::callable_traits_t<Fn>::fn_type>::value || 
+    used_std::is_member_function_pointer_v<typename used_std::callable_traits_t<Fn>::fn_type>)
+constexpr auto Predicate(Fn&& fn) {
+    return FnPredicate<Fn>{ used_std::forward<Fn>(fn) };
+}
+
+template <typename Class, typename MemFn>
+requires (used_std::is_member_function_pointer_v<MemFn>)
+constexpr auto BoundPredicate(MemFn mem_fn,Class& obj) {
+    return BoundMemFnPredicate<Class, MemFn>{ obj, mem_fn };
+}
+
+// Helper builder function for Case(Pattern, &fn)
+template <typename ExpectedPattern, typename Fn,typename... Args>
+requires (!used_std::is_member_function_pointer_v<Fn> ||
+(used_std::is_pointer_v<Fn> && used_std::is_function_v<used_std::remove_pointer_t<Fn>>))
+constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn fn,Args&&... args) {
+    static_assert(sizeof...(Args) > used_std::callable_traits_t<used_std::remove_cvref_t<Fn>>::args, "Too Many Arguments");
+    static_assert(sizeof...(Args) < used_std::callable_traits_t<used_std::remove_cvref_t<Fn>>::args, "Not Enough Arguments");
+    return ProjectionCaseimpl<typename used_std::callable_traits_t<used_std::remove_cvref_t<Fn>>::fn_type, used_std::decay_t<ExpectedPattern>>{
+        .fn = fn, 
+        .args = used_std::forward_as_tuple(used_std::forward<Args>(args)...),
+        .pattern = used_std::forward<ExpectedPattern>(pattern)
+    };
+}
+// Helper builder function for Case(Pattern, &Class::member_fn)
+template <typename ExpectedPattern, typename Fn,typename Class,typename... Args>
+requires (used_std::is_member_function_pointer_v<Fn> && used_std::is_class_v<Class>)
+constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn fn,Class* instance,Args&&... args) {
+    if constexpr (sizeof...(Args) == 0) {
+        using classType = Class*;
+        return ProjectionCaseimpl<typename used_std::callable_traits_t<used_std::remove_cvref_t<Fn>>::fn_type, used_std::decay_t<ExpectedPattern>>{
+            .fn = fn, 
+            .args = used_std::tuple<classType>(instance),
+            .pattern = used_std::forward<ExpectedPattern>(pattern)
+        };
+    } else {
+        return ProjectionCaseimpl<typename used_std::callable_traits_t<used_std::remove_cvref_t<Fn>>::fn_type, used_std::decay_t<ExpectedPattern>>{
+            .fn = fn, 
+            .args = used_std::forward_as_tuple(instance,used_std::forward<Args>(args)...),
+            .pattern = used_std::forward<ExpectedPattern>(pattern)
+        };
+
+    }
+}
+
+// ============================================================================
+// 3. MATHEMATICAL INTERVAL DEFINITIONS
+// ============================================================================
+enum class RangeType  { Closed, Open, HalfOpenLeft, HalfOpenRight , Or };
+
+template <typename T,RangeType  iType = RangeType ::Closed> requires (used_std::is_arithmetic_v<T>)
+struct Range {
+    T min;
+    T max;
+    
+    constexpr bool contains(const T& target) const noexcept {
+        if constexpr (iType == RangeType::Closed) {
+            return (target >= min) && (target <= max);
+        } 
+        else if constexpr (iType == RangeType::Open) {
+            return (target > min) && (target < max);
+        }
+        else if constexpr (iType == RangeType::HalfOpenLeft) {
+            return (target > min) && (target <= max);
+        }
+        else if constexpr (iType == RangeType::HalfOpenLeft) {
+            return (target > min) && (target <= max);
+        }
+        else if constexpr (iType == RangeType::Or) {
+            return ( min  < target) || (target > max );
+        } 
+        else {
+            return false;
+        }
+    }
+};
+template <typename T> requires (used_std::is_arithmetic_v<T>)
+Range(T,T) -> Range<T>;
+
+template <typename T>
+struct is_range_inst : used_std::false_type {};
+
+template <typename T, RangeType  iType>
+struct is_range_inst<Range<T, iType>> : used_std::true_type {};
+
+template <typename T>
+concept is_range_instance = is_range_inst<used_std::remove_cvref_t<T>>::value;
+
+template <typename T,RangeType iType = RangeType::Closed> constexpr auto make_range(T min, T max) noexcept { return Range<T,iType>{min, max}; }
+template <typename T,RangeType iType = RangeType::Open> constexpr auto make_range_exclusive(T min, T max) noexcept { return Range<T,iType>{min, max}; }
+template <typename T,RangeType iType = RangeType::HalfOpenLeft> constexpr auto make_range_left_open(T min, T max) noexcept { return Range<T,iType>{min, max}; }
+template <typename T,RangeType iType = RangeType::HalfOpenRight> constexpr auto make_range_right_open(T min, T max) noexcept { return Range<T,iType>{min, max}; }
+
+
+template <typename... Ranges> requires (is_range_instance<Ranges> && ...)
+struct RangeCompound {
+    used_std::tuple<Ranges...> ranges;
+
+    constexpr explicit RangeCompound(Ranges... r) : ranges(used_std::move(r)...) {}
+
+    template <typename T>
+    constexpr bool contains(const T& target) const noexcept {
+        return used_std::apply([&target](const auto&... r) {
+            return (r.contains(target) || ...);
+        }, ranges);
+    }
+};
+template <typename... Ranges> 
+requires (is_range_instance<Ranges> && ...)
+RangeCompound(Ranges...) -> RangeCompound<Ranges...>;
+
+template <typename... Ranges>
+constexpr auto make_compound_range(Ranges&&... ranges) noexcept {
+    return RangeCompound<used_std::decay_t<Ranges>...>{used_std::forward<Ranges>(ranges)...};
+}
+// RangeCompound test {Range<int>{0,12},Range<int>{20,30}};
+// ============================================================================
+// 4. COMPLEX RELATIONAL MULTI-FIELD PREDICATES
+// ============================================================================
+enum class Op { Eq, Neq, Gt, Gte, Lt, Lte };
+
+
+template <typename ClassType, typename MemberType> requires 
+(used_std::is_class<ClassType>::value && (used_std::is_member_object_pointer_v<MemberType> || used_std::is_member_pointer<class Tp>::value))
+struct FieldRule {
+    MemberType ClassType::*member_ptr;
+    Op op_tag = Op::Eq;
+    MemberType value;
+
+    constexpr bool eval(const ClassType& obj) const noexcept {
+        const auto& target_field = obj.*member_ptr;
+        switch (op_tag) {
+            case Op::Eq:  return target_field == value;
+            case Op::Neq: return target_field != value;
+            case Op::Gt:  return target_field > value;
+            case Op::Gte: return target_field >= value;
+            case Op::Lt:  return target_field < value;
+            case Op::Lte: return target_field <= value;
+        }
+        return false;
+    }
+};
+
+template <typename T>
+struct is_field_rule : used_std::false_type {};
+
+template <typename Class, typename Member>
+struct is_field_rule<FieldRule<Class, Member>> : used_std::true_type {
+    using class_type = Class;
+};
+
+template <typename ClassType, typename... Rules> requires ((is_field_rule<Rules>::value && ...))
+struct MultiFieldPredicate {
+    used_std::tuple<Rules...> rules;
+
+    constexpr bool matches(const ClassType& obj) const noexcept {
+        return evaluate_all(obj, used_std::make_index_sequence<sizeof...(Rules)>{});
+    }
+private:
+    template <used_std::size_t... Is>
+    constexpr bool evaluate_all(const ClassType& obj, used_std::index_sequence<Is...>) const noexcept {
+        return (used_std::get<Is>(rules).eval(obj) && ...);
+    }
+};
+template <typename HeadRule, typename... TailRules>
+requires (is_field_rule<used_std::decay_t<HeadRule>>::value && 
+         (is_field_rule<used_std::decay_t<TailRules>>::value && ...))
+MultiFieldPredicate(HeadRule, TailRules...) 
+    -> MultiFieldPredicate<typename is_field_rule<used_std::decay_t<HeadRule>>::class_type, HeadRule, TailRules...>;
+
+template <typename ClassType, typename MemberType>
+constexpr auto field(MemberType ClassType::*member, Op op, MemberType&& val) noexcept {
+    return FieldRule<ClassType, used_std::decay_t<MemberType>>{member, op, used_std::forward<MemberType>(val)};
+}
+
+template <typename ClassType, typename MemberType>
+constexpr auto field(MemberType ClassType::*member, MemberType&& val) noexcept {
+    return FieldRule<ClassType, used_std::decay_t<MemberType>>{member, Op::Eq, used_std::forward<MemberType>(val)};
+}
+
+template <typename ClassType, typename... Rules>
+constexpr auto fields_match(Rules&&... rules) noexcept {
+    return MultiFieldPredicate<ClassType, used_std::decay_t<Rules>...>{ used_std::tuple<used_std::decay_t<Rules>...>(used_std::forward<Rules>(rules)...) };
+}
 
 // ============================================================================
 // 5. UNIFIED DEDUPLICATED ITERATION SUB-PREDICATES (TUPLES, VIEWS, BITS)
@@ -833,7 +866,15 @@ template <typename T> constexpr auto array_has_all(T&& val) noexcept { return Al
 constexpr auto array_has_size(used_std::size_t sz) noexcept { return SliceSizeValidator{ sz }; }
 
 enum class BitPolicy { AnySet, AllSet, AllClear };
-template <BitPolicy Policy, typename T> struct BitwisePredicate { T bit_mask; };
+template <BitPolicy Policy, typename T> struct BitwisePredicate { 
+    T bit_mask; 
+    constexpr bool operator==(const T& target) {
+        if constexpr (Policy == BitPolicy::AnySet)   { return (target & bit_mask) != 0; }
+        if constexpr (Policy == BitPolicy::AllSet)   { return (target & bit_mask) == bit_mask; }
+        if constexpr (Policy == BitPolicy::AllClear) { return (target & bit_mask) == 0; }
+        return false;
+    }
+};
 
 template <typename T> constexpr auto bits_any_set(T mask) noexcept { return BitwisePredicate<BitPolicy::AnySet, used_std::decay_t<T>>{ mask }; }
 template <typename T> constexpr auto bits_all_set(T mask) noexcept { return BitwisePredicate<BitPolicy::AllSet, used_std::decay_t<T>>{ mask }; }
@@ -1092,6 +1133,7 @@ template <typename TargetType, typename KeyType>
 // ============================================================================
 // 7. UNIFIED CASING LAYOUT STORAGE WITH HINT PARAMETERS
 // ============================================================================
+
 template <StaticLabel LabelID, typename KeyType, typename ActionType, BranchHint HintValue>
 struct ImplCase {
     KeyType key;
@@ -1109,7 +1151,7 @@ struct SugarProxyKey {
     template <typename ActionType>
     constexpr auto operator>>(ActionType&& action) && noexcept {
         return ImplCase<LabelID, KeyType, used_std::decay_t<ActionType>, Hint>{
-            used_std::forward<KeyType>(key), used_std::forward<ActionType>(action)
+            .key=used_std::forward<KeyType>(key), .action=used_std::forward<ActionType>(action)
         };
     }
 };
@@ -1121,13 +1163,13 @@ template <BranchHint Hint = BranchHint::None,typename T> constexpr auto Case(T&&
 template <RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T> requires (used_std::is_arithmetic_v<T>) constexpr auto Case(const T(&range)[2]) noexcept { 
     return SugarProxyKey<0, Hint, Range<T,iType>>{ {.min=range[0],.max=range[1]}}; 
 }
-template <RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T,size_t N> requires (used_std::is_arithmetic_v<T>) constexpr auto Case(const T(&range)[N][2]) noexcept { 
+template <RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T,used_std::size_t N> requires (used_std::is_arithmetic_v<T>) constexpr auto Case(const T(&rangeCompound)[N][2]) noexcept { 
      return []<used_std::size_t... Is>(const T (&arr)[N][2], used_std::index_sequence<Is...>) {
         auto compound = make_compound_range(
             Range<T, iType>{arr[Is][0], arr[Is][1]}...
         );
         return SugarProxyKey<0, Hint, decltype(compound)>{ used_std::move(compound) };
-    }(range, used_std::make_index_sequence<N>{});
+    }(rangeCompound, used_std::make_index_sequence<N>{});
 }
 template <typename T> constexpr auto likely_Case(T&& val) noexcept { return SugarProxyKey<0, BranchHint::Likely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
 template <typename T> constexpr auto unlikely_Case(T&& val) noexcept { return SugarProxyKey<0, BranchHint::Unlikely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
@@ -1142,7 +1184,7 @@ template <StaticLabel LabelID,RangeType iType = RangeType::Closed,BranchHint Hin
 constexpr auto label_Case(const T(&range)[2]) noexcept { 
     return SugarProxyKey<LabelID, Hint, Range<T,iType>>{ {.min=range[0],.max=range[1]}}; 
 }
-template <StaticLabel LabelID,RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T,size_t N> requires (used_std::is_arithmetic_v<T>) 
+template <StaticLabel LabelID,RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T,used_std::size_t N> requires (used_std::is_arithmetic_v<T>) 
 constexpr auto label_Case(const T(&range)[N][2]) noexcept { 
      return []<used_std::size_t... Is>(const T (&arr)[N][2], used_std::index_sequence<Is...>) {
         auto compound = make_compound_range(
@@ -1155,6 +1197,7 @@ template <StaticLabel LabelID, typename T>
 constexpr auto likely_label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::Likely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
 template <StaticLabel LabelID, typename T> 
 constexpr auto unlikely_label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::Unlikely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
+
 
 // Hardware Prediction Branch Optimizer Hints Primitive Mapping
 template <BranchHint Hint>
@@ -1213,8 +1256,9 @@ constexpr decltype(auto) execute_action(ActionType&& action, ContextType& ctx) {
         // Extract the explicit used_std::tuple of the function parameters
         using FnArgsTuple = typename FnTrait::args_tuple;
         
+        using DecayedContext = used_std::CleanContextDecayed<CleanContext>;
         // Fix 2: Compare Tuple to Tuple (FnArgsTuple vs CleanContext)
-        using ResultSequence = used_std::get_unique_indices_t<FnArgsTuple, CleanContext>;
+        using ResultSequence = used_std::get_unique_indices_t<FnArgsTuple, DecayedContext>;
         
         // Pass the calculated compile-time matching indices down to invoke used_std::get
         return []<used_std::size_t... Is>(auto&& act, auto& context, used_std::index_sequence<Is...>) -> decltype(auto) {
@@ -1235,6 +1279,10 @@ struct UnwrapReturnType<fallthrough_t> {
     using type = Wildcard;
 };
 template <>
+struct UnwrapReturnType<goto_hash_t> {
+    using type = Wildcard;
+};
+template <>
 struct UnwrapReturnType<void> {
     using type = Wildcard;
 };
@@ -1246,7 +1294,7 @@ struct UnwrapReturnType<FallthroughValue<T>> {
 
 template <auto LabelID>
 struct UnwrapReturnType<goto_case_t<LabelID>> {
-    using type = decltype(LabelID);
+    using type = goto_case_t<LabelID>;//decltype(LabelID);
 };
 
 template <auto LabelID, typename T>
@@ -1264,251 +1312,112 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
     using CleanReturnType = typename UnwrapReturnType<CoreReturnType>::type;
 
     used_std::size_t active_index = 0;
+    
+    // Safety guard against infinite loops in cyclic GOTOs
+    // constexpr used_std::size_t MaxSteps = 1024;
+    // used_std::size_t step_count = 0;
 
-    // Iterative loop handles all jumps, fallthroughs, and sequential progression
+    CleanReturnType value;
+    
     while (active_index < TotalCases) {
+        // if (++step_count > MaxSteps) {
+            //     break; // Terminate safely on loop limit
+        // }
+        
+        bool executed = false;
         bool jump_taken = false;
-        bool executed   = false;
 
-        // std::tuple<CleanReturnType,Wildcard> result;
-
-        // Dispatch logic for the current active_index
-        auto [ret,w] = [&]<used_std::size_t... Is>(used_std::index_sequence<Is...>) -> std::tuple<CleanReturnType,Wildcard> {
+        // Fold expression across static case indices
+        [&]<used_std::size_t... Is>(used_std::index_sequence<Is...>) {
             ((active_index == Is ? (void)[&]() {
-                auto&& current_case = used_std::get<Is>(cases);
+                auto& current_case = used_std::get<Is>(cases);
                 using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
 
-                // Check key match
+                // 1. Evaluate match condition
                 if (apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key))) {
                     using RawActionResult = decltype(execute_action(current_case.action, ctx));
-                    using CaseActionDecay = used_std::decay_t<RawActionResult>;
 
-                    // 1. Handle Goto Jump
-                    if constexpr (IsPureGoto<CaseActionDecay> || IsValueGoto<CaseActionDecay>) {
-                        constexpr auto TargetIndex = find_target_label_index_v<CaseActionDecay::label, used_std::remove_cvref_t<CasesTuple>>;
-                        active_index = TargetIndex; // Update target for next iteration
-                        jump_taken = true;
-                    } 
-                    // 2. Handle Fallthrough
-                    else if constexpr (mini_concepts::IsPureFallthrough<CaseActionDecay> || mini_concepts::IsValueFallthrough<CaseActionDecay>) {
-                        active_index = Is + 1; // Fall through to next case
-                        jump_taken = true;
-                    }
-                    // 3. Regular Terminal Execution
-                    else {
-                        if constexpr (used_std::is_same_v<CleanReturnType, Wildcard>) {
-                            return execute_action(current_case.action, ctx);
-                        } else {
-                            return execute_action(current_case.action, ctx);
-                        }
+                    // 2. Handle VOID returning actions
+                    if constexpr (used_std::is_same_v<RawActionResult, void> || used_std::is_same_v<RawActionResult, Wildcard>) {
+                        execute_action(current_case.action, ctx);
                         executed = true;
+                    } 
+                    // 3. Handle NON-VOID returning actions (Signals / Values)
+                    else {
+                        decltype(auto) action_result = execute_action(current_case.action, ctx);
+                        using CaseActionDecay = used_std::decay_t<decltype(action_result)>;
+
+                        // Signal: Goto Jump
+                        if constexpr (IsPureGoto<CaseActionDecay> || IsValueGoto<CaseActionDecay>) {
+                            active_index = find_target_label_index_v<CaseActionDecay::label, used_std::remove_cvref_t<CasesTuple>>;
+                            jump_taken = true;
+                        } 
+                        else if constexpr (IsHashGoto<CaseActionDecay>) {
+                            active_index = find_label_by_hash<used_std::remove_cvref_t<CasesTuple>>(
+                                action_result.hash, 
+                                used_std::make_index_sequence<TotalCases>{}
+                            );
+                            jump_taken = true;
+                        }
+                        // Signal: Fallthrough
+                        else if constexpr (mini_concepts::IsPureFallthrough<CaseActionDecay> || mini_concepts::IsValueFallthrough<CaseActionDecay>) {
+                            active_index = Is + 1;
+                            jump_taken = true;
+                        }
+                        // Terminal Value Return
+                        else {
+                            if constexpr (!(used_std::is_same_v<CaseActionDecay, void> || used_std::is_same_v<CaseActionDecay, Wildcard>)) {
+                                value = action_result;
+                            }
+                            executed = true;
+                        }
                     }
                 }
-                return execute_action(current_case.action, ctx);
             }() : (void)0), ...);
-            return {};
         }(used_std::make_index_sequence<TotalCases>{});
 
-        // Terminal case executed -> Exit loop and return
+        // Exit immediately if a terminal action ran
         if (executed) {
-            if constexpr (!used_std::is_same_v<CleanReturnType, Wildcard>) {
-                return ret;
-            } else {
+            if constexpr (used_std::is_same_v<CleanReturnType, void> || used_std::is_same_v<CleanReturnType, Wildcard>) {
                 return;
+            } else {
+                return used_std::move(value);
             }
         }
 
-        // If no match occurred and no goto jump was triggered, proceed sequentially
+        // If no jump was triggered by a matching condition, move to the next index
         if (!jump_taken) {
             active_index++;
         }
     }
 
-    // Default Action (if no match or out-of-bounds jump)
-    if constexpr (used_std::is_same_v<CleanReturnType, Wildcard>) {
+    // Default Fallback
+    if constexpr (used_std::is_same_v<CleanReturnType, void> || used_std::is_same_v<CleanReturnType, Wildcard>) {
         execute_action(default_action, ctx);
     } else {
         return execute_action(default_action, ctx);
     }
 }
-// template <typename TargetType, typename DefaultType, typename ContextTuple, typename CasesTuple> 
-// requires (mini_concepts::TupleLike<used_std::remove_cvref_t<ContextTuple>> && 
-//           mini_concepts::TupleLike<used_std::remove_cvref_t<CasesTuple>>)
-// constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& default_action, ContextTuple& ctx, CasesTuple&& cases) {
-//     constexpr used_std::size_t TotalCases = used_std::tuple_size_v<used_std::remove_cvref_t<CasesTuple>>;
-
-//     using CoreReturnType  = decltype(execute_action(default_action, ctx));
-//     using CleanReturnType = typename UnwrapReturnType<CoreReturnType>::type;
-
-//     auto unrolled_matrix_router = []<used_std::size_t... Is>(
-//         const TargetType& target, 
-//         DefaultType&& default_action, 
-//         ContextTuple& ctx, 
-//         CasesTuple&& cases,
-//         used_std::index_sequence<Is...>
-//     ) -> CleanReturnType {
-        
-//         // Helper lambda to sequentially iterate without triggering all lambdas or default actions repeatedly
-//         auto evaluate_case = [&]<used_std::size_t I>() -> CleanReturnType {
-//             auto&& current_case = used_std::get<I>(cases);
-
-//             using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
-//             using RawActionResult   = decltype(execute_action(current_case.action, ctx));
-//             using CaseActionDecay   = used_std::decay_t<RawActionResult>;
-            
-//             if (apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key))) {
-
-//                 // Handle Fallthrough Cases
-//                 if constexpr (mini_concepts::IsPureFallthrough<CaseActionDecay> || mini_concepts::IsValueFallthrough<CaseActionDecay>) {
-//                     if constexpr (I + 1 < TotalCases) { // FIX 1: Prevent out-of-bounds access
-//                         auto&& next_case = used_std::get<I + 1>(cases);
-//                         using RawNextCase = used_std::remove_cvref_t<decltype(next_case)>;
-                        
-//                         if (evaluate_match(target, next_case.key)) {
-//                             if constexpr (used_std::is_same_v<RawNextCase, Wildcard>) {
-//                                 execute_action(next_case.action, ctx);
-//                                  // Signal execution handled
-//                             } else {
-//                                 return execute_action(next_case.action, ctx);
-//                             }
-//                         }
-//                     }
-//                 }
-//                 // Handle Pure Goto
-//                 else if constexpr (IsPureGoto<CaseActionDecay>) {
-//                     constexpr auto labelIndex = find_target_label_index_v<CaseActionDecay::label, used_std::remove_cvref_t<CasesTuple>>;
-                    
-//                     auto&& jump_case = used_std::get<labelIndex>(cases);
-//                     if (evaluate_match(target, jump_case.key)) {
-//                         if constexpr (used_std::is_same_v<CleanReturnType, Wildcard>) {
-//                             execute_action(jump_case.action, ctx); // FIX 4: Call jump_case.action, not current_case.action
-//                             return Wildcard{};
-//                         } else {
-//                             return execute_action(jump_case.action, ctx);
-//                         }
-//                     }
-//                 }
-//                 // Handle Value Goto
-//                 else if constexpr (IsPureGoto<CaseActionDecay>) {
-//                     constexpr auto labelIndex = find_target_label_index_v<CaseActionDecay::label, used_std::remove_cvref_t<CasesTuple>>;
-                    
-//                     auto&& jump_case = used_std::get<labelIndex>(cases);
-//                     if (evaluate_match(target, jump_case.key)) {
-//                         if constexpr (used_std::is_same_v<CleanReturnType, Wildcard>) {
-//                             execute_action(jump_case.action, ctx);
-//                             return Wildcard{};
-//                         } else {
-//                             return execute_action(jump_case.action, ctx);
-//                         }
-//                     }
-//                 }
-//                 // Regular Match Case
-//                 else {
-//                     if constexpr (used_std::is_same_v<CleanReturnType, Wildcard>) {
-//                         execute_action(current_case.action, ctx);
-//                         return Wildcard{};
-//                     } else {
-//                         return execute_action(current_case.action, ctx);
-//                     }
-//                 }
-//             }
-//             return {}; // No match on this case
-//         };
-        
-//         if constexpr (used_std::is_same_v<CleanReturnType, Wildcard>) {
-//             bool executed = false;
-//             // Short-circuit iteration as soon as a case matches
-//             ((!executed && (
-//                 [](const TargetType& target,CasesTuple&& cases,bool* cnd,auto* ev) {
-//                     auto&& current_case = used_std::get<Is>(cases);
-//                     using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
-//                     if (apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key))) {
-//                         ev->template operator()<Is>();
-//                         *cnd = true;
-//                     }
-//                 }(target,used_std::forward<CasesTuple>(cases),&executed,&evaluate_case), 0
-//             )), ...);
-
-//             if (!executed) {
-//                 execute_action(default_action, ctx);
-//             }
-//         } else {
-//             bool executed = false;
-//             CleanReturnType result{};
-            
-//             // FIX 3: Short-circuiting expansion for returning non-void types
-//             ((!executed && (
-//                 [](const TargetType& target,CasesTuple&& cases,CleanReturnType* ret,bool* cnd,auto* ev) {
-//                     auto&& current_case = used_std::get<Is>(cases);
-//                     using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
-//                     if (apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key))) {
-//                         *ret = ev->template operator()<Is>();
-//                         *cnd = true;
-//                     }
-//                 }(target,used_std::forward<CasesTuple>(cases),&result,&executed,&evaluate_case), 0
-//             )), ...);
-
-//             if (executed) {
-//                 return result;
-//             }
-//             return execute_action(default_action, ctx);
-//         }
-//         return {};
-//     };
-
-//     return unrolled_matrix_router(
-//         target, 
-//         used_std::forward<DefaultType>(default_action), 
-//         ctx, 
-//         used_std::forward<CasesTuple>(cases),
-//         used_std::make_index_sequence<TotalCases>{}
-//     );
-// }
 
 
 // ============================================================================
 // 9. PACK SEPARATION & DELAYED UNIVERSAL INITIALIZATION
 // ============================================================================
-namespace mini_pack {
-    template <used_std::size_t Index, typename... Ts> struct pack_element;
 
-    template <typename Head, typename... Tail> struct pack_element<0, Head, Tail...> {
-        using type = Head;
-        constexpr static decltype(auto) extract(Head&& head, Tail&&...) noexcept { 
-            return used_std::forward<Head>(head); 
-        }
-    };
-
-    template <used_std::size_t Index, typename Head, typename... Tail> struct pack_element<Index, Head, Tail...> {
-        using type = typename pack_element<Index - 1, Tail...>::type;
-        constexpr static decltype(auto) extract(Head&&, Tail&&... tail) noexcept { 
-            return pack_element<Index - 1, Tail...>::extract(used_std::forward<Tail>(tail)...); 
-        }
-    };
-
-    template <typename Tuple, used_std::size_t... Is> 
-    requires (mini_concepts::TupleLike<used_std::remove_cvref_t<Tuple>>)
-    constexpr auto make_cases_tuple_impl(Tuple&& full_tuple, used_std::index_sequence<Is...>) {
-        return used_std::make_tuple(
-            used_std::get<Is>(used_std::forward<Tuple>(full_tuple))...
+template <used_std::size_t... Is, typename TargetType, typename DefaultType, typename ContextTuple, typename CasesTuple> 
+requires (
+    mini_concepts::TupleLike<used_std::remove_cvref_t<ContextTuple>> && 
+    mini_concepts::TupleLike<used_std::remove_cvref_t<CasesTuple>>)
+constexpr auto evaluate_sorted_matrix(used_std::index_sequence<Is...>, const TargetType& target, DefaultType&& default_action, ContextTuple&& ctx, CasesTuple&& cases) {
+    if constexpr (sizeof...(Is) > 0) {
+        return universal_switch_matrix(
+            target, 
+            used_std::forward<DefaultType>(default_action), 
+            ctx,
+            used_std::forward<CasesTuple>(cases)
         );
-    }
-
-    template <used_std::size_t... Is, typename TargetType, typename DefaultType, typename ContextTuple, typename CasesTuple> 
-    requires (
-        mini_concepts::TupleLike<used_std::remove_cvref_t<ContextTuple>> && 
-        mini_concepts::TupleLike<used_std::remove_cvref_t<CasesTuple>>)
-    constexpr auto evaluate_sorted_matrix(used_std::index_sequence<Is...>, const TargetType& target, DefaultType&& default_action, ContextTuple&& ctx, CasesTuple&& cases) {
-        if constexpr (sizeof...(Is) > 0) {
-            return universal_switch_matrix(
-                target, 
-                used_std::forward<DefaultType>(default_action), 
-                ctx,
-                used_std::forward<CasesTuple>(cases)
-            );
-        } else {
-            return execute_action(used_std::forward<DefaultType>(default_action), ctx, target);
-        }
+    } else {
+        return execute_action(used_std::forward<DefaultType>(default_action), ctx, target);
     }
 }
 
@@ -1532,7 +1441,7 @@ constexpr auto universal_switch(const TargetType& target, ContextTuple&& ctx, Al
                 used_std::get<Is>(used_std::forward<decltype(args_tuple)>(args_tuple))...
             );
 
-            return mini_pack::evaluate_sorted_matrix(
+            return evaluate_sorted_matrix(
                 used_std::make_index_sequence<CaseCount>{}, 
                 target, 
                 used_std::forward<decltype(default_action)>(default_action), 
@@ -1567,8 +1476,7 @@ struct SwitchTargetProxy {
         return SwitchPipelineProxy<TargetType, EmptyTuple>{ target, EmptyTuple{} };
     }
 
-    template <typename... ContextArgs>
-    requires (sizeof...(ContextArgs) > 0) 
+    template <typename... ContextArgs> requires (sizeof...(ContextArgs) > 0) 
     constexpr auto operator[](ContextArgs&&... args) && noexcept {
         // FIX: Capture exact lvalue/rvalue reference categories to prevent dangling references
         auto ctx_tuple = used_std::tuple<ContextArgs...>(used_std::forward<ContextArgs>(args)...);
@@ -1579,8 +1487,7 @@ struct SwitchTargetProxy {
         );
         return SwitchPipelineProxy<TargetType, TupleType>{ target, ctx_tuple };
     }
-    template <typename... ContextArgs>
-    requires (sizeof...(ContextArgs) > 0) 
+    template <typename... ContextArgs> requires (sizeof...(ContextArgs) > 0) 
     constexpr auto operator()(ContextArgs&&... args) && noexcept {
         auto ctx_tuple = used_std::tuple<ContextArgs...>(used_std::forward<ContextArgs>(args)...);
         using TupleType = decltype(ctx_tuple);
@@ -1599,349 +1506,9 @@ constexpr auto Match(const TargetType& target) noexcept {
 // ============================================================================
 //                                    END
 // ============================================================================
+#endif
 
-
-
-// --- A. Numeric & Range Matching ---
-void showcase_numeric_and_ranges(int score) {
-    std::cout << "\n=== 1. Numeric & Range Pattern Matching ===" << std::endl;
-    
-    // std::size_t score2 = 2;
-    std::string_view result = Match(score)[score]  (
-        Case(100)                      >> [] { return "Perfect Score!"; },
-        Case({90,99})       >> [] { return "Grade: A"; },
-        Case({80, 89})       >> [] { return "Grade: B"; },
-        Case({70, 79})       >> [] { return "Grade: C"; },
-        [](int& s) { 
-            // auto gett = s;
-            return s < 70 ? "Grade: Fail" : "Grade: Invalid"; 
-            // return "Invalid"; 
-        }
-    );
-
-    std::cout << "Score [" << score << "] -> " << result << std::endl;
-}
-
-// --- B. StaticLabel / FNV-1a Hash Matching ---
-void showcase_hash_labels(std::string_view command) {
-    std::cout << "\n=== 2. StaticLabel Hash Matching ===" << std::endl;
-
-    std::size_t cmd_hash = used_std::strHash::fnv1a_hash(command.data(), command.size());
-
-    std::string_view response = Match(command)(command,cmd_hash) (
-        Case("start")  >> [] { return "System Starting..."; },
-        label_Case<"stop">("stop")   >> [] { return goto_case<"err">(); },
-        Case("pause")  >> [] { return "System Paused."; },
-        label_Case<"err">(__)       >> [](std::string_view& s) { return "err"; },
-        []{return "UNDEFINED!";}
-    );
-
-    std::cout << "Command [\"" << command << "\"] (Hash: " << cmd_hash << ") -> " << response << std::endl;
-}
-
-// --- C. Branch Prediction Hints ---
-void showcase_branch_hints(int http_code) {
-    std::cout << "\n=== 3. Branch Hint Guided Dispatch ===" << std::endl;
-
-    std::string_view status = Match(http_code)[__] (
-        // Common paths marked as likely
-        Case<BranchHint::Likely>(200)   >> []() { return "200 OK (Fast Path)"; },
-        Case<BranchHint::Likely>(404)   >> []() { return "404 Not Found"; },
-        
-        // Exceptional paths marked as unlikely
-        Case<BranchHint::Unlikely>(500) >> []() { return "500 Internal Server Error"; },
-        []() { return "Other HTTP Status"; }
-    );
-
-    std::cout << "HTTP [" << http_code << "] -> " << status << std::endl;
-}
-
-constexpr bool is_even(int val) { return val % 2 == 0; }
-constexpr int add(int val,int val2) { return val + val2; }
-bool is_positive(int val) { return val > 0; }
-
-// Class for testing Member Functions
-struct User {
-    std::string_view name;
-    int age;
-    bool active;
-
-    bool is_adult() const { return age >= 18; }
-    bool is_active() const { return active; }
-};
-
-// Class with validator methods
-struct Validator {
-    int min_threshold = 50;
-
-    bool exceeds_threshold(int val) const {
-        return val > min_threshold;
-    }
-};
-
-int main () {
-    std::cout << "=================================================" << std::endl;
-    std::cout << "       PATTERN MATCHING LIBRARY SHOWCASE         " << std::endl;
-    std::cout << "=================================================" << std::endl;
-
-    std::cout << "=== Free Function & Member Function Matching ===\n";
-
-    // -------------------------------------------------------------
-    // 1. Standalone / Free Function Evaluation
-    // -------------------------------------------------------------
-    int number = -43;
-    std::string_view num_res = Match(number)[__](
-        Case(Predicate(is_even))     >> [] { return "Even Number"; },
-        Case(Predicate(is_positive)) >> [] { return "Positive Odd Number"; },
-        [] { return "Other"; }
-    );
-    std::cout << "Number " << number << " -> " << num_res << "\n";
-
-    // -------------------------------------------------------------
-    // 2. Unbound Member Function Evaluation (Target is the Instance)
-    // -------------------------------------------------------------
-    User u1{"Alice", 22, true};
-    
-    std::string_view user_res = Match(u1)[__](
-        Case(Predicate(&User::is_adult))  >> [] { return "Adult User"; },
-        Case(Predicate(&User::is_active)) >> [] { return "Active Minor"; },
-        [] { return "Inactive Minor"; }
-    );
-    std::cout << u1.name << " -> " << user_res << "\n";
-
-    // -------------------------------------------------------------
-    // 3. Bound Member Function Evaluation (External Instance)
-    // -------------------------------------------------------------
-    Validator validator{30};
-    int score = 75;
-
-    std::string_view val_res = Match(score)[__](
-        Case(BoundPredicate(validator, &Validator::exceeds_threshold)) >> [] {
-            return "Passed Validation";
-        },
-        [] { return "Failed Validation"; }
-    );
-    std::cout << "Score " << score << " -> " << val_res << "\n";
-
-    // 4. Numeric Range Showcase
-    showcase_numeric_and_ranges(95);
-    showcase_numeric_and_ranges(72);
-    showcase_numeric_and_ranges(45);
-
-    // 4. Compile-Time Hash Labels Showcase
-    showcase_hash_labels("start");
-    showcase_hash_labels("stop");
-    showcase_hash_labels("pause");
-    showcase_hash_labels("reboot");
-    showcase_hash_labels("rebootss");
-
-    // 4. Branch Prediction Showcase
-    showcase_branch_hints(200);
-    showcase_branch_hints(500);
-    // std::printf("%d %d" , ret , num);
-
-    struct s {
-        int i;
-        constexpr s(int i) : i(i){}
-        constexpr int get(int s) const {
-            return i;
-        }
-        constexpr int add(int s) const {
-            return i + s;
-        }
-    };
-    constexpr s test = 20;
-    constexpr int num = 30;
-    // static_assert(Match(num)[__] (
-    //     Case({{0,10},{20,30}}) >> []{return true;},
-    //     []{return false;}), "" );
-        
-    int num2 = 30;
-    Match(num2)[&num2] (
-        label_Case<"inRange">({0,10}) >> []{
-            std::cout << "is in range";
-        },
-        Case(__) >> [](int* i) {
-            --*i;
-            std::cout << "decrease" << *i << '\n';
-            return goto_case<"inRange">();
-        },
-        []{
-            std::cout << "is not range";
-        }
-    );
-    return 1;
-}
 using testcase = used_std::tuple<ImplCase<"LabelID",int,int,BranchHint::None>,ImplCase<"range",int,int,BranchHint::None>,ImplCase<"shit",int,int,BranchHint::None>>;
 constexpr auto testindex = find_target_label_index_v<"range", testcase>;
 
 static_assert(testindex == 1,"" );
-// static_assert(used_std::is_same_v<testindex, used_std::index_sequence<1>>,"" );
-
-// Unrolled Matrix State Router Engine Loop
-// template <typename TargetType, typename DefaultType, typename ContextTuple, typename CasesTuple> 
-// requires (mini_concepts::TupleLike<used_std::remove_cvref_t<ContextTuple>> && mini_concepts::TupleLike<used_std::remove_cvref_t<CasesTuple>>)
-// constexpr auto universal_switch_matrix2(const TargetType& target, DefaultType&& default_action, ContextTuple& ctx, CasesTuple&& cases) {
-//     constexpr used_std::size_t TotalCases = used_std::tuple_size_v<used_std::remove_cvref_t<CasesTuple>>;
-    
-//     using CoreReturnType  = decltype(execute_action(default_action, ctx));
-//     using CleanReturnType = typename UnwrapReturnType<CoreReturnType>::type;
-//     // Updated: Pass target to resolve correct return type
-    
-//     auto unrolled_matrix_router = []<used_std::size_t... Is>(const TargetType& target, DefaultType&& default_action, 
-//         ContextTuple& ctx, CasesTuple&& cases,used_std::index_sequence<Is...>) -> CleanReturnType {
-//         using RawFirstCase = used_std::remove_cvref_t<decltype(used_std::get<0>(cases))>;
-//         using LabelType    = used_std::remove_cvref_t<decltype(RawFirstCase::label)>;
-        
-//         LabelType target_jump_label{};
-//         bool matched = false;
-//         bool force_execute_next = false;
-//         bool jump_requested = false;
-        
-//         used_std::size_t loop_guard = 0;
-//         constexpr used_std::size_t MaxAllowedJumps = TotalCases * 2;
-
-//         // Separate void and non-void return type pathways
-//         if constexpr (used_std::is_same_v<CleanReturnType, void>) {
-//             while (loop_guard++ < MaxAllowedJumps) {
-//                 bool current_iteration_jumped = false;
-                
-//                 ([&]() {
-//                     if (matched && !force_execute_next && !jump_requested) return;
-                    
-//                     auto&& current_case = used_std::get<Is>(cases);
-//                     using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
-                    
-//                     bool should_execute = false;
-                    
-//                     if (jump_requested) {
-//                         if (current_case.label == target_jump_label) {
-//                             should_execute = true;
-//                         }
-//                     } else if (force_execute_next) {
-//                         should_execute = true;
-//                     } else if (!matched) {
-//                         should_execute = apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key));
-//                     }
-
-//                     if (should_execute) {
-//                         matched = true;
-//                         force_execute_next = false;
-//                         jump_requested = false;
-                        
-//                         execute_action(current_case.action, ctx);
-//                         using ActionDecay = used_std::decay_t<CleanReturnType>;
-
-//                         if constexpr (mini_concepts::IsPureFallthrough<ActionDecay> || mini_concepts::IsValueFallthrough<ActionDecay>) {
-//                             force_execute_next = true;
-//                         }
-//                         else if constexpr (IsPureGoto<ActionDecay>) {
-//                             target_jump_label = is_goto_case<ActionDecay>::label;
-//                             constexpr auto StaticLabel = is_goto_value<ActionDecay>::label;
-//                             auto labelIndex = find_target_label_index_t<StaticLabel, CasesTuple>{};
-//                             std::cout << used_std::get<labelIndex>(cases).label.data << "\n";
-//                             jump_requested = true;
-//                             current_iteration_jumped = true;
-//                         }
-//                         else if constexpr (IsValueGoto<ActionDecay>) {
-//                             target_jump_label = is_goto_value<ActionDecay>::label;
-//                             auto labelIndex = find_target_label_index_t<target_jump_label.data, CasesTuple>{};
-//                             []<size_t... Iss> (std::index_sequence<Iss...>){
-//                                 ((std::cout << Iss << " "),...);
-//                             }(labelIndex);
-//                             jump_requested = true;
-//                             current_iteration_jumped = true;
-//                         }
-//                     }
-//                 }(), ...);
-//                 if (!current_iteration_jumped && !force_execute_next) {
-//                     break;
-//                 }
-//             }
-            
-//             if (!matched || force_execute_next || jump_requested) {
-//                 // Updated: Passed target to default execute_action
-//                 execute_action(default_action, ctx);
-//             }
-//         } 
-//         else {
-//             CleanReturnType result{};
-
-//             while (loop_guard++ < MaxAllowedJumps) {
-//                 bool current_iteration_jumped = false;
-                
-//                 ([&]() {
-//                     if (matched && !force_execute_next && !jump_requested) return;
-
-//                     auto&& current_case = used_std::get<Is>(cases);
-//                     using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
-                    
-//                     bool should_execute = false;
-                    
-//                     if (jump_requested) {
-//                         if (current_case.label == target_jump_label) {
-//                             should_execute = true;
-//                         }
-//                     } else if (force_execute_next) {
-//                         should_execute = true;
-//                     } else if (!matched) {
-//                         should_execute = apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key));
-//                     }
-
-//                     if (should_execute) {
-//                         matched = true;
-//                         force_execute_next = false;
-//                         jump_requested = false;
-                        
-//                         // Updated: Passed target to execute_action
-//                         decltype(auto) action_res = execute_action(current_case.action, ctx);
-//                         using ActionDecay = used_std::decay_t<decltype(action_res)>;
-
-//                         if constexpr (mini_concepts::IsPureFallthrough<ActionDecay>) {
-//                             force_execute_next = true;
-//                         }
-//                         else if constexpr (mini_concepts::IsValueFallthrough<ActionDecay>) {
-//                             result = action_res.value;
-//                             force_execute_next = true;
-//                         }
-//                         else if constexpr (IsPureGoto<ActionDecay>) {
-//                             target_jump_label = is_goto_case<ActionDecay>::label;
-                            
-//                             // constexpr auto StaticLabel = is_goto_case<ActionDecay>::label;
-//                             auto labelIndex = find_target_label_index_t<ActionDecay::label, used_std::remove_cvref_t<CasesTuple>>{};
-//                             static_assert(used_std::is_same_v<decltype(labelIndex), used_std::index_sequence<3>>,"");
-//                             []<size_t... Iss> (std::index_sequence<Iss...>){
-//                                 ((std::cout << Iss << " \n"), ...);
-//                             }(labelIndex);
-//                             // std::cout << used_std::get<labelIndex>(cases).label.data << "\n";
-//                             jump_requested = true;
-//                             current_iteration_jumped = true;
-//                         }
-//                         else if constexpr (IsValueGoto<ActionDecay>) {
-//                             result = action_res.value;
-//                             target_jump_label = is_goto_value<ActionDecay>::label;
-//                             jump_requested = true;
-//                             current_iteration_jumped = true;
-//                         }
-//                         else {
-//                             result = action_res;
-//                         }
-//                     }
-//                 }(), ...);
-
-//                 if (!current_iteration_jumped && !force_execute_next) {
-//                     break;
-//                 }
-//             }
-            
-//             if (matched && !force_execute_next && !jump_requested) {
-//                 return result;
-//             }
-            
-//             // Updated: Passed target to default execute_action
-//             return execute_action(default_action, ctx);
-//         }
-//     };
-
-//     return unrolled_matrix_router(target, used_std::forward<DefaultType>(default_action), ctx, used_std::forward<CasesTuple>(cases),used_std::make_index_sequence<TotalCases>{});
-// }

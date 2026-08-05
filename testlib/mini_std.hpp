@@ -1,4 +1,5 @@
-
+#ifndef MINI_STD
+#define MINI_STD
 // ============================================================================
 // FREESTANDING LIGHTWEIGHT COMPILER & METAPROGRAMMING UTILITIES
 // ============================================================================
@@ -40,6 +41,13 @@ namespace mini_std {
     template <typename T> struct remove_reference<T&>  { using type = T; };
     template <typename T> struct remove_reference<T&&> { using type = T; };
     template <typename T> using remove_reference_t = typename mini_std::remove_reference<T>::type;
+
+    template <typename T> struct remove_pointer              { using type = T; };
+    template <typename T> struct remove_pointer<T*>          { using type = T; };
+    template <typename T> struct remove_pointer<volatile T*> { using type = T; };
+    template <typename T> struct remove_pointer<const T*>    { using type = T; };
+    template <typename T> struct remove_pointer<const volatile T*>  { using type = T; };
+    template <typename T> using remove_pointer_t = typename mini_std::remove_reference<T>::type;
 
     template <typename T> struct remove_const          { using type = T; };
     template <typename T> struct remove_const<const T>  { using type = T; };
@@ -126,15 +134,26 @@ namespace mini_std {
     template <typename T> struct is_array : mini_std::false_type {};
     template <typename T> struct is_array<T[]> : mini_std::true_type {};
     template <typename T, size_t N> struct is_array<T[N]> : mini_std::true_type {};
-
+    // --- Pointer Trait ---
     template <typename T> struct is_pointer_helper : mini_std::false_type {};
     template <typename T> struct is_pointer_helper<T*> : mini_std::true_type {};
+
     template <typename T> struct is_pointer : mini_std::is_pointer_helper<mini_std::remove_cv_t<T>> {};
     template <typename T> constexpr bool is_pointer_v = is_pointer<T>::value;
+
+    // --- Reference Trait ---
+    template <typename T> struct is_reference_helper : mini_std::false_type {};
+    template <typename T> struct is_reference_helper<T&> : mini_std::true_type {};
+    template <typename T> struct is_reference_helper<T&&> : mini_std::true_type {}; // Added rvalue reference support
+
+    template <typename T> struct is_reference : mini_std::is_reference_helper<T> {};
+    template <typename T> constexpr bool is_reference_v = is_reference<T>::value;
 
     template <typename T> struct is_enum : mini_std::bool_constant<__is_enum(T)> {};
     template <typename T> struct is_union : mini_std::bool_constant<__is_union(T)> {};
     template <typename T> struct is_class : mini_std::bool_constant<__is_class(T)> {};
+
+    template <typename T> constexpr bool is_class_v = mini_std::is_class<T>::value;
 
     // --- COMPOSITE TYPE CATEGORIES ---
     template <typename T>
@@ -184,7 +203,9 @@ namespace mini_std {
     template <typename Ret, typename... Args> struct is_function<Ret(Args...) const &&> : mini_std::true_type {};
     template <typename Ret, typename... Args> struct is_function<Ret(Args...) volatile &&> : mini_std::true_type {};
     template <typename Ret, typename... Args> struct is_function<Ret(Args...) const volatile &&> : mini_std::true_type {};
-
+    
+    template <typename Ret, typename... Args> constexpr bool is_function_v = is_function<Ret(Args...)>::value;
+    
     // --- MEMBER FUNCTION POINTER ---
     template <typename T>
     struct is_member_function_pointer : mini_std::false_type {};
@@ -228,6 +249,7 @@ namespace mini_std {
         template <class T>
         auto try_add_pointer(...) -> type_identity<T>;  
     } 
+
     template <class T> struct add_pointer : decltype(mini_std::addPtrdetail::try_add_pointer<T>(0)) {};
     template <class T> using add_pointer_t = typename mini_std::add_pointer<T>::type;
 
@@ -455,7 +477,22 @@ namespace mini_std {
     // 3. Convenience variable template (C++17 style)
     template <typename F, typename... Args>
     inline constexpr bool is_nothrow_invocable_v = mini_std::is_nothrow_invocable<F, Args...>::value;
+
+    template <typename Fn, typename... ArgTypes>
+    struct is_invocable : mini_std::false_type {};
+
+    // Specialized template via C++20 concepts / constraints
+    template <typename Fn, typename... ArgTypes>
+        requires requires(Fn&& fn, ArgTypes&&... args) {
+            mini_std::invoke(mini_std::forward<Fn>(fn), mini_std::forward<ArgTypes>(args)...);
+        }
+    struct is_invocable<Fn, ArgTypes...> : mini_std::true_type {};
     
+    template <typename Fn, typename... ArgTypes>
+    using is_invocable_t = is_invocable<Fn, ArgTypes...>::type;
+    template <typename Fn, typename... ArgTypes>
+    inline constexpr bool is_invocable_v = is_invocable<Fn, ArgTypes...>::value;
+
     template <class T>
     class reference_wrapper {
     public:
@@ -521,3 +558,5 @@ namespace mini_std {
 #       endif
     }
 }
+
+#endif
