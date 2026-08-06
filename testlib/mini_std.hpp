@@ -93,6 +93,7 @@ namespace mini_std {
     template <> struct is_void<const void> : mini_std::true_type {};
     template <> struct is_void<volatile void> : mini_std::true_type {};
     template <> struct is_void<const volatile void> : mini_std::true_type {};
+    template <typename T> constexpr bool is_void_v = is_void<T>::value;
 
     template <typename T> struct is_null_pointer : mini_std::false_type {};
     template <> struct is_null_pointer<mini_std::nullptr_t> : mini_std::true_type {};
@@ -287,26 +288,31 @@ namespace mini_std {
     };
     template <typename T> using decay_t = typename decay<T>::type;
 
-    // --- CONVERSIONS & RELATIONSHIPS ---
+    #if defined(__has_builtin) && __has_builtin(__is_convertible)
     template <typename From, typename To>
-    class is_convertible {
-    private:
-        static void test_aux(To);
-        
-        template <typename F, typename = decltype(test_aux(mini_std::declval<F>()))>
-        static mini_std::true_type test(int);
+    struct is_convertible : mini_std::bool_constant<__is_convertible(From, To)> {};
+    #elif defined(_MSC_VER)
+    template <typename From, typename To>
+    struct is_convertible : mini_std::bool_constant<__is_convertible_to(From, To)> {};
+    #else
+    // Fallback compiler intrinsic widely supported across Clang, GCC, and MSVC
+    template <typename From, typename To>
+    struct is_convertible : mini_std::bool_constant<__is_convertible(From, To)> {};
+    #endif
 
-        template <typename>
-        static mini_std::false_type test(...);
-
-    public:
-        static constexpr bool value = decltype(test<From>(0))::value;
-    };
+    template <typename From, typename To>
+    inline constexpr bool is_convertible_v = is_convertible<From, To>::value;
 
     template <typename Base, typename Derived>
     struct is_base_of : mini_std::bool_constant<__is_base_of(Base, Derived)> {};
 
-    
+    template <typename Base, typename Derived>
+    inline constexpr bool is_base_of_v = is_base_of<Base, Derived>::value;
+
+    template <typename Derived, typename Base>
+    concept derived_from = is_base_of_v<Base, Derived> && 
+                        is_convertible_v<const volatile Derived*, const volatile Base*>;
+;
     // --- INDEX SEQUENCE ---
     template <size_t... Is> struct index_sequence {};
     template <size_t N, size_t... Is> struct make_index_sequence_impl : make_index_sequence_impl<N - 1, N - 1, Is...> {};
@@ -456,10 +462,14 @@ namespace mini_std {
             using type = decltype(mini_std::declval<F>()(mini_std::declval<Args>()...)); 
         };
 
-        template <typename F, typename Tuple, size_t... Is>
-        constexpr decltype(auto) apply_impl(F&& f, Tuple&& t, mini_std::index_sequence<Is...>) {
-            return mini_std::invoke(mini_std::forward<F>(f), mini_std::get<Is>(mini_std::forward<Tuple>(t))...);
+        template <typename Fn, typename Tuple, size_t... Is>
+        constexpr decltype(auto) apply_impl(Fn&& f, Tuple&& t, mini_std::index_sequence<Is...>) {
+            return mini_std::invoke(mini_std::forward<Fn>(f), mini_std::get<Is>(mini_std::forward<Tuple>(t))...);
         }
+        // template <typename Fn, typename T, size_t N,size_t... Is>
+        // constexpr decltype(auto) apply_impl(Fn&& f, const T(&arr)[N], mini_std::index_sequence<Is...>) {
+        //     return mini_std::invoke(mini_std::forward<Fn>(f), arr[Is]...);
+        // }
     }
 
     // 3. User-facing public interface
@@ -531,15 +541,20 @@ namespace mini_std {
     template <class T>
     using unwrap_decay_t = typename mini_std::unwrap_refwrapper<typename mini_std::decay<T>::type>::type;
 
-    template <typename F, typename Tuple>
-    constexpr decltype(auto) apply(F&& f, Tuple&& t) {
+    template <typename Fn, typename Tuple> requires is_tuple_like_v<Tuple>
+    constexpr decltype(auto) apply(Fn&& f, Tuple&& t) {
         return detail::apply_impl(
-            mini_std::forward<F>(f), 
+            mini_std::forward<Fn>(f), 
             mini_std::forward<Tuple>(t), 
             mini_std::make_index_sequence<mini_std::tuple_size_v<Tuple>>{}
         );
     }
-
+    template <typename Fn, typename T, mini_std::size_t N>
+    constexpr decltype(auto) apply(Fn&& fn, const T(&arr)[N]) {
+        return []<mini_std::size_t... Is>(Fn&& f, const T(&a)[N], mini_std::index_sequence<Is...>) {
+            return mini_std::invoke(mini_std::forward<Fn>(f), a[Is]...);
+        }(mini_std::forward<Fn>(fn), arr, mini_std::make_index_sequence<N>{});
+    }
     template <class... Types>
     constexpr mini_std::tuple<unwrap_decay_t<Types>...> make_tuple(Types&&... args) 
     {

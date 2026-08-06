@@ -29,7 +29,13 @@ void showcase_hash_labels(std::string_view command) {
 
     std::string_view response = Match(command)(command,cmd_hash) (
         Case("start")  >> [] { return "System Starting..."; },
-        label_Case<"stop">("stop")   >> [] { return goto_case("err"); },
+        label_Case<"stop">("stop")   >> [] { 
+            // if (true) {
+            //     // return fallthrough_to_next(); 
+            // } else {
+            // }
+            return goto_case("err"); 
+        },
         Case("pause")  >> [] { return "System Paused."; },
         label_Case<"err">(__)       >> [](std::string_view& s) { return "err"; },
         []{return "UNDEFINED!";}
@@ -152,10 +158,14 @@ int main () {
     constexpr s test = 20;
     constexpr int num = 9;
     static_assert(Match(num)[__] (
-        Case({{0,10},{20,30}}) >> []{return true;},
+        label_Case<"id">({{0,10},{20,30}}) >> []{return true;},
         []{return false;}), "" );
     static_assert(Match(num)[__] (
         Case<RangeType::Or>({0,10}) >> []{return true;},
+        []{return false;}), "" );
+    constexpr int a = 0b1010;
+    static_assert(Match(a)[__] (
+        Case(bits_all_set(0b0100 & 0b1001)) >> []{return true;},
         []{return false;}), "" );
         
     Match(test)[__] (
