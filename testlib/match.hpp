@@ -3,10 +3,10 @@
 #define MATCH_H
 
 
-    // #include <type_traits>
-    // #include <tuple>
-    // #include <utility>
-    #include "mini_std.hpp"
+    #include <type_traits>
+    #include <tuple>
+    #include <utility>
+    // #include "mini_std.hpp"
 
 
 // ============================================================================
@@ -14,7 +14,7 @@
 // ============================================================================
 
 namespace used_std {
-    using namespace mini_std; 
+    using namespace std; 
 
     template <typename T, typename = void>
     struct is_tuple_like : used_std::false_type {};
@@ -518,9 +518,11 @@ using get_nullary_return_type_t = decltype(
 // --- Free Function / Lambda Predicate Wrapper / Unbound Member Function Predicate ---
 template <typename Fn>
 concept IsCallableType = 
-used_std::is_function_v<Fn> ||
-used_std::is_member_function_pointer_v<Fn> ||
-requires { &used_std::remove_cvref_t<Fn>::operator(); };
+std::is_function_v<std::remove_pointer_t<Fn>> ||   // Handles raw functions AND function pointers
+std::is_member_pointer_v<Fn> ||                     // Handles member functions & data members
+requires (std::remove_cvref_t<Fn> f) {
+    f; // Standard invocation checking requires arguments, e.g., f()
+};
 
 template <IsCallableType Fn>
 struct FnPredicate {
@@ -599,23 +601,19 @@ template <typename MemFn, typename ExpectedPattern>
 concept is_projection_case = is_projection_caseimpl<ProjectionCaseimpl<MemFn,ExpectedPattern>>::value;
 
 
-template <typename Fn> requires 
-(used_std::is_function<typename used_std::callable_traits_t<Fn>::fn_type>::value || 
-    used_std::is_member_function_pointer_v<typename used_std::callable_traits_t<Fn>::fn_type>)
+template <IsCallableType Fn>
 constexpr auto Predicate(Fn&& fn) {
     return FnPredicate<Fn>{ used_std::forward<Fn>(fn) };
 }
 
-template <typename Class, typename MemFn>
+template <typename Class, IsCallableType MemFn>
 requires (used_std::is_member_function_pointer_v<MemFn>)
 constexpr auto BoundPredicate(MemFn mem_fn,Class& obj) {
     return BoundMemFnPredicate<Class, MemFn>{ obj, mem_fn };
 }
 
 // Helper builder function for Case(Pattern, &fn)
-template <typename ExpectedPattern, typename Fn,typename... Args>
-requires (!used_std::is_member_function_pointer_v<Fn> ||
-(used_std::is_pointer_v<Fn> && used_std::is_function_v<used_std::remove_pointer_t<Fn>>))
+template <typename ExpectedPattern, IsCallableType Fn,typename... Args>
 constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn fn,Args&&... args) {
     static_assert(sizeof...(Args) <= used_std::callable_traits_t<used_std::remove_cvref_t<Fn>>::args, "Too many arguments provided for projection function");
     // static_assert(sizeof...(Args) < used_std::callable_traits_t<used_std::remove_cvref_t<Fn>>::args, "Not Enough Arguments");
@@ -626,8 +624,7 @@ constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn fn,Args&&... args) {
     };
 }
 // Helper builder function for Case(Pattern, &Class::member_fn)
-template <typename ExpectedPattern, typename Fn,typename Class,typename... Args>
-requires (used_std::is_member_function_pointer_v<Fn> && used_std::is_class_v<Class>)
+template <typename ExpectedPattern, IsCallableType Fn,typename Class,typename... Args>
 constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn fn,Class* instance,Args&&... args) {
     if constexpr (sizeof...(Args) == 0) {
         using classType = Class*;
@@ -1085,11 +1082,12 @@ template <RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None
 }
 template <RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T,used_std::size_t N> requires (used_std::is_arithmetic_v<T>) 
 constexpr auto Case(const T(&ranges)[N][2]) noexcept { 
-     return used_std::apply([](const auto&... ar) {
-        auto compound = make_compound_range(Range<T, iType>{ar[0], ar[1]}...);
-        using CompoundType = decltype(compound);
-        return SugarProxyKey<0, Hint, CompoundType>{ used_std::move(compound) };
-    }, ranges);
+    return []<used_std::size_t... Is>(const T (&arr)[N][2], used_std::index_sequence<Is...>) {
+        auto compound = make_compound_range(
+            Range<T, iType>{arr[Is][0], arr[Is][1]}...
+        );
+        return SugarProxyKey<0, Hint, decltype(compound)>{ used_std::move(compound) };
+    }(ranges, used_std::make_index_sequence<N>{});
 }
 template <typename T> constexpr auto likely_Case(T&& val) noexcept { return SugarProxyKey<0, BranchHint::Likely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
 template <typename T> constexpr auto unlikely_Case(T&& val) noexcept { return SugarProxyKey<0, BranchHint::Unlikely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
@@ -1106,11 +1104,12 @@ constexpr auto label_Case(const T(&range)[2]) noexcept {
 }
 template <StaticLabel LabelID,RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T,used_std::size_t N> requires (used_std::is_arithmetic_v<T>) 
 constexpr auto label_Case(const T(&ranges)[N][2]) noexcept { 
-    return used_std::apply([](const auto&... ar) {
-        auto compound = make_compound_range(Range<T, iType>{ar[0], ar[1]}...);
-        using CompoundType = decltype(compound);
-        return SugarProxyKey<LabelID, Hint, CompoundType>{ used_std::move(compound) };
-    }, ranges);
+    return []<used_std::size_t... Is>(const T (&arr)[N][2], used_std::index_sequence<Is...>) {
+        auto compound = make_compound_range(
+            Range<T, iType>{arr[Is][0], arr[Is][1]}...
+        );
+        return SugarProxyKey<0, Hint, decltype(compound)>{ used_std::move(compound) };
+    }(ranges, used_std::make_index_sequence<N>{});
 }
 template <StaticLabel LabelID, typename T> 
 constexpr auto likely_label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::Likely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
@@ -1224,7 +1223,7 @@ struct UnwrapReturnType<GotoValue<LabelID, T>> {
 template <typename TargetType, typename DefaultType, typename ContextTuple, typename CasesTuple> 
 requires (mini_concepts::TupleLike<used_std::remove_cvref_t<ContextTuple>> && 
           mini_concepts::TupleLike<used_std::remove_cvref_t<CasesTuple>>)
-constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& default_action, ContextTuple& ctx, CasesTuple&& cases) {
+constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& default_action, ContextTuple&& ctx, CasesTuple&& cases) {
     constexpr used_std::size_t TotalCases = used_std::tuple_size_v<used_std::remove_cvref_t<CasesTuple>>;
 
     using CoreReturnType  = decltype(execute_action(default_action, ctx));
@@ -1329,7 +1328,7 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
 
 template <typename TargetType, typename ContextTuple, typename... AllTrailingArgs> 
 requires (mini_concepts::TupleLike<used_std::remove_cvref_t<ContextTuple>>)
-constexpr auto universal_switch(const TargetType& target, ContextTuple& ctx, AllTrailingArgs&&... args) {
+constexpr auto universal_switch(const TargetType& target, ContextTuple&& ctx, AllTrailingArgs&&... args) {
     constexpr used_std::size_t TotalArgs = sizeof...(AllTrailingArgs);
     static_assert(TotalArgs >= 1, "Library Error: You must supply a terminal fallback default action.");
     
@@ -1350,7 +1349,7 @@ constexpr auto universal_switch(const TargetType& target, ContextTuple& ctx, All
             return universal_switch_matrix(
                 target, 
                 used_std::forward<decltype(default_action)>(default_action), 
-                ctx,
+                used_std::forward<ContextTuple>(ctx),
                 used_std::move(cases_tuple)
             );
         }
@@ -1367,7 +1366,7 @@ struct SwitchPipelineProxy {
 
     template <typename... CaseTypes>
     constexpr decltype(auto) operator()(CaseTypes&&... cases) && {
-        return universal_switch(target, ctx, used_std::forward<CaseTypes>(cases)...);
+        return universal_switch(target,used_std::forward<ContextTuple>(ctx), used_std::forward<CaseTypes>(cases)...);
     }
 };
 
@@ -1389,7 +1388,7 @@ struct SwitchTargetProxy {
             mini_concepts::TupleOfRefsOrPointers<TupleType>,
             "DSL Error: Context parameters must strictly be references (&) or pointers (*). Value types are forbidden."
         );
-        return SwitchPipelineProxy<TargetType, TupleType>{ target, ctx_tuple };
+        return SwitchPipelineProxy<TargetType, TupleType>{ target, used_std::move(ctx_tuple) };
     }
     template <typename... ContextArgs> requires (sizeof...(ContextArgs) > 0) 
     constexpr auto operator()(ContextArgs&&... args) && noexcept {
@@ -1399,7 +1398,7 @@ struct SwitchTargetProxy {
             mini_concepts::TupleOfRefsOrPointers<TupleType>,
             "DSL Error: Context parameters must strictly be references (&) or pointers (*). Value types are forbidden."
         );
-        return SwitchPipelineProxy<TargetType, TupleType>{ target, ctx_tuple };
+        return SwitchPipelineProxy<TargetType, TupleType>{ target, used_std::move(ctx_tuple) };
     }
 };
 
@@ -1411,8 +1410,3 @@ constexpr auto Match(const TargetType& target) noexcept {
 //                                    END
 // ============================================================================
 #endif
-
-using testcase = used_std::tuple<ImplCase<"LabelID",int,int,BranchHint::None>,ImplCase<"range",int,int,BranchHint::None>,ImplCase<"shit",int,int,BranchHint::None>>;
-constexpr auto testindex = used_std::find_index_v<[]<typename T>{return T::label;},"range"_hash, testcase>;
-
-static_assert(testindex == 1,"" );
