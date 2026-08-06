@@ -70,8 +70,8 @@ namespace mini_std {
     template <typename T> using remove_cvref_t = typename mini_std::remove_cvref<T>::type;
 
     // --- FORWARD & MOVE ---
-    template <typename T> constexpr T&& forward(mini_std::remove_reference_t<T>& t) noexcept { return static_cast<T&&>(t); }
-    template <typename T> constexpr T&& forward(mini_std::remove_reference_t<T>&& t) noexcept { return static_cast<T&&>(t); }
+    template <typename T> constexpr T&& forward(mini_std::remove_reference_t<T>& t) noexcept { return noexcept(static_cast<T&&>(t)); }
+    template <typename T> constexpr T&& forward(mini_std::remove_reference_t<T>&& t) noexcept { return noexcept(static_cast<T&&>(t)); }
     template <typename T> constexpr mini_std::remove_reference_t<T>&& move(T&& t) noexcept { return static_cast<mini_std::remove_reference_t<T>&&>(t); }
 
     template <typename T> struct add_lvalue_reference { using type = T&; };

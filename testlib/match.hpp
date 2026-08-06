@@ -1220,108 +1220,135 @@ struct UnwrapReturnType<GotoValue<LabelID, T>> {
     using type = T;
 };
 
-template <typename TargetType, typename DefaultType, typename ContextTuple, typename CasesTuple> 
-requires (mini_concepts::TupleLike<used_std::remove_cvref_t<ContextTuple>> && 
-          mini_concepts::TupleLike<used_std::remove_cvref_t<CasesTuple>>)
-constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& default_action, ContextTuple&& ctx, CasesTuple&& cases) {
-    constexpr used_std::size_t TotalCases = used_std::tuple_size_v<used_std::remove_cvref_t<CasesTuple>>;
+template <std::size_t Low, std::size_t High>
+struct DynamicSwitch {
+    template <typename Fn>
+    static constexpr void dispatch(std::size_t idx, Fn&& fn) noexcept {
+        if constexpr (Low == High - 1) {
+            fn.template operator()<Low>();
+        } else {
+            constexpr std::size_t Mid = Low + (High - Low) / 2;
+            if (idx < Mid) {
+                DynamicSwitch<Low, Mid>::dispatch(idx, std::forward<Fn>(fn));
+            } else {
+                DynamicSwitch<Mid, High>::dispatch(idx, std::forward<Fn>(fn));
+            }
+        }
+    }
+};
+// Macro trick to generate clean compile-time switch blocks (up to 32/64 cases)
+#define CASE_DISPATCH(N) case N: if constexpr (N < TotalCases) { step_lambda.template operator()<N>(); } break;
+#define DISPATCH_1(N)  CASE_DISPATCH(N)
+#define DISPATCH_4(N)  DISPATCH_1(N)   DISPATCH_1(N+1) DISPATCH_1(N+2) DISPATCH_1(N+3)
+#define DISPATCH_16(N) DISPATCH_4(N)   DISPATCH_4(N+4) DISPATCH_4(N+8) DISPATCH_4(N+12)
+#define DISPATCH_64(N) DISPATCH_16(N)  DISPATCH_16(N+16) DISPATCH_16(N+32) DISPATCH_16(N+48)
+
+template <typename TargetType, typename DefaultType, typename ContextTuple, typename CasesTuple>
+requires (mini_concepts::TupleLike<std::remove_cvref_t<ContextTuple>> && 
+          mini_concepts::TupleLike<std::remove_cvref_t<CasesTuple>>)
+constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& default_action, ContextTuple&& ctx, CasesTuple&& cases) noexcept {
+    using RawCases = std::remove_cvref_t<CasesTuple>;
+    constexpr std::size_t TotalCases = std::tuple_size_v<RawCases>;
 
     using CoreReturnType  = decltype(execute_action(default_action, ctx));
     using CleanReturnType = typename UnwrapReturnType<CoreReturnType>::type;
 
-    
-    // Safety guard against infinite loops in cyclic GOTOs
-    // constexpr used_std::size_t MaxSteps = 1024;
-    // used_std::size_t step_count = 0;
-    used_std::size_t active_index = 0;
+    std::size_t active_index = 0;
     bool executed = false;
     bool jump_taken = false;
+    bool forced_jump = false;
 
-    CleanReturnType value;
-    
+    // Storage for return value without default-constructor penalties
+    CleanReturnType value{};
+    auto step_lambda = [&]<std::size_t Is>() noexcept {
+        auto& current_case = used_std::get<Is>(cases);
+        using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
+
+        // 1. Evaluate match condition
+        if (forced_jump || apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key))) {
+            using RawActionResult = decltype(execute_action(current_case.action, ctx));
+
+            // 2. Handle VOID returning actions
+            if constexpr (used_std::is_same_v<RawActionResult, void> || used_std::is_same_v<RawActionResult, Wildcard>) {
+                execute_action(current_case.action, ctx);
+                executed = true;
+            } 
+            // 3. Handle NON-VOID returning actions (Signals / Values)
+            else {
+                decltype(auto) action_result = execute_action(current_case.action, ctx);
+                using CaseActionDecay = used_std::decay_t<decltype(action_result)>;
+
+                // Signal: Goto Jump
+                if constexpr (IsStaticGotoSignal<CaseActionDecay>) {
+                    active_index = used_std::find_index_v<[]<typename T>{return T::label;},CaseActionDecay::label, used_std::remove_cvref_t<CasesTuple>>;
+                    forced_jump = true;
+                    jump_taken = true;
+                } 
+                else if constexpr (IsDynamicGotoSignal<CaseActionDecay>) {
+                    active_index = used_std::find_by_value<[]<typename T>{return T::label;},unsigned int,used_std::remove_cvref_t<CasesTuple>>(
+                        action_result.hash, 
+                        used_std::make_index_sequence<TotalCases>{}
+                    );
+                    forced_jump = true;
+                    jump_taken = true;
+                }
+                // Signal: Fallthrough
+                else if constexpr (IsFallthroughSignal<CaseActionDecay>) {
+                    active_index = Is + 1;
+                    jump_taken = true;
+                    forced_jump = true;
+                }
+                // Terminal Value Return
+                else {
+                    if constexpr (!IsGotoSignal<CaseActionDecay> && 
+                    !IsFallthroughSignal<CaseActionDecay> && 
+                    !used_std::is_same_v<CaseActionDecay, void> && 
+                    !used_std::is_same_v<CaseActionDecay, Wildcard>) {
+                        value = used_std::move(action_result);
+                    }
+                    executed = true;
+                }
+            }
+        }
+    };
+
     while (active_index < TotalCases) {
-        // if (++step_count > MaxSteps) {
-            //     break; // Terminate safely on loop limit
-        // }
         executed = false;
         jump_taken = false;
 
-        // Fold expression across static case indices
-        [&]<used_std::size_t... Is>(used_std::index_sequence<Is...>) {
-            ((active_index == Is ? (void)[&]() {
-                auto& current_case = used_std::get<Is>(cases);
-                using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
+        // Dispatch dynamic active_index to compile-time static index 'Is'
+        // via a native C++ switch statement (Fully Inlinable Jump Table!)
 
-                // 1. Evaluate match condition
-                if (apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key))) {
-                    using RawActionResult = decltype(execute_action(current_case.action, ctx));
-
-                    // 2. Handle VOID returning actions
-                    if constexpr (used_std::is_same_v<RawActionResult, void> || used_std::is_same_v<RawActionResult, Wildcard>) {
-                        execute_action(current_case.action, ctx);
-                        executed = true;
-                    } 
-                    // 3. Handle NON-VOID returning actions (Signals / Values)
-                    else {
-                        decltype(auto) action_result = execute_action(current_case.action, ctx);
-                        using CaseActionDecay = used_std::decay_t<decltype(action_result)>;
-
-                        // Signal: Goto Jump
-                        if constexpr (IsStaticGotoSignal<CaseActionDecay>) {
-                            active_index = used_std::find_index_v<[]<typename T>{return T::label;},CaseActionDecay::label, used_std::remove_cvref_t<CasesTuple>>;
-                            jump_taken = true;
-                        } 
-                        else if constexpr (IsDynamicGotoSignal<CaseActionDecay>) {
-                            active_index = used_std::find_by_value<[]<typename T>{return T::label;},unsigned int,used_std::remove_cvref_t<CasesTuple>>(
-                                action_result.hash, 
-                                used_std::make_index_sequence<TotalCases>{}
-                            );
-                            jump_taken = true;
-                        }
-                        // Signal: Fallthrough
-                        else if constexpr (IsFallthroughSignal<CaseActionDecay>) {
-                            active_index = Is + 1;
-                            jump_taken = true;
-                        }
-                        // Terminal Value Return
-                        else {
-                            if constexpr (!IsGotoSignal<CaseActionDecay> && 
-                            !IsFallthroughSignal<CaseActionDecay> && 
-                            !used_std::is_same_v<CaseActionDecay, void> && 
-                            !used_std::is_same_v<CaseActionDecay, Wildcard>) {
-                                value = used_std::move(action_result);
-                            }
-                            executed = true;
-                        }
-                    }
-                }
-            }() : (void)0), ...);
-        }(used_std::make_index_sequence<TotalCases>{});
-
-        // Exit immediately if a terminal action ran
+        // ---------------------------------------------------------------------
+        // Compiler-Generated Native Hardware Jump Table
+        // ---------------------------------------------------------------------
+        DynamicSwitch<0, TotalCases>::dispatch(active_index, step_lambda);
+        // switch (active_index) {
+        //     DISPATCH_64(0)   // Automatically generates CASE_DISPATCH(0) through CASE_DISPATCH(63)
+        //     DISPATCH_64(64)  // Extends range to CASE_DISPATCH(127)
+        //     default: break;
+        // }
         if (executed) {
-            if constexpr (used_std::is_same_v<CleanReturnType, void> || used_std::is_same_v<CleanReturnType, Wildcard>) {
+            if constexpr (std::is_same_v<CleanReturnType, void> || std::is_same_v<CleanReturnType, Wildcard>) {
                 return;
             } else {
-                return used_std::move(value);
+                return std::move(value);
             }
         }
 
-        // If no jump was triggered by a matching condition, move to the next index
         if (!jump_taken) {
             active_index++;
         }
     }
 
     // Default Fallback
-    if constexpr (used_std::is_same_v<CleanReturnType, void> || used_std::is_same_v<CleanReturnType, Wildcard>) {
-        execute_action(used_std::forward<DefaultType>(default_action), ctx);
+    if constexpr (std::is_same_v<CleanReturnType, void> || std::is_same_v<CleanReturnType, Wildcard>) {
+        execute_action(std::forward<DefaultType>(default_action), ctx);
     } else {
-        return execute_action(used_std::forward<DefaultType>(default_action), ctx);
+        return execute_action(std::forward<DefaultType>(default_action), ctx);
     }
 }
-
-
+#undef CASE_DISPATCH
 // ============================================================================
 // 9. PACK SEPARATION & DELAYED UNIVERSAL INITIALIZATION
 // ============================================================================
