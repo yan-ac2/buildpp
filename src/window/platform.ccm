@@ -1,9 +1,6 @@
 module;
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <GL/gl.h>
-
-export module win:platform;
+#include "pch.hpp"
+export module lib.win:platform;
 
 import lib.std;
 import lib.types;
@@ -91,7 +88,7 @@ class Window {
     HWND mHWND = nullptr;
     HDC hdc = nullptr;
     DisplayManager* mDispMgr = nullptr; 
-    InputState* mInput = nullptr; 
+    Event* mInput = nullptr; 
     IRenderer* gfxCtx = nullptr; 
     
     Window() = default;
@@ -114,8 +111,8 @@ class Window {
     {
         Init(title, width, height, flags, pos, parent);
     }
-    [[nodiscard]] const InputState& GetInput() const noexcept { return *mInput; }
-    [[nodiscard]] InputState&       GetInputMutable() noexcept { return *mInput; }
+    [[nodiscard]] const Event& GetInput() const noexcept { return *mInput; }
+    [[nodiscard]] Event&       GetInputMutable() noexcept { return *mInput; }
     [[nodiscard]] static Window&    GetRoot() { return *sRootWindow; }
     [[nodiscard]] bool IsRunning() const noexcept { return mRunning; }
     [[nodiscard]] HWND GetNativeHandle() noexcept { return mHWND; }
@@ -125,7 +122,7 @@ class Window {
     void addDisplayManager(DisplayManager* disp) {
         this->mDispMgr = disp;
     }
-    void addInputState(InputState* iState) {
+    void addEvent(Event* iState) {
         this->mInput = iState;
     }
     void addRenderer(IRenderer* iRenderer) {
@@ -137,18 +134,18 @@ class Window {
         mInput->scrollDirection = 0;
         
         while (PeekMessageA(&msg, nullptr, 0, 0, PM_REMOVE)) {
-            auto inMsg = EventType::parseMessage(msg.message,msg.wParam,msg.lParam);
+            auto inMsg = Event::parseMessage(msg.message,msg.wParam,msg.lParam);
             
             switch (inMsg) {
-                case EventType::keyPressed: {
+                case Event::keyPressed: {
                     // mInput.KeyInput = true;
                     break;
                 };
-                case EventType::keyReleased: {
+                case Event::keyReleased: {
                     // input.keyInput = false;
                     break;
                 };
-                case EventType::quit: {
+                case Event::quit: {
                     mRunning = false;
                     break;
                 }; 
@@ -165,21 +162,28 @@ class Window {
         
         // size_t keyboard = EventType::castPlatform(wParam,lParam);
         size_t mouse = EventType::castMouse(uMsg,wParam);
-        EventType::parseMessage(uMsg,wParam,lParam);
+        Event::parseMessage(uMsg,wParam,lParam);
         // std::print("Key: {} pressed\n",keyboard);
         // std::cout << "param : " << param << "\n";
         switch (uMsg) {
+            case WM_ACTIVATE: {
+                // Check the activation state
+                WORD activationState = LOWORD(wParam);
+                
+                if (activationState == WA_INACTIVE) {
+                    // Window is OUT OF FOCUS
+                    std::cout << "Window lost focus (inactive)." << std::endl;
+                } else {
+                    // Window is IN FOCUS (WA_ACTIVE or WA_CLICKACTIVE)
+                    std::cout << "Window gained focus (active)." << std::endl;
+                }
+            }
+            break;
+
             case WM_DESTROY:
                 PostQuitMessage(0); // Signals the message loop to stop
                 return 0;
-                // --- Keyboard Input ---
-            case WM_KEYDOWN:
-                // if (keyboard < 256) mInput->Keys[keyboard] = true;
-                return 0;
-
-            case WM_KEYUP:
-                // if (keyboard < 256) mInput->Keys[keyboard] = false;
-                return 0;
+                
             // --- Mouse Movement ---
             case WM_MOUSEMOVE:
                 mInput->mouseX = LOWORD(lParam); // X coordinate relative to window
@@ -214,7 +218,7 @@ class Window {
                 return 0;
             // --- Mouse Wheels ---
             case WM_MOUSEWHEEL: {
-                mInput->mouseScroll([](int32* delta,int32* sdir,void* inParam){
+                mInput->mouseScrollevent([](int32* delta,int32* sdir,void* inParam){
                     auto in = static_cast<WPARAM*>(inParam) ;
                     *delta = GET_WHEEL_DELTA_WPARAM(*in);
                     *sdir = *delta / WHEEL_DELTA;

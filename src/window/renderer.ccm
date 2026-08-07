@@ -4,26 +4,12 @@ module;
 /*
     #include "retard.h"
 */
-
-#if defined( _WIN32 )
-#define WIN32_LEAN_AND_MEAN
-    #include <windows.h>
-    #include <GL/gl.h>
-    #include <GL/glext.h>
-#elif defined( __unix__ )
-	#include <X11/Xlib.h>
-	#include <GL/gl.h>
-	#include <GL/glx.h>
-	#include <sys/time.h>
-#elif defined( __APPLE__ )
-
-#endif
-
-export module win:renderer;
+#include "pch.hpp"
+export module lib.win:renderer;
 // import somethisng;
 import lib.std;
 import lib.types; // test
-import utl; // test
+import lib.utl; // test
 import :common;
 
 enum class glType

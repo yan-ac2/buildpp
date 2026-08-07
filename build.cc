@@ -211,28 +211,31 @@ int compileProject(bool recompile)
         mainProj
         // .getLib(&libGLAD)
         // .addIncludefile((mainProj.Path / mainProj.getMainPath() / "lib" / "RGFW").string())
-        // .addIncludefile((mainProj.Path / mainProj.getMainPath() / "lib" / "glad" / "include").string())
+        .addIncludePath((mainProj.Path / mainProj.getMainPath()).string())
         .setResourcePath("res")
         .getCppFile();
     
         mainProj
         .setMain("main.cc").scanHeader().scanModule()
         #ifdef _WIN32
-        .addLinkLibrary("win.ccm",{"gdi32","user32"})
+        .addLinkLibrary("lib.win.ccm",{"gdi32","user32"})
         .addLinkLibrary("renderer.ccm",{"opengl32"})
         // #elif __unix__
         // .addDependency("lib.RGFW.ccm",{"X11", "Xrandr"})
         // .addDependency("lib.std.ccm",{"c++","c++abi"})
         #endif
-        .dumpProject();
+        .dumpProject()
+        .compilePCH("pch.hpp")
+        ;
 
         // while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
         std::queue<std::reference_wrapper<File>> queue;
         for (auto& i : mainProj.ProjectFile) {
-            if (i.second.fileType == File::Source) {
+            if (i.second.fileType == File::Source || i.second.fileType == File::ModuleImpl) {
                 continue;
+            } else {
+                queue.push(i.second);
             }
-            queue.push(i.second);
         }
         while(!queue.empty()) {
             auto& modulef = queue.front().get();

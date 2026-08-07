@@ -3,10 +3,10 @@
 #define MATCH_H
 
 
-    #include <type_traits>
-    #include <tuple>
-    #include <utility>
-    // #include "mini_std.hpp"
+    // #include <type_traits>
+    // #include <tuple>
+    // #include <utility>
+    #include "mini_std.hpp"
 
 
 // ============================================================================
@@ -14,7 +14,7 @@
 // ============================================================================
 
 namespace used_std {
-    using namespace std; 
+    using namespace mini_std; 
 
     template <typename T, typename = void>
     struct is_tuple_like : used_std::false_type {};
@@ -57,7 +57,16 @@ namespace used_std {
 
     // 3. Free function signature: Ret(Args...)
     template <typename Ret, typename... Args>
-    struct function_traits<Ret(Args...)> : function_traits_base<Ret, Args...> {
+    struct function_traits<Ret(Args...) &> : function_traits_base<Ret, Args...> {
+        using fn_type = Ret(Args...);
+    };
+    template <typename Ret, typename... Args>
+    struct function_traits<Ret(Args...) &&> : function_traits_base<Ret, Args...> {
+        using fn_type = Ret(Args...);
+    };
+
+    template <typename Ret, typename... Args>
+    struct function_traits<Ret(Args...) const> : function_traits_base<Ret, Args...> {
         using fn_type = Ret(Args...);
     };
 
@@ -66,13 +75,11 @@ namespace used_std {
     struct function_traits<Ret(*)(Args...)> : function_traits_base<Ret, Args...> {
         using fn_type = Ret(*)(Args...);
     };
-
     // 5. Function reference: Ret(&)(Args...)
     template <typename Ret, typename... Args>
     struct function_traits<Ret(&)(Args...)> : function_traits_base<Ret, Args...> {
         using fn_type = Ret(&)(Args...);
     };
-
     // 6. Member function: Ret(Class::*)(Args...)
     template <typename Ret, typename Class, typename... Args>
     struct function_traits<Ret(Class::*)(Args...)> : function_traits_base<Ret, Args...> {
@@ -516,41 +523,43 @@ using get_nullary_return_type_t = decltype(
 // 2. FUNCTION PREDICATES DEFINITIONS
 // ============================================================================
 // --- Free Function / Lambda Predicate Wrapper / Unbound Member Function Predicate ---
+
 template <typename Fn>
 concept IsCallableType = 
-std::is_function_v<std::remove_pointer_t<Fn>> ||   // Handles raw functions AND function pointers
-std::is_member_pointer_v<Fn> ||                     // Handles member functions & data members
-requires (std::remove_cvref_t<Fn> f) {
-    f; // Standard invocation checking requires arguments, e.g., f()
+used_std::is_function_v<used_std::remove_pointer_t<Fn>> ||  
+used_std::is_member_pointer_v<used_std::remove_pointer_t<Fn>> ||                
+requires (used_std::remove_cvref_t<Fn> f) {
+    f;
+};
+template <IsCallableType T>
+struct Free_Function_helper {
+    using type = Wildcard;
+};
+
+// Only instantiate callable_traits_t if T is a member function pointer
+template <IsCallableType T>
+requires used_std::is_member_function_pointer_v<T>
+struct Free_Function_helper<T> {
+    using type = typename used_std::callable_traits_t<T>::class_type;
 };
 
 template <IsCallableType Fn>
 struct FnPredicate {
     Fn fn;
-
+    typename Free_Function_helper<Fn>::type* instance;
     template <typename Target>
     constexpr bool operator()(const Target& target) const {
-        if constexpr (used_std::is_member_function_pointer_v<Fn>) {
-            return (target.*fn)();
+        if constexpr (used_std::is_member_function_pointer_v<used_std::remove_pointer_t<Fn>>) {
+            if constexpr (used_std::is_convertible_v<Target,typename Free_Function_helper<Fn>::type>) {
+                return used_std::invoke(fn, target);
+            } else {
+                return used_std::invoke(fn, instance ,target);
+            }
         } else{
             return used_std::invoke(fn, target);
         }
     }
 };
-
-// --- Bound Member Function Predicate (Instance + Member Function) ---
-template <typename Class, IsCallableType MemFn> 
-requires (used_std::is_class<Class>::value && used_std::is_member_function_pointer_v<MemFn>)
-struct BoundMemFnPredicate {
-    Class& instance;
-    MemFn mem_fn;
-
-    template <typename Target>
-    constexpr bool operator()(const Target& target) const {
-        return used_std::invoke(mem_fn, instance, target);
-    }
-};
-
 
 // --- Projection Case (Pattern + Member Function Extractor) ---
 template <IsCallableType Fn, typename ExpectedPattern>
@@ -587,13 +596,6 @@ template <typename Fn> struct is_fn_predicate<FnPredicate<Fn>> : used_std::true_
 template <typename T> concept is_fnpredicate = is_fn_predicate<used_std::remove_cvref_t<T>>::value;
 
 template <typename Fn>
-struct is_aboundfn_predicate : used_std::false_type {};
-template <typename Class, typename MemFn>
-struct is_aboundfn_predicate<BoundMemFnPredicate<Class,MemFn>> : used_std::true_type {};
-template <typename Class, typename MemFn>
-concept is_boundfn_predicate = is_aboundfn_predicate<BoundMemFnPredicate<Class,MemFn>>::value;
-
-template <typename Fn>
 struct is_projection_caseimpl : used_std::false_type {};
 template <typename MemFn, typename ExpectedPattern>
 struct is_projection_caseimpl<ProjectionCaseimpl<MemFn,ExpectedPattern>> : used_std::true_type {};
@@ -605,12 +607,11 @@ template <IsCallableType Fn>
 constexpr auto Predicate(Fn&& fn) {
     return FnPredicate<Fn>{ used_std::forward<Fn>(fn) };
 }
-
-template <typename Class, IsCallableType MemFn>
-requires (used_std::is_member_function_pointer_v<MemFn>)
-constexpr auto BoundPredicate(MemFn mem_fn,Class& obj) {
-    return BoundMemFnPredicate<Class, MemFn>{ obj, mem_fn };
+template <IsCallableType Fn,typename Class> 
+constexpr auto Predicate(Fn&& fn,Class* obj) {
+    return FnPredicate<Fn>{ .fn=used_std::forward<Fn>(fn) ,.instance=obj};
 }
+
 
 // Helper builder function for Case(Pattern, &fn)
 template <typename ExpectedPattern, IsCallableType Fn,typename... Args>
@@ -648,51 +649,52 @@ constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn fn,Class* instance,A
 // ============================================================================
 enum class RangeType  { Closed, Open, HalfOpenLeft, HalfOpenRight , Or };
 
-template <typename T,RangeType  iType = RangeType ::Closed> requires (used_std::is_arithmetic_v<T>)
+template <RangeType  iType = RangeType ::Closed,typename T = int> requires (used_std::is_arithmetic_v<T>)
 struct Range {
-    T min;
-    T max;
+    T lhs;
+    T rhs;
     
     constexpr bool contains(const T& target) const noexcept {
         if constexpr (iType == RangeType::Closed) {
-            return (target >= min) && (target <= max);
+            return (target >= lhs) && (target <= rhs);
         } 
         else if constexpr (iType == RangeType::Open) {
-            return (target > min) && (target < max);
+            return (target > lhs) && (target < rhs);
         }
-        else if constexpr (iType == RangeType::HalfOpenLeft) {
-            return (target > min) && (target <= max);
+        else if constexpr (iType == RangeType::HalfOpenLeft) { // (min, max]
+            return (target > lhs) && (target <= rhs);
         }
-        else if constexpr (iType == RangeType::HalfOpenLeft) {
-            return (target > min) && (target <= max);
+        else if constexpr (iType == RangeType::HalfOpenRight) { // [min, max)
+            return (target >= lhs) && (target < rhs);
         }
-        else if constexpr (iType == RangeType::Or) {
-            return ( min  < target) || (target > max );
+        else if constexpr (iType == RangeType::Or) { // Outside (min, max)
+            return (target < lhs) || (target > rhs);
         } 
         else {
             return false;
         }
     }
 };
-template <typename T> requires (used_std::is_arithmetic_v<T>)
-Range(T,T) -> Range<T>;
+template <RangeType  iType = RangeType ::Closed,typename T> requires (used_std::is_arithmetic_v<T>)
+Range(T,T) -> Range<iType,T>;
 
 template <typename T>
 struct is_range_inst : used_std::false_type {};
 
-template <typename T, RangeType  iType>
-struct is_range_inst<Range<T, iType>> : used_std::true_type {};
+template <RangeType  iType,typename T>
+struct is_range_inst<Range<iType,T>> : used_std::true_type {};
 
 template <typename T>
 concept is_range_instance = is_range_inst<used_std::remove_cvref_t<T>>::value;
 
-template <typename T,RangeType iType = RangeType::Closed> constexpr auto make_range(T min, T max) noexcept { return Range<T,iType>{min, max}; }
-template <typename T,RangeType iType = RangeType::Open> constexpr auto make_range_exclusive(T min, T max) noexcept { return Range<T,iType>{min, max}; }
-template <typename T,RangeType iType = RangeType::HalfOpenLeft> constexpr auto make_range_left_open(T min, T max) noexcept { return Range<T,iType>{min, max}; }
-template <typename T,RangeType iType = RangeType::HalfOpenRight> constexpr auto make_range_right_open(T min, T max) noexcept { return Range<T,iType>{min, max}; }
+template <typename T,RangeType iType = RangeType::Closed> constexpr auto make_range(T min, T max) noexcept { return Range<iType,T>{min, max}; }
+template <typename T,RangeType iType = RangeType::Open> constexpr auto make_range_exclusive(T min, T max) noexcept { return Range<iType,T>{min, max}; }
+template <typename T,RangeType iType = RangeType::HalfOpenLeft> constexpr auto make_range_left_open(T min, T max) noexcept { return Range<iType,T>{min, max}; }
+template <typename T,RangeType iType = RangeType::HalfOpenRight> constexpr auto make_range_right_open(T min, T max) noexcept { return Range<iType,T>{min, max}; }
 
+enum class CompoundOp { Or, And };
 
-template <typename... Ranges> requires (is_range_instance<Ranges> && ...)
+template <CompoundOp Op = CompoundOp::Or,typename... Ranges> requires (is_range_instance<Ranges> && ...)
 struct RangeCompound {
     used_std::tuple<Ranges...> ranges;
 
@@ -701,17 +703,23 @@ struct RangeCompound {
     template <typename T>
     constexpr bool contains(const T& target) const noexcept {
         return used_std::apply([&target](const auto&... r) {
-            return (r.contains(target) || ...);
+            if constexpr (Op == CompoundOp::Or) {
+                // Short-circuits on the FIRST 'true'
+                return (r.contains(target) || ...); 
+            } else {
+                // Short-circuits on the FIRST 'false'
+                return (r.contains(target) && ...); 
+            }
         }, ranges);
     }
 };
-template <typename... Ranges> 
+template <CompoundOp Op = CompoundOp::Or,typename... Ranges> 
 requires (is_range_instance<Ranges> && ...)
-RangeCompound(Ranges...) -> RangeCompound<Ranges...>;
+RangeCompound(Ranges...) -> RangeCompound<Op,Ranges...>;
 
-template <typename... Ranges>
+template <CompoundOp Op = CompoundOp::Or,typename... Ranges>
 constexpr auto make_compound_range(Ranges&&... ranges) noexcept {
-    return RangeCompound<used_std::decay_t<Ranges>...>{used_std::forward<Ranges>(ranges)...};
+    return RangeCompound<Op,used_std::decay_t<Ranges>...>{used_std::forward<Ranges>(ranges)...};
 }
 // RangeCompound test {Range<int>{0,12},Range<int>{20,30}};
 // ============================================================================
@@ -1078,16 +1086,18 @@ template <BranchHint Hint = BranchHint::None,typename T> constexpr auto Case(T&&
 
 //syntactic sugar for range
 template <RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T> requires (used_std::is_arithmetic_v<T>) constexpr auto Case(const T(&range)[2]) noexcept { 
-    return SugarProxyKey<0, Hint, Range<T,iType>>{ {.min=range[0],.max=range[1]}}; 
+    return SugarProxyKey<0, Hint, Range<iType,T>>{ {.lhs=range[0],.rhs=range[1]}}; 
 }
-template <RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T,used_std::size_t N> requires (used_std::is_arithmetic_v<T>) 
-constexpr auto Case(const T(&ranges)[N][2]) noexcept { 
-    return []<used_std::size_t... Is>(const T (&arr)[N][2], used_std::index_sequence<Is...>) {
-        auto compound = make_compound_range(
-            Range<T, iType>{arr[Is][0], arr[Is][1]}...
-        );
-        return SugarProxyKey<0, Hint, decltype(compound)>{ used_std::move(compound) };
-    }(ranges, used_std::make_index_sequence<N>{});
+template <CompoundOp cOp = CompoundOp::Or,BranchHint Hint = BranchHint::None,typename... T> requires (is_range_instance<T> && ...) 
+constexpr auto Case( T&&... ranges ) noexcept { 
+    auto compound = make_compound_range<cOp>(used_std::forward<T>(ranges)...);
+    return SugarProxyKey<0, Hint, decltype(compound)>{ used_std::move(compound) };
+    // return []<used_std::size_t... Is>(const T (&arr)[N][2], used_std::index_sequence<Is...>) {
+    //     auto compound = make_compound_range(
+    //         Range<iType,T>{arr[Is][0], arr[Is][1]}...
+    //     );
+    //     return SugarProxyKey<0, Hint, decltype(compound)>{ used_std::move(compound) };
+    // }(ranges, used_std::make_index_sequence<N>{});
 }
 template <typename T> constexpr auto likely_Case(T&& val) noexcept { return SugarProxyKey<0, BranchHint::Likely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
 template <typename T> constexpr auto unlikely_Case(T&& val) noexcept { return SugarProxyKey<0, BranchHint::Unlikely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
@@ -1100,16 +1110,12 @@ constexpr auto label_Case(T&& val) noexcept {
 }
 template <StaticLabel LabelID,RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T> requires (used_std::is_arithmetic_v<T>) 
 constexpr auto label_Case(const T(&range)[2]) noexcept { 
-    return SugarProxyKey<LabelID, Hint, Range<T,iType>>{ {.min=range[0],.max=range[1]}}; 
+    return SugarProxyKey<LabelID, Hint, Range<iType,T>>{ {.lhs=range[0],.rhs=range[1]}}; 
 }
-template <StaticLabel LabelID,RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T,used_std::size_t N> requires (used_std::is_arithmetic_v<T>) 
-constexpr auto label_Case(const T(&ranges)[N][2]) noexcept { 
-    return []<used_std::size_t... Is>(const T (&arr)[N][2], used_std::index_sequence<Is...>) {
-        auto compound = make_compound_range(
-            Range<T, iType>{arr[Is][0], arr[Is][1]}...
-        );
-        return SugarProxyKey<0, Hint, decltype(compound)>{ used_std::move(compound) };
-    }(ranges, used_std::make_index_sequence<N>{});
+template <StaticLabel LabelID,CompoundOp cOp = CompoundOp::Or,BranchHint Hint = BranchHint::None,typename... T> requires (is_range_instance<T> && ...) 
+constexpr auto label_Case(T&&... ranges) noexcept { 
+    auto compound = make_compound_range<cOp>(used_std::forward<T>(ranges)...);
+    return SugarProxyKey<0, Hint, decltype(compound)>{ used_std::move(compound) };
 }
 template <StaticLabel LabelID, typename T> 
 constexpr auto likely_label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::Likely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
@@ -1220,18 +1226,18 @@ struct UnwrapReturnType<GotoValue<LabelID, T>> {
     using type = T;
 };
 
-template <std::size_t Low, std::size_t High>
+template <used_std::size_t Low, used_std::size_t High>
 struct DynamicSwitch {
     template <typename Fn>
-    static constexpr void dispatch(std::size_t idx, Fn&& fn) noexcept {
+    static constexpr void dispatch(used_std::size_t idx, Fn&& fn) noexcept {
         if constexpr (Low == High - 1) {
             fn.template operator()<Low>();
         } else {
-            constexpr std::size_t Mid = Low + (High - Low) / 2;
+            constexpr used_std::size_t Mid = Low + (High - Low) / 2;
             if (idx < Mid) {
-                DynamicSwitch<Low, Mid>::dispatch(idx, std::forward<Fn>(fn));
+                DynamicSwitch<Low, Mid>::dispatch(idx, used_std::forward<Fn>(fn));
             } else {
-                DynamicSwitch<Mid, High>::dispatch(idx, std::forward<Fn>(fn));
+                DynamicSwitch<Mid, High>::dispatch(idx, used_std::forward<Fn>(fn));
             }
         }
     }
@@ -1244,23 +1250,23 @@ struct DynamicSwitch {
 #define DISPATCH_64(N) DISPATCH_16(N)  DISPATCH_16(N+16) DISPATCH_16(N+32) DISPATCH_16(N+48)
 
 template <typename TargetType, typename DefaultType, typename ContextTuple, typename CasesTuple>
-requires (mini_concepts::TupleLike<std::remove_cvref_t<ContextTuple>> && 
-          mini_concepts::TupleLike<std::remove_cvref_t<CasesTuple>>)
+requires (mini_concepts::TupleLike<used_std::remove_cvref_t<ContextTuple>> && 
+          mini_concepts::TupleLike<used_std::remove_cvref_t<CasesTuple>>)
 constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& default_action, ContextTuple&& ctx, CasesTuple&& cases) noexcept {
-    using RawCases = std::remove_cvref_t<CasesTuple>;
-    constexpr std::size_t TotalCases = std::tuple_size_v<RawCases>;
+    using RawCases = used_std::remove_cvref_t<CasesTuple>;
+    constexpr used_std::size_t TotalCases = used_std::tuple_size_v<RawCases>;
 
     using CoreReturnType  = decltype(execute_action(default_action, ctx));
     using CleanReturnType = typename UnwrapReturnType<CoreReturnType>::type;
 
-    std::size_t active_index = 0;
+    used_std::size_t active_index = 0;
     bool executed = false;
     bool jump_taken = false;
     bool forced_jump = false;
 
     // Storage for return value without default-constructor penalties
     CleanReturnType value{};
-    auto step_lambda = [&]<std::size_t Is>() noexcept {
+    auto step_lambda = [&]<used_std::size_t Is>() noexcept {
         auto& current_case = used_std::get<Is>(cases);
         using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
 
@@ -1329,10 +1335,10 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
         //     default: break;
         // }
         if (executed) {
-            if constexpr (std::is_same_v<CleanReturnType, void> || std::is_same_v<CleanReturnType, Wildcard>) {
+            if constexpr (used_std::is_same_v<CleanReturnType, void> || used_std::is_same_v<CleanReturnType, Wildcard>) {
                 return;
             } else {
-                return std::move(value);
+                return used_std::move(value);
             }
         }
 
@@ -1342,10 +1348,10 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
     }
 
     // Default Fallback
-    if constexpr (std::is_same_v<CleanReturnType, void> || std::is_same_v<CleanReturnType, Wildcard>) {
-        execute_action(std::forward<DefaultType>(default_action), ctx);
+    if constexpr (used_std::is_same_v<CleanReturnType, void> || used_std::is_same_v<CleanReturnType, Wildcard>) {
+        execute_action(used_std::forward<DefaultType>(default_action), ctx);
     } else {
-        return execute_action(std::forward<DefaultType>(default_action), ctx);
+        return execute_action(used_std::forward<DefaultType>(default_action), ctx);
     }
 }
 #undef CASE_DISPATCH

@@ -1,7 +1,5 @@
 module;
-#include <cstdlib>
-#include <cmath>
-export module utl;
+export module lib.utl;
 import lib.std;
 
 export {

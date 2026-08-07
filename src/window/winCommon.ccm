@@ -1,8 +1,7 @@
 module;
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include "pch.hpp"
 
-export module win:common;
+export module lib.win:common;
 import lib.std;
 import lib.types;
 
@@ -88,35 +87,10 @@ struct EventType {
         Xbutton1,Xbutton2,
         mLast
     };
-    enum event {
-        eventNone = 0,
-        keyPressed,
-        keyReleased,
-        mouseButtonPressed,
-        mouseButtonReleased,
-        mouseScroll, 
-        mousePosChanged,
-        windowMoved, 
-        windowResized, 
-        focusIn, 
-        focusOut,
-        mouseEnter,
-        mouseLeave, 
-        windowRefresh,
-        quit, 
-        dataDrop, 
-        dataDrag,
-        windowMaximized,
-        windowMinimized,
-        windowRestored,
-        scaleUpdated, 
-        monitorConnected,
-        monitorDisconnected
-    };
+    
     static constexpr size_t castPlatform(size_t inchar, LPARAM lParam = 0);
     static constexpr size_t castMouse(UINT message, WPARAM wParam);
     static constexpr size_t toPlatform(size_t engineKey);
-    static constexpr event parseMessage(UINT message, WPARAM wParam, LPARAM lParam);
 };
 
 export
@@ -226,10 +200,11 @@ struct KeyState{
 
 
 export
-struct InputState {
+struct Event {
     using et =  EventType;
     KeyState* Keys = nullptr;
     bool Mouse [et::mLast] {};
+    bool onFocus = false;
     
     int32 zDelta = 0;
     int32 scrollDirection = 0;
@@ -238,9 +213,36 @@ struct InputState {
     
     void addKeyboard(KeyState* key) {Keys = key;}
 
-    void mouseScroll(void(*scrFN)(int32*,int32*,void*),void* t = nullptr ){
+    void mouseScrollevent(void(*scrFN)(int32*,int32*,void*),void* t = nullptr ){
         scrFN(&zDelta,&scrollDirection,t);
     } 
+    enum event {
+        eventNone = 0,
+        keyPressed,
+        keyReleased,
+        mouseButtonPressed,
+        mouseButtonReleased,
+        mouseScroll, 
+        mousePosChanged,
+        windowMoved, 
+        windowResized, 
+        focusIn, 
+        focusOut,
+        mouseEnter,
+        mouseLeave, 
+        windowRefresh,
+        quit, 
+        dataDrop, 
+        dataDrag,
+        windowMaximized,
+        windowMinimized,
+        windowRestored,
+        scaleUpdated, 
+        monitorConnected,
+        monitorDisconnected
+    };
+    
+    static constexpr event parseMessage(UINT message, WPARAM wParam, LPARAM lParam);
 };
 
 // ____EVENT_TYPE______
@@ -498,7 +500,7 @@ constexpr size_t EventType::toPlatform(size_t engineKey) {
     }
 };
 
-constexpr EventType::event EventType::parseMessage(UINT message, WPARAM wParam, LPARAM lParam) {
+constexpr Event::event Event::parseMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
         // --- Keyboard ---
         case WM_KEYDOWN:
@@ -574,10 +576,8 @@ constexpr EventType::event EventType::parseMessage(UINT message, WPARAM wParam, 
     }
     return eventNone;
 };
-#endif
 
 // ____WINDOW_FLAGS______
-#ifdef _WIN32
 constexpr Vec2<uint32> WindowFlags::WindowStyles(uint32 flags) {
     uint32 outStyle = WS_OVERLAPPEDWINDOW;
     uint32 outExStyle = 0;

@@ -1,16 +1,14 @@
 
 // #include <chrono>
 // #include <tuple>
-#include <synchapi.h>
-#include <GL/gl.h>
-#include <GL/glext.h>
-
 // import lib;
+#include "pch.hpp"
+
 import lib.std;
 import lib.types;
-import win;
-import utl;
-import image;
+import lib.win;
+import lib.utl;
+import lib.image;
 
 GLuint loadTGATexture(const std::string& filename) {
     TGAImage img;
@@ -55,13 +53,13 @@ int main() {
     Window child;
     Window app("MainWindow",800,600,WindowFlags::WinOGL | WindowFlags::WinCenter ,{100,100});
     // child.InitChild(&app,"ChildWindow",800,600,WindowFlags::NoBorder);
-    InputState input;
+    Event event;
     GlHints glHints;
     Renderer<"GL"> glCtx(&glHints);
     DisplayManager disp;
     
     app.addDisplayManager(&disp);
-    app.addInputState(&input);
+    app.addEvent(&event);
     app.addRenderer(&glHints);
     glHints.Initialize(app.mHWND, 4, 3);
     glHints.Resize(app.Desc.width, app.Desc.height);
@@ -75,7 +73,7 @@ int main() {
     keyData<et::d>,
     keyData<et::q>,
     keyData<et::controlL>> KeyMap;
-    input.addKeyboard(KeyMap.KeysState);
+    event.addKeyboard(KeyMap.KeysState);
 
     float x = 0 ,y = 0;
 

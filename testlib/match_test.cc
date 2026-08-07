@@ -96,8 +96,8 @@ int main () {
     // -------------------------------------------------------------
     int number = -43;
     std::string_view num_res = Match(number)[__](
-        Case(Predicate(is_even))     >> [] { return "Even Number"; },
-        Case(Predicate(is_positive)) >> [] { return "Positive Odd Number"; },
+        Case(Predicate(&is_even))     >> [] { return "Even Number"; },
+        Case(Predicate(&is_positive)) >> [] { return "Positive Odd Number"; },
         [] { return "Other"; }
     );
     std::cout << "Number " << number << " -> " << num_res << "\n";
@@ -107,7 +107,7 @@ int main () {
     // -------------------------------------------------------------
     User u1{"Alice", 22, true};
     
-    std::string_view user_res = Match(u1)[__](
+    std::string_view user_res = Match(u1)[__] (
         Case(Predicate(&User::is_adult))  >> [] { return "Adult User"; },
         Case(Predicate(&User::is_active)) >> [] { return "Active Minor"; },
         [] { return "Inactive Minor"; }
@@ -121,7 +121,7 @@ int main () {
     int score = 75;
 
     std::string_view val_res = Match(score)[__](
-        Case(BoundPredicate(&Validator::exceeds_threshold,validator)) >> [] {
+        Case(Predicate(&Validator::exceeds_threshold,&validator)) >> [] {
             return "Passed Validation";
         },
         [] { return "Failed Validation"; }
@@ -156,12 +156,12 @@ int main () {
         }
     };
     constexpr s test = 20;
-    constexpr int num = 9;
+    constexpr int num = 15;
     static_assert(Match(num)[__] (
-        label_Case<"id">({{0,10},{20,30}}) >> []{return true;},
+        label_Case<"id">(Range{0,15},Range{20,30}) >> []{return true;},
         []{return false;}), "" );
     static_assert(Match(num)[__] (
-        Case<RangeType::Or>({0,10}) >> []{return true;},
+        Case(Range<RangeType::Or>(0,10),Range<RangeType::Or>(20,40)) >> []{return true;},
         []{return false;}), "" );
     constexpr int a = 0b1010;
     static_assert(Match(a)[__] (

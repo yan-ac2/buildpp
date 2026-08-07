@@ -70,8 +70,8 @@ namespace mini_std {
     template <typename T> using remove_cvref_t = typename mini_std::remove_cvref<T>::type;
 
     // --- FORWARD & MOVE ---
-    template <typename T> constexpr T&& forward(mini_std::remove_reference_t<T>& t) noexcept { return noexcept(static_cast<T&&>(t)); }
-    template <typename T> constexpr T&& forward(mini_std::remove_reference_t<T>&& t) noexcept { return noexcept(static_cast<T&&>(t)); }
+    template <typename T> constexpr T&& forward(mini_std::remove_reference_t<T>& t) noexcept { return static_cast<T&&>(t); }
+    template <typename T> constexpr T&& forward(mini_std::remove_reference_t<T>&& t) noexcept { return static_cast<T&&>(t); }
     template <typename T> constexpr mini_std::remove_reference_t<T>&& move(T&& t) noexcept { return static_cast<mini_std::remove_reference_t<T>&&>(t); }
 
     template <typename T> struct add_lvalue_reference { using type = T&; };
@@ -192,35 +192,77 @@ namespace mini_std {
     // --- POINTER & FUNCTION DETECTION ---
     
     template <typename F> struct is_function : mini_std::false_type {};
-    template <typename Ret, typename... Args> struct is_function<Ret(Args...)> : mini_std::true_type {};
-    template <typename Ret, typename... Args> struct is_function<Ret(Args...) const> : mini_std::true_type {};
-    template <typename Ret, typename... Args> struct is_function<Ret(Args...) volatile> : mini_std::true_type {};
-    template <typename Ret, typename... Args> struct is_function<Ret(Args...) const volatile> : mini_std::true_type {};
-    template <typename Ret, typename... Args> struct is_function<Ret(Args...) &> : mini_std::true_type {};
-    template <typename Ret, typename... Args> struct is_function<Ret(Args...) const &> : mini_std::true_type {};
-    template <typename Ret, typename... Args> struct is_function<Ret(Args...) volatile &> : mini_std::true_type {};
-    template <typename Ret, typename... Args> struct is_function<Ret(Args...) const volatile &> : mini_std::true_type {};
-    template <typename Ret, typename... Args> struct is_function<Ret(Args...) &&> : mini_std::true_type {};
-    template <typename Ret, typename... Args> struct is_function<Ret(Args...) const &&> : mini_std::true_type {};
-    template <typename Ret, typename... Args> struct is_function<Ret(Args...) volatile &&> : mini_std::true_type {};
-    template <typename Ret, typename... Args> struct is_function<Ret(Args...) const volatile &&> : mini_std::true_type {};
+    #define DEFINE_IS_FN(...) \
+    template <typename Ret, typename... Args> \
+    struct is_function<Ret(Args...) __VA_ARGS__> : mini_std::true_type {};
+    DEFINE_IS_FN()
+    DEFINE_IS_FN(const)
+    DEFINE_IS_FN(volatile)
+    DEFINE_IS_FN(const volatile)
+    DEFINE_IS_FN(&)
+    DEFINE_IS_FN(const &)
+    DEFINE_IS_FN(volatile &)
+    DEFINE_IS_FN(const volatile &)
+    DEFINE_IS_FN(&&)
+    DEFINE_IS_FN(const &&)
+    DEFINE_IS_FN(volatile &&)
+    DEFINE_IS_FN(const volatile &&)
+
+    DEFINE_IS_FN(noexcept)
+    DEFINE_IS_FN(const noexcept)
+    DEFINE_IS_FN(volatile noexcept)
+    DEFINE_IS_FN(const volatile noexcept)
+    DEFINE_IS_FN(& noexcept)
+    DEFINE_IS_FN(const & noexcept)
+    DEFINE_IS_FN(volatile & noexcept)
+    DEFINE_IS_FN(const volatile & noexcept)
+    DEFINE_IS_FN(&& noexcept)
+    DEFINE_IS_FN(const && noexcept)
+    DEFINE_IS_FN(volatile && noexcept)
+    DEFINE_IS_FN(const volatile && noexcept)
     
+    #undef DEFINE_IS_FN
     template <typename Ret, typename... Args> constexpr bool is_function_v = is_function<Ret(Args...)>::value;
     
     // --- MEMBER FUNCTION POINTER ---
     template <typename T>
     struct is_member_function_pointer : mini_std::false_type {};
 
-    template <typename Ret, typename Class, typename... Args>
-    struct is_member_function_pointer<Ret (Class::*)(Args...)> : mini_std::true_type {};
+    #define DEFINE_IS_MEM_FN(...) \
+    template <typename Ret, typename Class, typename... Args> \
+    struct is_member_function_pointer<Ret (Class::*)(Args...) __VA_ARGS__> : mini_std::true_type {};
 
-    template <typename Ret, typename Class, typename... Args>
-    struct is_member_function_pointer<Ret (Class::*)(Args...) const> : mini_std::true_type {};
+    DEFINE_IS_MEM_FN()
+    DEFINE_IS_MEM_FN(const)
+    DEFINE_IS_MEM_FN(volatile)
+    DEFINE_IS_MEM_FN(const volatile)
+    DEFINE_IS_MEM_FN(&)
+    DEFINE_IS_MEM_FN(const &)
+    DEFINE_IS_MEM_FN(volatile &)
+    DEFINE_IS_MEM_FN(const volatile &)
+    DEFINE_IS_MEM_FN(&&)
+    DEFINE_IS_MEM_FN(const &&)
+    DEFINE_IS_MEM_FN(volatile &&)
+    DEFINE_IS_MEM_FN(const volatile &&)
+
+    DEFINE_IS_MEM_FN(noexcept)
+    DEFINE_IS_MEM_FN(const noexcept)
+    DEFINE_IS_MEM_FN(volatile noexcept)
+    DEFINE_IS_MEM_FN(const volatile noexcept)
+    DEFINE_IS_MEM_FN(& noexcept)
+    DEFINE_IS_MEM_FN(const & noexcept)
+    DEFINE_IS_MEM_FN(volatile & noexcept)
+    DEFINE_IS_MEM_FN(const volatile & noexcept)
+    DEFINE_IS_MEM_FN(&& noexcept)
+    DEFINE_IS_MEM_FN(const && noexcept)
+    DEFINE_IS_MEM_FN(volatile && noexcept)
+    DEFINE_IS_MEM_FN(const volatile && noexcept)
+
+    #undef DEFINE_IS_MEM_FN
 
     template <typename T>
     inline constexpr bool is_member_function_pointer_v = 
         is_member_function_pointer<mini_std::remove_cvref_t<T>>::value;
-
     // --- MEMBER OBJECT POINTER ---
     template <typename T>
     struct is_member_object_pointer : mini_std::false_type {};
@@ -239,6 +281,7 @@ namespace mini_std {
 
     template <typename T>
     struct is_member_pointer : mini_std::is_member_pointer_helper<mini_std::remove_cv_t<T>> {};
+    template<typename T> inline constexpr bool is_member_pointer_v = is_member_pointer<T>::value;
 
     // --- ADD POINTER METAPROGRAMMING ---
     namespace addPtrdetail {
@@ -426,13 +469,15 @@ namespace mini_std {
         }
     }
 
+    // Overload 1: Regular callables (exclude member function pointers)
     template <typename F, typename... Args>
-    requires requires(F&& f, Args&&... args) { mini_std::forward<F>(f)(mini_std::forward<Args>(args)...); }
+    requires (!mini_std::is_member_pointer_v<mini_std::remove_cvref_t<F>>) &&
+            requires(F&& f, Args&&... args) { mini_std::forward<F>(f)(mini_std::forward<Args>(args)...); }
     constexpr decltype(auto) invoke(F&& f, Args&&... args) {
         return mini_std::forward<F>(f)(mini_std::forward<Args>(args)...);
     }
 
-    // Overload 2: Member functions (SFINAE guarded)
+    // Overload 2: Member functions
     template <typename F, typename Obj, typename... Args>
     requires mini_std::is_member_function_pointer_v<mini_std::remove_cvref_t<F>>
     constexpr decltype(auto) invoke(F&& f, Obj&& obj, Args&&... args) {

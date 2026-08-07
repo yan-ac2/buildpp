@@ -1,11 +1,10 @@
 module;
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include "pch.hpp"
 
-export module win:event;
+export module lib.win:event;
 import lib.std;
 import lib.types;
-import utl;
+import lib.utl;
 import :common;
 
 export
