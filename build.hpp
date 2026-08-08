@@ -1423,8 +1423,12 @@ class Project
         std::string pchOut = fmt((oPath / fs::path(PCHfile).stem()).string(),".pch").str;
         const std::string f_cmd {fmt("{} {} -x c++-header {} -o {}",Compiler, Options,headerFile,pchOut).clean()};
         Options.append(fmt(" -include-pch {} ",pchOut));
-        if (fs::exists(pchOut) && fs::last_write_time(headerFile) < fs::last_write_time(pchOut)) {
-            return 1;
+        if (fs::exists(pchOut)) {
+            if (fs::last_write_time(headerFile) < fs::last_write_time(pchOut)) {
+                fs::rename(pchOut,fmt(pchOut,".old").str);
+            } else {
+                return 1;
+            }
         }
         print << fmt("Compiling PCH "_fmt.color(fmt::Bold_Green) , f_cmd) << "\n" ;
         int ret {};

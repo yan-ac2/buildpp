@@ -267,9 +267,9 @@ class Window {
         mWCA.cbWndExtra    = 0;
         mWCA.hInstance     = Desc.mHInstance;
         mWCA.hIcon         = LoadIcon(mWCA.hInstance, IDI_APPLICATION);
-        mWCA.hCursor       = LoadCursor(NULL, IDC_ARROW);
+        mWCA.hCursor       = LoadCursor(nullptr, IDC_ARROW);
         mWCA.hbrBackground = nullptr; // Set background so child is visible
-        mWCA.lpszMenuName  = NULL;
+        mWCA.lpszMenuName  = nullptr;
         mWCA.lpszClassName = mClassName.c_str();
 
         RegisterClassA(&mWCA);
