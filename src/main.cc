@@ -72,7 +72,7 @@ int main() {
     keyData<et::s>,
     keyData<et::d>,
     keyData<et::q>,
-    keyData<et::controlL>> KeyMap;
+    keyData<et::controlL>> KeyMap (&event);
     event.addKeyboard(KeyMap.KeysState);
 
     float x = 0 ,y = 0;
@@ -128,7 +128,7 @@ int main() {
     while (app.IsRunning()) {
         times.start();
         app.ProcessEvents();
-        if(app.GetInput().scrollDirection > 0) {
+        if(app.GetEvent().scrollDirection > 0) {
             auto monitor = disp.GetPrimaryMonitor();
             std::cout << fmt( "Monitor\n X: {} Y: {} {}x{} isPrimary: {}\n",monitor->x,monitor->y,monitor->width,monitor->height,monitor->isPrimary ? "true" : "false");   
             // std::cout << "\nMonitor \n"<< "X: "<< monitor->x << " Y: " << monitor->y << " Res: " << monitor->width  << "x" << monitor->height << " Is Primary: " << monitor->isPrimary << "\n";   

@@ -129,10 +129,10 @@ struct KeyState{
     enum Flags : unsigned char {
         None         = 0,
         kIsDown      = 1 << 0, // 0000 0001
-        kWasDown     = 1 << 1,
-        kChangedDown = 1 << 2,
-        kIsToggled   = 1 << 3,
-        rawKeyDown   = 1 << 4
+        kWasDown     = 1 << 1, // 0000 0010
+        kChangedDown = 1 << 2, // 0000 0100
+        kIsToggled   = 1 << 3, // 0000 1000
+        rawKeyDown   = 1 << 4  // 0001 0000
     };
     unsigned char kState = None;
 
@@ -204,7 +204,7 @@ struct Event {
     using et =  EventType;
     KeyState* Keys = nullptr;
     bool Mouse [et::mLast] {};
-    bool onFocus = false;
+    bool onFocus = true;
     
     int32 zDelta = 0;
     int32 scrollDirection = 0;

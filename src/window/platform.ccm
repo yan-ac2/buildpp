@@ -88,7 +88,7 @@ class Window {
     HWND mHWND = nullptr;
     HDC hdc = nullptr;
     DisplayManager* mDispMgr = nullptr; 
-    Event* mInput = nullptr; 
+    Event* event = nullptr; 
     IRenderer* gfxCtx = nullptr; 
     
     Window() = default;
@@ -111,8 +111,8 @@ class Window {
     {
         Init(title, width, height, flags, pos, parent);
     }
-    [[nodiscard]] const Event& GetInput() const noexcept { return *mInput; }
-    [[nodiscard]] Event&       GetInputMutable() noexcept { return *mInput; }
+    [[nodiscard]] const Event& GetEvent() const noexcept { return *event; }
+    [[nodiscard]] Event&       GetEventMutable() noexcept { return *event; }
     [[nodiscard]] static Window&    GetRoot() { return *sRootWindow; }
     [[nodiscard]] bool IsRunning() const noexcept { return mRunning; }
     [[nodiscard]] HWND GetNativeHandle() noexcept { return mHWND; }
@@ -123,7 +123,7 @@ class Window {
         this->mDispMgr = disp;
     }
     void addEvent(Event* iState) {
-        this->mInput = iState;
+        this->event = iState;
     }
     void addRenderer(IRenderer* iRenderer) {
         this->gfxCtx = iRenderer;
@@ -131,7 +131,7 @@ class Window {
 
     void ProcessEvents() {
         MSG msg = {};
-        mInput->scrollDirection = 0;
+        event->scrollDirection = 0;
         
         while (PeekMessageA(&msg, nullptr, 0, 0, PM_REMOVE)) {
             auto inMsg = Event::parseMessage(msg.message,msg.wParam,msg.lParam);
@@ -162,23 +162,25 @@ class Window {
         
         // size_t keyboard = EventType::castPlatform(wParam,lParam);
         size_t mouse = EventType::castMouse(uMsg,wParam);
-        Event::parseMessage(uMsg,wParam,lParam);
+        // Event::parseMessage(uMsg,wParam,lParam);
         // std::print("Key: {} pressed\n",keyboard);
         // std::cout << "param : " << param << "\n";
         switch (uMsg) {
             case WM_ACTIVATE: {
                 // Check the activation state
                 WORD activationState = LOWORD(wParam);
-                
-                if (activationState == WA_INACTIVE) {
-                    // Window is OUT OF FOCUS
-                    std::cout << "Window lost focus (inactive)." << std::endl;
-                } else {
-                    // Window is IN FOCUS (WA_ACTIVE or WA_CLICKACTIVE)
-                    std::cout << "Window gained focus (active)." << std::endl;
+                if (event != nullptr) {
+                    bool isFocused = (activationState != WA_INACTIVE);
+                    event->onFocus = isFocused;
+
+                    if (isFocused) {
+                        std::cout << "Window gained focus (active)." << std::endl;
+                    } else {
+                        std::cout << "Window lost focus (inactive)." << std::endl;
+                    }
                 }
+                return 0;
             }
-            break;
 
             case WM_DESTROY:
                 PostQuitMessage(0); // Signals the message loop to stop
@@ -186,39 +188,39 @@ class Window {
                 
             // --- Mouse Movement ---
             case WM_MOUSEMOVE:
-                mInput->mouseX = LOWORD(lParam); // X coordinate relative to window
-                mInput->mouseY = HIWORD(lParam); // Y coordinate relative to window
+                event->mouseX = LOWORD(lParam); // X coordinate relative to window
+                event->mouseY = HIWORD(lParam); // Y coordinate relative to window
             
                 return 0;
 
             // --- Mouse Buttons ---
             case WM_LBUTTONDOWN:
-                mInput->Mouse[mouse] = true;
+                event->Mouse[mouse] = true;
                 return 0;
             case WM_LBUTTONUP:
-                mInput->Mouse[mouse] = false;
+                event->Mouse[mouse] = false;
                 return 0;
             case WM_RBUTTONDOWN:
-                mInput->Mouse[mouse] = true;
+                event->Mouse[mouse] = true;
                 return 0;
             case WM_RBUTTONUP:
-                mInput->Mouse[mouse] = false;
+                event->Mouse[mouse] = false;
                 return 0;
             case WM_XBUTTONDOWN:
-                mInput->Mouse[mouse] = true;
+                event->Mouse[mouse] = true;
                 return 0;
             case WM_XBUTTONUP:
-                mInput->Mouse[mouse] = false;
+                event->Mouse[mouse] = false;
                 return 0;
             case WM_MBUTTONDOWN:
-                mInput->Mouse[mouse] = true;
+                event->Mouse[mouse] = true;
                 return 0;
             case WM_MBUTTONUP:
-                mInput->Mouse[mouse] = false;
+                event->Mouse[mouse] = false;
                 return 0;
             // --- Mouse Wheels ---
             case WM_MOUSEWHEEL: {
-                mInput->mouseScrollevent([](int32* delta,int32* sdir,void* inParam){
+                event->mouseScrollevent([](int32* delta,int32* sdir,void* inParam){
                     auto in = static_cast<WPARAM*>(inParam) ;
                     *delta = GET_WHEEL_DELTA_WPARAM(*in);
                     *sdir = *delta / WHEEL_DELTA;

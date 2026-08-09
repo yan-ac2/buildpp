@@ -1424,7 +1424,7 @@ class Project
         const std::string f_cmd {fmt("{} {} -x c++-header {} -o {}",Compiler, Options,headerFile,pchOut).clean()};
         Options.append(fmt(" -include-pch {} ",pchOut));
         if (fs::exists(pchOut)) {
-            if (fs::last_write_time(headerFile) < fs::last_write_time(pchOut)) {
+            if (fs::last_write_time(headerFile) > fs::last_write_time(pchOut)) {
                 fs::rename(pchOut,fmt(pchOut,".old").str);
             } else {
                 return 1;

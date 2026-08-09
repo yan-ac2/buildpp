@@ -4,17 +4,16 @@
 // --- A. Numeric & Range Matching ---
 void showcase_numeric_and_ranges(int score) {
     std::cout << "\n=== 1. Numeric & Range Pattern Matching ===" << std::endl;
-    
+    char test = 't';
     // std::size_t score2 = 2;
-    std::string_view result = Match(score)[score]  (
+    std::string_view result = Match(score)(score,test)  (
         Case(100)                      >> [] { return "Perfect Score!"; },
-        Case({90,99})       >> [] { return "Grade: A"; },
+        Case({90,99})        >> [] { return "Grade: A"; },
         Case({80, 89})       >> [] { return "Grade: B"; },
         Case({70, 79})       >> [] { return "Grade: C"; },
         [](int& s) { 
-            // auto gett = s;
-            return s < 70 ? "Grade: Fail" : "Grade: Invalid"; 
-            // return "Invalid"; 
+            return (s < 70 ? "Grade: Fail" : "Grade: Invalid"); 
+
         }
     );
 
@@ -24,20 +23,21 @@ void showcase_numeric_and_ranges(int score) {
 // --- B. StaticLabel / FNV-1a Hash Matching ---
 void showcase_hash_labels(std::string_view command) {
     std::cout << "\n=== 2. StaticLabel Hash Matching ===" << std::endl;
-
+    int test = 1;
     std::size_t cmd_hash = used_std::strHash::fnv1a_hash(command.data(), command.size());
 
-    std::string_view response = Match(command)(command,cmd_hash) (
-        Case("start")  >> [] { return "System Starting..."; },
-        label_Case<"stop">("stop")   >> [] { 
-            // if (true) {
-            //     // return fallthrough_to_next(); 
-            // } else {
-            // }
-            return goto_case("err"); 
+    std::string_view response = Match(command)(command,&cmd_hash,&test) (
+        Case("start")   >> [] { return "System Starting..."; },
+        label_Case<"stop">
+        ("stop")        >> [](int* i) { 
+            if (*i == 1) {
+                return goto_case("start"); 
+            } else {
+                return goto_case("err"); 
+            }
         },
-        Case("pause")  >> [] { return "System Paused."; },
-        label_Case<"err">(__)       >> [](std::string_view& s) { return "err"; },
+        Case("pause")           >> [] { return "System Paused."; },
+        label_Case<"err">(__)   >> [](std::string_view& s) { return "err"; },
         []{return "UNDEFINED!";}
     );
 
@@ -165,7 +165,7 @@ int main () {
         []{return false;}), "" );
     constexpr int a = 0b1010;
     static_assert(Match(a)[__] (
-        Case(bits_all_set(0b0100 & 0b1001)) >> []{return true;},
+        Case(bits_all_clear(0b0100 | 0b0001)) >> []{return true;},
         []{return false;}), "" );
         
     Match(test)[__] (

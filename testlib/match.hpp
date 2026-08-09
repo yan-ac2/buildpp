@@ -176,26 +176,28 @@ namespace used_std {
         constexpr used_std::size_t size() const noexcept { return length; }
     };
 
-    //tuple stuff
-
+    //========================================
+    //              tuple stuff
+    //========================================
     
-    template <typename Seq1, typename Seq2>
-    struct concat_index_sequence;
-
-    template <used_std::size_t... Is1, used_std::size_t... Is2>
-    struct concat_index_sequence<used_std::index_sequence<Is1...>, used_std::index_sequence<Is2...>> {
-        using type = used_std::index_sequence<Is1..., Is2...>;
-    };
-
-    template <typename Seq1, typename Seq2>
-    using concat_index_sequence_t = typename concat_index_sequence<Seq1, Seq2>::type;
-
-    template <used_std::size_t... Is1, used_std::size_t... Is2>
-    constexpr auto operator+(used_std::index_sequence<Is1...>, used_std::index_sequence<Is2...>) {
-        return concat_index_sequence_t<used_std::index_sequence<Is1...>, used_std::index_sequence<Is2...>>{};
-    }
-
+    
     namespace detail {
+        template <typename Seq1, typename Seq2>
+        struct concat_index_sequence;
+    
+        template <used_std::size_t... Is1, used_std::size_t... Is2>
+        struct concat_index_sequence<used_std::index_sequence<Is1...>, used_std::index_sequence<Is2...>> {
+            using type = used_std::index_sequence<Is1..., Is2...>;
+        };
+    
+        template <typename Seq1, typename Seq2>
+        using concat_index_sequence_t = typename concat_index_sequence<Seq1, Seq2>::type;
+    
+        template <used_std::size_t... Is1, used_std::size_t... Is2>
+        constexpr auto operator+(used_std::index_sequence<Is1...>, used_std::index_sequence<Is2...>) {
+            return concat_index_sequence_t<used_std::index_sequence<Is1...>, used_std::index_sequence<Is2...>>{};
+        }
+
         // Helper to extract the size of an index_sequence
         template <typename Seq>
         struct index_sequence_size;
@@ -204,106 +206,110 @@ namespace used_std {
         struct index_sequence_size<used_std::index_sequence<Is...>> {
             static constexpr used_std::size_t value = sizeof...(Is);
         };
+        // template <typename CleanTypeA, typename TupleB, used_std::size_t IdxB = 0>
+        // constexpr used_std::size_t find_matching_context_index() {
+        //     constexpr used_std::size_t SizeB = used_std::tuple_size_v<TupleB>;
+            
+        //     if constexpr (IdxB >= SizeB) {
+        //         static_assert(IdxB < SizeB, "Action parameter type could not be matched to any element in Context tuple!");
+        //         return 0;
+        //     } else {
+        //         using CleanTypeB = used_std::remove_cvref_t<used_std::tuple_element_t<IdxB, TupleB>>;
+                
+        //         if constexpr (used_std::is_same_v<CleanTypeA, CleanTypeB>) {
+        //             return IdxB; // Found matching context index!
+        //         } else {
+        //             return find_matching_context_index<CleanTypeA, TupleB, IdxB + 1>();
+        //         }
+        //     }
+        // }
 
-        template <typename T, typename TupleB, used_std::size_t... Js>
-        constexpr bool contains_type_impl(used_std::index_sequence<Js...>) {
-            return (
-                used_std::is_same_v<
-                    used_std::remove_cvref_t<T>,
-                    used_std::remove_cvref_t<used_std::tuple_element_t<Js, TupleB>>
-                > || ...
-            );
+        // template <typename TupleA, typename TupleB>
+        // constexpr auto cross_index_type() {
+        //     constexpr used_std::size_t SizeA = used_std::tuple_size_v<TupleA>;
+
+        //     return []<used_std::size_t... IsA>(used_std::index_sequence<IsA...>) {
+                
+        //         // For each parameter in TupleA, find its corresponding index in TupleB
+        //         auto find_pair = []<used_std::size_t IdxA>() {
+        //             using CleanTypeA = used_std::remove_cvref_t<used_std::tuple_element_t<IdxA, TupleA>>;
+        //             constexpr used_std::size_t MatchedIdxB = find_matching_context_index<CleanTypeA, TupleB>();
+                    
+        //             return used_std::index_sequence<MatchedIdxB>{};
+        //         };
+
+        //         // Accumulate the mapped context indices
+        //         return (find_pair.template operator()<IsA>() + ... + used_std::index_sequence<>{});
+
+        //     }(used_std::make_index_sequence<SizeA>{});
+        // }
+        // 1. Count how many times TargetType appeared in TupleA BEFORE position UpToIdx
+        template <typename TargetType, typename TupleA, used_std::size_t UpToIdx>
+        constexpr used_std::size_t count_previous_occurrences() {
+            return []<used_std::size_t... Is>(used_std::index_sequence<Is...>) {
+                return ((used_std::is_same_v<
+                    TargetType,
+                    used_std::remove_cvref_t<used_std::tuple_element_t<Is, TupleA>>
+                > ? 1 : 0) + ... + 0);
+            }(used_std::make_index_sequence<UpToIdx>{});
         }
-    
-        template <typename T, typename Tuple, used_std::size_t... Js>
-        constexpr used_std::size_t first_index_of_impl(used_std::index_sequence<Js...>) {
-            constexpr bool matches[] = {
-                used_std::is_same_v<
-                    used_std::remove_cvref_t<T>, 
-                    used_std::remove_cvref_t<used_std::tuple_element_t<Js, Tuple>>
-                >...
-            };
-            for (used_std::size_t i = 0; i < sizeof...(Js); ++i) {
-                if (matches[i]) return i;
+
+        // 2. Find the N-th occurrence of CleanTypeA inside Context TupleB
+        template <typename TargetType, typename Tuple, used_std::size_t TargetOccurrence, 
+        used_std::size_t CurrentIdx = 0, used_std::size_t FoundCount = 0>
+        constexpr used_std::size_t find_nth_matching_context_index() {
+            constexpr used_std::size_t TupleSize = used_std::tuple_size_v<Tuple>;
+            
+            // BASE CASE 1: Reached end of tuple without finding enough occurrences
+            if constexpr (CurrentIdx >= TupleSize) {
+                return static_cast<used_std::size_t>(-1); // Or handle error / return npos
+            } 
+            else {
+                using ElementType = used_std::remove_cvref_t<used_std::tuple_element_t<CurrentIdx, Tuple>>;
+                
+                if constexpr (used_std::is_same_v<TargetType, ElementType>) {
+                    if constexpr (FoundCount == TargetOccurrence) {
+                        return CurrentIdx; // FOUND MATCH
+                    } else {
+                        return find_nth_matching_context_index<
+                            TargetType, Tuple, TargetOccurrence, CurrentIdx + 1, FoundCount + 1>();
+                    }
+                } else {
+                    return find_nth_matching_context_index<
+                        TargetType, Tuple, TargetOccurrence, CurrentIdx + 1, FoundCount>();
+                }
             }
-            return sizeof...(Js);
+        }
+
+        // 3. Cross index resolver mapping each parameter of TupleA to an index in TupleB
+        template <typename TupleA, typename TupleB>
+        constexpr auto cross_index_type() {
+            constexpr used_std::size_t SizeA = used_std::tuple_size_v<TupleA>;
+
+            return []<used_std::size_t... IsA>(used_std::index_sequence<IsA...>) {
+                
+                auto map_parameter = []<used_std::size_t IdxA>() {
+                    using CleanTypeA = used_std::remove_cvref_t<used_std::tuple_element_t<IdxA, TupleA>>;
+                    
+                    // Determine occurrence index for duplicate parameters in TupleA
+                    constexpr used_std::size_t Occurrence = count_previous_occurrences<CleanTypeA, TupleA, IdxA>();
+                    constexpr used_std::size_t MatchedIdxB = find_nth_matching_context_index<CleanTypeA, TupleB, Occurrence>();
+
+                    return used_std::index_sequence<MatchedIdxB>{};
+                };
+
+                return (map_parameter.template operator()<IsA>() + ... + used_std::index_sequence<>{});
+
+            }(used_std::make_index_sequence<SizeA>{});
         }
     }
 
-    template <typename T, typename Tuple>
-    constexpr used_std::size_t first_index_of_v = detail::first_index_of_impl<T, Tuple>(
-        used_std::make_index_sequence<used_std::tuple_size_v<Tuple>>{}
-    );
-
-    template <typename T, typename Tuple>
-    constexpr bool contains_type_v = detail::contains_type_impl<T, Tuple>(
-        used_std::make_index_sequence<used_std::tuple_size_v<Tuple>>{}
-    );
-
-    template <used_std::size_t Offset, used_std::size_t... Is>
-    constexpr auto shift_sequence(used_std::index_sequence<Is...>) {
-        return used_std::index_sequence<(Is + Offset)...>{};
-    }
-
-    template <typename TupleA, typename TupleB, used_std::size_t... Is>
-    constexpr auto get_unique_indices_impl(used_std::index_sequence<Is...>) {
-        return (
-            used_std::conditional_t<
-                // Condition 1: TupleB contains the type
-                contains_type_v<used_std::tuple_element_t<Is, TupleA>, TupleB> &&
-                // Condition 2: Is it the FIRST occurrence of this type in TupleA?
-                (first_index_of_v<used_std::tuple_element_t<Is, TupleA>, TupleA> == Is),
-                used_std::index_sequence<Is>,
-                used_std::index_sequence<>
-            >{} + ... + used_std::index_sequence<>{}
-        );
-    }
-
-    template <typename TupleA, typename TupleB, used_std::size_t... Is>
-    constexpr auto get_matching_indices_impl(used_std::index_sequence<Is...>) {
-        return (
-            used_std::conditional_t<
-                contains_type_v<used_std::tuple_element_t<Is, TupleA>, TupleB>,
-                used_std::index_sequence<Is>,
-                used_std::index_sequence<>
-            >{} + ... + used_std::index_sequence<>{}
-        );
-    }
-    template <typename TupleA, typename TupleB, used_std::size_t... Is>
-    constexpr auto get_notmatching_indices_impl(used_std::index_sequence<Is...>) {
-        return (
-            used_std::conditional_t<
-                !contains_type_v<used_std::tuple_element_t<Is, TupleA>, TupleB>,
-                used_std::index_sequence<Is>,
-                used_std::index_sequence<>
-            >{} + ... + used_std::index_sequence<>{}
-        );
-    }
-
-    template <used_std::size_t Size, used_std::size_t StartFrom = 1>
-    using make_index_sequence_from_t = decltype(
-        shift_sequence<StartFrom>(used_std::make_index_sequence<Size>{})
-    );
-    
     // Public alias template
     template <typename TupleA, typename TupleB>
     using get_matching_indices_t = decltype(
-        get_matching_indices_impl<TupleA, TupleB>(
-            used_std::make_index_sequence<used_std::tuple_size_v<TupleA>>{}
-        )
+        detail::cross_index_type<TupleA, TupleB>()
     );
-    template <typename TupleA, typename TupleB>
-    using get_unique_indices_t = decltype(
-        get_unique_indices_impl<TupleA, TupleB>(
-            used_std::make_index_sequence<used_std::tuple_size_v<TupleA>>{}
-        )
-    );
-    template <typename TupleA, typename TupleB>
-    using get_notmatching_indices_t = decltype(
-        get_notmatching_indices_impl<TupleA, TupleB>(
-            used_std::make_index_sequence<used_std::tuple_size_v<TupleA>>{}
-        )
-    );
+    
     template <typename TupleA, typename TupleB>
     constexpr auto count_total_matches_t = detail::index_sequence_size<get_matching_indices_t<TupleA, TupleB>>::value;
     
@@ -311,11 +317,10 @@ namespace used_std {
     constexpr bool is_one_matching_index_t = (count_total_matches_t<TupleA, TupleB> == 1);
 
     
-    using Tuple1 = used_std::tuple<int, short, char, float, double,short>;
-    using Tuple2 = used_std::tuple<short,double,short>;
-    using testmatching = get_matching_indices_t<Tuple1, Tuple2>;
-    static_assert(used_std::is_same_v<testmatching, used_std::index_sequence<1,4,5>>,"");
-    
+    // using Tuple1 = used_std::tuple<int, short, char, float, double,short>;
+    // using Tuple2 = used_std::tuple<short,double,short>;
+    // using test_matchCoord = get_matching_indices_t<Tuple1,Tuple2>;
+    // static_assert(used_std::is_same_v<test_matchCoord, used_std::index_sequence<1,4,5>>,"");
 
     template <auto Accessor, auto Value, typename Tuple>
     inline constexpr used_std::size_t find_index_v = []<used_std::size_t... Is>(used_std::index_sequence<Is...>) {
@@ -561,14 +566,23 @@ struct FnPredicate {
     }
 };
 
+template <IsCallableType T>
+struct Projection_Function_helper {
+    using type = typename used_std::callable_traits_t<T>::args_tuple_temp;
+};
+
+// Only instantiate callable_traits_t if T is a member function pointer
+template <IsCallableType T>
+requires used_std::is_member_function_pointer_v<T>
+struct Projection_Function_helper<T> {
+    using type = typename used_std::callable_traits_t<T>::args_tuple_class_temp;
+};
 // --- Projection Case (Pattern + Member Function Extractor) ---
 template <IsCallableType Fn, typename ExpectedPattern>
 struct ProjectionCaseimpl {
     using fnTraits = used_std::callable_traits_t<Fn>;
     fnTraits::fn_type fn;
-    used_std::conditional_t<used_std::is_member_function_pointer_v<Fn>, 
-    typename fnTraits::args_tuple_class_temp, 
-    typename fnTraits::args_tuple_temp> args;
+    Projection_Function_helper<Fn>::type args;
     ExpectedPattern pattern;
     template <typename Target>
     constexpr bool operator()(const Target& target) const {
@@ -1082,31 +1096,29 @@ struct SugarProxyKey {
 };
 
 // Consolidated syntactic sugar match nodes (Default Label ID is set to 0)
-template <BranchHint Hint = BranchHint::None,typename T> constexpr auto Case(T&& val) noexcept { return SugarProxyKey<0, Hint, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
+template <BranchHint Hint = BranchHint::None,typename T> 
+constexpr auto Case(T&& val) noexcept { return SugarProxyKey<0, Hint, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
+template <typename T> 
+constexpr auto likely_Case(T&& val) noexcept { return SugarProxyKey<0, BranchHint::Likely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
+template <typename T> 
+constexpr auto unlikely_Case(T&& val) noexcept { return SugarProxyKey<0, BranchHint::Unlikely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
 
-//syntactic sugar for range
-template <RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T> requires (used_std::is_arithmetic_v<T>) constexpr auto Case(const T(&range)[2]) noexcept { 
+template <StaticLabel LabelID, typename T>
+constexpr auto label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::None, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
+template <StaticLabel LabelID, typename T> 
+constexpr auto likely_label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::Likely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
+template <StaticLabel LabelID, typename T> 
+constexpr auto unlikely_label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::Unlikely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
+
+//  Syntactic sugar for range
+template <RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T> requires (used_std::is_arithmetic_v<T>) 
+constexpr auto Case(const T(&range)[2]) noexcept { 
     return SugarProxyKey<0, Hint, Range<iType,T>>{ {.lhs=range[0],.rhs=range[1]}}; 
 }
 template <CompoundOp cOp = CompoundOp::Or,BranchHint Hint = BranchHint::None,typename... T> requires (is_range_instance<T> && ...) 
 constexpr auto Case( T&&... ranges ) noexcept { 
     auto compound = make_compound_range<cOp>(used_std::forward<T>(ranges)...);
     return SugarProxyKey<0, Hint, decltype(compound)>{ used_std::move(compound) };
-    // return []<used_std::size_t... Is>(const T (&arr)[N][2], used_std::index_sequence<Is...>) {
-    //     auto compound = make_compound_range(
-    //         Range<iType,T>{arr[Is][0], arr[Is][1]}...
-    //     );
-    //     return SugarProxyKey<0, Hint, decltype(compound)>{ used_std::move(compound) };
-    // }(ranges, used_std::make_index_sequence<N>{});
-}
-template <typename T> constexpr auto likely_Case(T&& val) noexcept { return SugarProxyKey<0, BranchHint::Likely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
-template <typename T> constexpr auto unlikely_Case(T&& val) noexcept { return SugarProxyKey<0, BranchHint::Unlikely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
-
-
-
-template <StaticLabel LabelID, typename T> 
-constexpr auto label_Case(T&& val) noexcept { 
-    return SugarProxyKey<LabelID, BranchHint::None, used_std::decay_t<T>>{ used_std::forward<T>(val) }; 
 }
 template <StaticLabel LabelID,RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T> requires (used_std::is_arithmetic_v<T>) 
 constexpr auto label_Case(const T(&range)[2]) noexcept { 
@@ -1117,10 +1129,9 @@ constexpr auto label_Case(T&&... ranges) noexcept {
     auto compound = make_compound_range<cOp>(used_std::forward<T>(ranges)...);
     return SugarProxyKey<0, Hint, decltype(compound)>{ used_std::move(compound) };
 }
-template <StaticLabel LabelID, typename T> 
-constexpr auto likely_label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::Likely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
-template <StaticLabel LabelID, typename T> 
-constexpr auto unlikely_label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::Unlikely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
+
+
+
 
 
 // Hardware Prediction Branch Optimizer Hints Primitive Mapping
@@ -1179,10 +1190,10 @@ constexpr decltype(auto) execute_action(ActionType&& action, ContextType& ctx) {
     else if constexpr (FnTrait::args > 0) {
         // Extract the explicit used_std::tuple of the function parameters
         using FnArgsTuple = typename FnTrait::args_tuple;
-        
-        using DecayedContext = used_std::CleanContextDecayed<CleanContext>;
+        // static_assert(used_std::is_one_matching_index_t<FnArgsTuple, CleanContext>, "Function signature doesnt match captured reference / pointer" );
+        // using DecayedContext = used_std::CleanContextDecayed<mini_std::remove_cvref_t<CleanContext>>;
         // Fix 2: Compare Tuple to Tuple (FnArgsTuple vs CleanContext)
-        using ResultSequence = used_std::get_matching_indices_t<FnArgsTuple, DecayedContext>;
+        using ResultSequence = used_std::get_matching_indices_t<FnArgsTuple, CleanContext>;
         
         // Pass the calculated compile-time matching indices down to invoke used_std::get
         return []<used_std::size_t... Is>(auto&& act, auto& context, used_std::index_sequence<Is...>) -> decltype(auto) {
@@ -1226,23 +1237,23 @@ struct UnwrapReturnType<GotoValue<LabelID, T>> {
     using type = T;
 };
 
-template <used_std::size_t Low, used_std::size_t High>
-struct DynamicSwitch {
-    template <typename Fn>
-    static constexpr void dispatch(used_std::size_t idx, Fn&& fn) noexcept {
-        if constexpr (Low == High - 1) {
-            fn.template operator()<Low>();
-        } else {
-            constexpr used_std::size_t Mid = Low + (High - Low) / 2;
-            if (idx < Mid) {
-                DynamicSwitch<Low, Mid>::dispatch(idx, used_std::forward<Fn>(fn));
-            } else {
-                DynamicSwitch<Mid, High>::dispatch(idx, used_std::forward<Fn>(fn));
-            }
-        }
-    }
-};
-// Macro trick to generate clean compile-time switch blocks (up to 32/64 cases)
+// template <used_std::size_t Low, used_std::size_t High>
+// struct DynamicSwitch {
+//     template <typename Fn>
+//     static constexpr void dispatch(used_std::size_t idx, Fn&& fn) noexcept {
+//         if constexpr (Low == High - 1) {
+//             fn.template operator()<Low>();
+//         } else {
+//             constexpr used_std::size_t Mid = Low + (High - Low) / 2;
+//             if (idx < Mid) {
+//                 DynamicSwitch<Low, Mid>::dispatch(idx, used_std::forward<Fn>(fn));
+//             } else {
+//                 DynamicSwitch<Mid, High>::dispatch(idx, used_std::forward<Fn>(fn));
+//             }
+//         }
+//     }
+// };
+// Macro trick to generate clean compile-time switch blocks
 #define CASE_DISPATCH(N) case N: if constexpr (N < TotalCases) { step_lambda.template operator()<N>(); } break;
 #define DISPATCH_1(N)  CASE_DISPATCH(N)
 #define DISPATCH_4(N)  DISPATCH_1(N)   DISPATCH_1(N+1) DISPATCH_1(N+2) DISPATCH_1(N+3)
@@ -1262,7 +1273,6 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
     used_std::size_t active_index = 0;
     bool executed = false;
     bool jump_taken = false;
-    bool forced_jump = false;
 
     // Storage for return value without default-constructor penalties
     CleanReturnType value{};
@@ -1271,7 +1281,7 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
         using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
 
         // 1. Evaluate match condition
-        if (forced_jump || apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key))) {
+        if (apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key))) {
             using RawActionResult = decltype(execute_action(current_case.action, ctx));
 
             // 2. Handle VOID returning actions
@@ -1287,22 +1297,21 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
                 // Signal: Goto Jump
                 if constexpr (IsStaticGotoSignal<CaseActionDecay>) {
                     active_index = used_std::find_index_v<[]<typename T>{return T::label;},CaseActionDecay::label, used_std::remove_cvref_t<CasesTuple>>;
-                    forced_jump = true;
                     jump_taken = true;
                 } 
                 else if constexpr (IsDynamicGotoSignal<CaseActionDecay>) {
-                    active_index = used_std::find_by_value<[]<typename T>{return T::label;},unsigned int,used_std::remove_cvref_t<CasesTuple>>(
+                    active_index = 
+                    used_std::find_by_value<[]<typename T>{return T::label;},
+                        unsigned int,used_std::remove_cvref_t<CasesTuple>>(
                         action_result.hash, 
                         used_std::make_index_sequence<TotalCases>{}
                     );
-                    forced_jump = true;
                     jump_taken = true;
                 }
                 // Signal: Fallthrough
                 else if constexpr (IsFallthroughSignal<CaseActionDecay>) {
                     active_index = Is + 1;
                     jump_taken = true;
-                    forced_jump = true;
                 }
                 // Terminal Value Return
                 else {
@@ -1322,18 +1331,12 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
         executed = false;
         jump_taken = false;
 
-        // Dispatch dynamic active_index to compile-time static index 'Is'
-        // via a native C++ switch statement (Fully Inlinable Jump Table!)
-
-        // ---------------------------------------------------------------------
-        // Compiler-Generated Native Hardware Jump Table
-        // ---------------------------------------------------------------------
-        DynamicSwitch<0, TotalCases>::dispatch(active_index, step_lambda);
-        // switch (active_index) {
-        //     DISPATCH_64(0)   // Automatically generates CASE_DISPATCH(0) through CASE_DISPATCH(63)
-        //     DISPATCH_64(64)  // Extends range to CASE_DISPATCH(127)
-        //     default: break;
-        // }
+        // DynamicSwitch<0, TotalCases>::dispatch(active_index, step_lambda);
+        switch (active_index) {
+            DISPATCH_64(0)   
+            DISPATCH_64(64)  
+            default: break;
+        }
         if (executed) {
             if constexpr (used_std::is_same_v<CleanReturnType, void> || used_std::is_same_v<CleanReturnType, Wildcard>) {
                 return;
