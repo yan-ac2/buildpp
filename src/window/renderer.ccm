@@ -129,6 +129,8 @@ export {
     inline GLBEGINTRANSFORMFEEDBACK glBeginTransformFeedback = nullptr;
     inline GLENDTRANSFORMFEEDBACK glEndTransformFeedback = nullptr;
     inline PFNGLBLITFRAMEBUFFEREXTPROC glBlitFramebuffer = nullptr;
+
+    inline PFNGLDRAWELEMENTSBASEVERTEXPROC glDrawElementsBaseVertex = nullptr;
 }
 
 inline void* LoadExtension( const char* name )
@@ -845,4 +847,5 @@ void GlHints::LoadExtensions() {
 		glEndTransformFeedback = (GLENDTRANSFORMFEEDBACK)LoadExtension( "glEndTransformFeedback" );
 
 		glBlitFramebuffer = (PFNGLBLITFRAMEBUFFEREXTPROC)LoadExtension( "glBlitFramebuffer" );
+		glDrawElementsBaseVertex = (PFNGLDRAWELEMENTSBASEVERTEXPROC)LoadExtension( "glDrawElementsBaseVertex" );
 }

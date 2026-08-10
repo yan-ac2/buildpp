@@ -375,4 +375,5 @@ using GLBEGINTRANSFORMFEEDBACK      =  void ( APIENTRYP  ) ( GLenum primitiveMod
 using GLENDTRANSFORMFEEDBACK        =  void ( APIENTRYP  ) ();
 using PFNGLBLITFRAMEBUFFEREXTPROC   =  void ( APIENTRYP  ) (GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter);
 
+using PFNGLDRAWELEMENTSBASEVERTEXPROC = void( APIENTRYP  ) (GLenum mode, GLsizei count, GLenum type, const void *indices, GLint basevertex);
 #endif
