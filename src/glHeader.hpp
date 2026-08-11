@@ -210,9 +210,9 @@ using GLVERTEXATTRIBPOINTER     = void ( APIENTRYP ) ( GLuint index, GLint size,
 
 using GLGENERATEMIPMAP = void ( APIENTRYP ) ( GLenum target );
 
-#ifndef GL_VERSION_1_3
+// #ifndef GL_VERSION_1_3
 	using GLACTIVETEXTURE = void ( APIENTRYP ) ( GLenum texture );
-#endif
+// #endif
 
 /*
 	Data types

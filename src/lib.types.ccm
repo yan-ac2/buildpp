@@ -366,7 +366,9 @@ export
 template <typename T>
 class Vec4 {
     void idxErr() {
-        // std::cerr << "index > 1 \n";
+        std::exit(1);
+    }
+    void idxErr() const {
         std::exit(1);
     }
 public:
@@ -376,6 +378,18 @@ public:
     T w {};
 
     T& operator [](int idx) {
+        switch(idx) {
+            case 0: return x;
+            case 1: return y;
+            case 2: return z;
+            case 3: return 2;
+            default: {
+                idxErr();
+                return x;
+            }
+        }
+    }
+    const T operator [](int idx) const {
         switch(idx) {
             case 0: return x;
             case 1: return y;
@@ -398,7 +412,7 @@ public:
         return buffer;
     }
     constexpr Vec4<T>& operator =(const Vec4<T>& other) {
-        return this[0] = other[0],this[1] = other[1],this[2] = other[2],this[3] = other[3];
+        return *this = {other[0],other[1],other[2],other[3]};
     }
 };
 

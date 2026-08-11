@@ -107,9 +107,9 @@ export {
  
     inline GLGENERATEMIPMAP glGenerateMipmap = nullptr;
 
-    #ifndef GL_VERSION_1_3
+    // #ifndef GL_VERSION_1_3
         inline GLACTIVETEXTURE glActiveTexture = nullptr;
-    #endif
+    // #endif
 
     inline GLGENRENDERBUFFERS glGenRenderbuffers = nullptr;
     inline GLDELETERENDERBUFFERS glDeleteRenderbuffers = nullptr;
@@ -824,9 +824,9 @@ void GlHints::LoadExtensions() {
 
 		glGenerateMipmap = (GLGENERATEMIPMAP)LoadExtension( "glGenerateMipmap" );
 
-		#ifndef GL_VERSION_1_3
+		// #ifndef GL_VERSION_1_3
 			glActiveTexture = (GLACTIVETEXTURE)LoadExtension( "glActiveTexture" );
-		#endif
+		// #endif
 
 		glGenFramebuffers = (GLGENFRAMEBUFFERS)LoadExtension( "glGenFramebuffers" );
 		glDeleteFramebuffers = (GLDELETEFRAMEBUFFERS)LoadExtension( "glDeleteFramebuffers" );
@@ -847,5 +847,5 @@ void GlHints::LoadExtensions() {
 		glEndTransformFeedback = (GLENDTRANSFORMFEEDBACK)LoadExtension( "glEndTransformFeedback" );
 
 		glBlitFramebuffer = (PFNGLBLITFRAMEBUFFEREXTPROC)LoadExtension( "glBlitFramebuffer" );
-		glDrawElementsBaseVertex = (PFNGLDRAWELEMENTSBASEVERTEXPROC)LoadExtension( "glDrawElementsBaseVertex" );
+		glDrawElementsBaseVertex = (PFNGLDRAWELEMENTSBASEVERTEXPROC)wglGetProcAddress("glDrawElementsBaseVertex");
 }

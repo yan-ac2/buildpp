@@ -9,6 +9,7 @@ import lib.types;
 import lib.win;
 import lib.utl;
 import lib.image;
+import lib.ui;
 
 GLuint loadTGATexture(const std::string& filename) {
     TGAImage img;
@@ -121,6 +122,13 @@ int main() {
     shader.CompileShader();
     shader.CompileProgram();
 
+    // 2. Instantiate Renderer & UI Buffer
+    GLUIRenderer renderer;
+    RenderBuffer ui_buffer;
+
+    // Compile GL shaders & set up VAO/VBO/EBO
+    renderer.init();
+
     Framebuffer fmain(800,600);
     
     auto start = std::chrono::high_resolution_clock::now();
@@ -146,19 +154,31 @@ int main() {
 
         shader.use();
         glBindTexture(GL_TEXTURE_2D, texture);
-
         glBindVertexArray(glCtx.VAO);
         // glDrawArrays(GL_TRIANGLES,0,128);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-        Framebuffer::Unbind(800, 600);
 
         glBindFramebuffer(GL_READ_FRAMEBUFFER, fmain.GetFBO()); 
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glBlitFramebuffer(
-            0, 0, 800, 600,     // Source dimensions
-            0, 0, 800, 600,     // Destination dimensions
-            GL_COLOR_BUFFER_BIT,           // Clear copy mask
-            GL_LINEAR                      // Filter type if stretching occurs
+        0, 0, 800, 600,
+        0, 0, 800, 600,
+        GL_COLOR_BUFFER_BIT,
+        GL_LINEAR
         );
+        Framebuffer::Unbind(800, 600);
+
+        ui_buffer.clear();
+        
+        glUseProgram(renderer.);
+        // Submit UI Commands
+        ui_buffer.push_rect({20.0f, 20.0f}, {300.0f, 400.0f}, {40, 40, 45, 220});  // Semi-transparent dark panel
+        ui_buffer.push_rect({40.0f, 50.0f}, {220.0f, 45.0f}, {220, 60, 60, 255});   // Red button
+        ui_buffer.push_rect({40.0f, 110.0f}, {220.0f, 100.0f}, {60, 180, 80, 255}); // Green panel
+
+        // Execute UI rendering directly over backbuffer with Alpha Blending enabled
+        renderer.render(ui_buffer, 800.0f, 600.0f);
+        
 
         glCtx.Swapbuffer();
         auto timeSleep = times.end(Clock::ms(16));

@@ -1,6 +1,7 @@
 module;
 #include "pch.hpp"
 #include <cstddef>
+#include <span>
 export module lib.ui;
 import lib.std;
 import lib.types;
@@ -215,13 +216,11 @@ void solve_layout(const ContainerStyle& parent, std::span<LayoutItem> children) 
 }
 
 export
-template<RenderType s>
 class Context {
 public:
     InputState input;
     Style default_style;
     std::vector<DrawCommand> draw_list;
-    uiRenderType<s>::type* renderType;
     // Active element state tracking for Immediate Mode
     uint64_t hovered_id = 0;
     uint64_t active_id  = 0;
@@ -232,14 +231,10 @@ public:
         hovered_id = 0;
     }
 
-    void end_frame() {
-        renderType->render();
-    }
 };
 
 export 
-template<RenderType s>
-bool button(Context<s>& ctx, uint64_t id, const Rect& bounds) {
+bool button(Context& ctx, uint64_t id, const Rect& bounds) {
     bool result = false;
 
     // 1. Hit Testing
@@ -280,6 +275,8 @@ bool button(Context<s>& ctx, uint64_t id, const Rect& bounds) {
 
 
 
+
+export
 class GLUIRenderer {
 private:
     GLuint vao = 0;
@@ -287,10 +284,40 @@ private:
     GLuint ebo = 0;
     GLuint shader_program = 0;
     GLuint white_texture = 0;
-
+    
     size_t vbo_capacity = 0;
     size_t ebo_capacity = 0;
 
+    const char* vert = R"(#version 430 core
+        layout (location = 0) in vec2 aPos;
+        layout (location = 1) in vec2 aUV;
+        layout (location = 2) in vec4 aColor;
+
+        out vec2 FragUV;
+        out vec4 FragColor;
+
+        uniform vec2 uScreenSize; // Pass (width, height)
+
+        void main() {
+        FragUV = aUV;
+        FragColor = aColor;
+
+        // Convert screen coordinates [0, Width] x [0, Height] to NDC [-1, 1]
+        // Top-Left origin (0,0) -> Bottom-Right (Width, Height)
+        vec2 ndcPos = (aPos / uScreenSize) * 2.0 - 1.0;
+        gl_Position = vec4(ndcPos.x, -ndcPos.y, 0.0, 1.0); // Flip Y axis
+    })";
+    const char* frag = R"(#version 430 core
+    in vec2 FragUV;
+    in vec4 FragColor;
+
+    out vec4 FinalColor;
+
+    uniform sampler2D uTexture;
+
+    void main() {
+        FinalColor = texture(uTexture, FragUV) * FragColor;
+    })";
 public:
     void init() {
         // 1. Create VAO, VBO, EBO
@@ -325,31 +352,75 @@ public:
         glBindTexture(GL_TEXTURE_2D, white_texture);
         uint32_t white_pixel = 0xFFFFFFFF;
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, &white_pixel);
+
+        
+        int success;
+        char infoLog[512];
+        GLuint sfrag = 0;
+        GLuint svert = 0;
+        sfrag = glCreateShader(GL_FRAGMENT_SHADER);
+        glShaderSource(sfrag,1,&frag,nullptr);
+        glCompileShader(sfrag);
+        glGetShaderiv(sfrag, GL_COMPILE_STATUS, &success);
+        if (!success) {
+            glGetShaderInfoLog(sfrag, 512, nullptr, infoLog);
+            std::cout << infoLog << "\n";
+        }
+        svert = glCreateShader(GL_VERTEX_SHADER);
+        glShaderSource(svert,1,&vert,nullptr);
+        glCompileShader(svert);
+        glGetShaderiv(svert, GL_COMPILE_STATUS, &success);
+        if (!success) {
+            glGetShaderInfoLog(svert, 512, nullptr, infoLog);
+            std::cout << infoLog << "\n";
+        }
+
+
+        
+        
+        
+        shader_program = glCreateProgram();
+        for (auto& s : {sfrag,svert}){
+            glAttachShader(shader_program, s);
+        }
+
+        glLinkProgram(shader_program);
+        glGetProgramiv(shader_program, GL_LINK_STATUS, &success);
+        if (!success) {
+            glGetProgramInfoLog(shader_program, 512, nullptr, infoLog);
+            std::cout << infoLog << "\n";
+        }
+        
+        for (auto& s : {sfrag,svert}) {
+            glDeleteShader(s);
+        }
+        
+        
+        
     }
 
     void render(const RenderBuffer& buffer, float viewport_width, float viewport_height) {
         if (buffer.vertices.empty() || buffer.commands.empty()) return;
 
-        // 1. Setup OpenGL State
+        // 1. Setup GL State
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE);
 
         glUseProgram(shader_program);
+
+        // Update screen size uniform for top-left NDC coordinate conversion
+        GLint screen_size_loc = glGetUniformLocation(shader_program, "uScreenSize");
+        glUniform2f(screen_size_loc, viewport_width, viewport_height);
+
         glBindVertexArray(vao);
 
-        // Pass Orthographic projection matrix (Maps screen coords [0, width] to NDC [-1, 1])
-        // Matrix: [ 2/w,   0,   0, -1 ]
-        //         [  0,  -2/h,  0,  1 ]  (Y-flipped so 0,0 is Top-Left)
-        //         [  0,    0,  -1,  0 ]
-        //         [  0,    0,   0,  1 ]
-
-        // 2. Dynamic Buffer Allocation / Re-allocation
+        // 2. Upload Dynamic Vertex/Index Buffers
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
         size_t needed_vbo_size = buffer.vertices.size() * sizeof(ui_ctx);
         if (needed_vbo_size > vbo_capacity) {
-            vbo_capacity = needed_vbo_size * 2;
+            vbo_capacity = needed_vbo_size * 2; // Allocate extra space to reduce reallocation frequency
             glBufferData(GL_ARRAY_BUFFER, vbo_capacity, nullptr, GL_DYNAMIC_DRAW);
         }
         glBufferSubData(GL_ARRAY_BUFFER, 0, needed_vbo_size, buffer.vertices.data());
@@ -362,17 +433,18 @@ public:
         }
         glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, needed_ebo_size, buffer.indices.data());
 
-        // 3. Dispatch Draw Calls
+        // 3. Dispatch Draw Batches
         for (const auto& cmd : buffer.commands) {
             GLuint tex = (cmd.texture_id == 0) ? white_texture : static_cast<GLuint>(cmd.texture_id);
+            
+            glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, tex);
 
-            // Execute draw using glDrawElementsBaseVertex (Requires OpenGL 3.2+)
             glDrawElementsBaseVertex(
                 GL_TRIANGLES,
                 cmd.element_count,
                 GL_UNSIGNED_INT,
-                (void*)(cmd.index_offset * sizeof(uint32_t)),
+                reinterpret_cast<void*>(cmd.index_offset * sizeof(uint32_t)),
                 cmd.vertex_offset
             );
         }
