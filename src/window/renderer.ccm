@@ -717,35 +717,35 @@ class Renderer<"software"> {
 
 };
 
-class Rect {
-    public:
-    int32 x,y;
-    int32 h,w;
-    RGBA color;
-    bool ex,ey;
-    Rect() {}
-    Rect(int32 ih,int32 iw,int32 ix,int32 iy,RGBA colorin) {
-        init(ih,iw,ix,iy,colorin);
-    }
-    void init (int32 ih,int32 iw,int32 ix,int32 iy,RGBA colorin) {
-        h = ih;
-        w = iw;
-        x = ix;
-        y = iy;
-        setColor(colorin);
-    }
-    inline Rect& setColor(RGBA colorin) {
-        memcpy(this->color.col, colorin.col, 4*sizeof(uint8));
-        return *this;
-    }
-    inline Rect& draw(Renderer<"software">* buff,const int32 ix,const int32 iy) {
-        x += ix;
-        y += iy;
-        buff->triangle(x, y, x, h+y, w+x, h+y, color);
-        buff->triangle(x, y, h+x, y, w+x, h+y, color);
-        return *this;
-    }
-};
+// class Rect {
+//     public:
+//     int32 x,y;
+//     int32 h,w;
+//     RGBA color;
+//     bool ex,ey;
+//     Rect() {}
+//     Rect(int32 ih,int32 iw,int32 ix,int32 iy,RGBA colorin) {
+//         init(ih,iw,ix,iy,colorin);
+//     }
+//     void init (int32 ih,int32 iw,int32 ix,int32 iy,RGBA colorin) {
+//         h = ih;
+//         w = iw;
+//         x = ix;
+//         y = iy;
+//         setColor(colorin);
+//     }
+//     inline Rect& setColor(RGBA colorin) {
+//         memcpy(this->color.col, colorin.col, 4*sizeof(uint8));
+//         return *this;
+//     }
+//     inline Rect& draw(Renderer<"software">* buff,const int32 ix,const int32 iy) {
+//         x += ix;
+//         y += iy;
+//         buff->triangle(x, y, x, h+y, w+x, h+y, color);
+//         buff->triangle(x, y, h+x, y, w+x, h+y, color);
+//         return *this;
+//     }
+// };
 
 void GlHints::LoadExtensions() {
 #ifdef _WIN32 

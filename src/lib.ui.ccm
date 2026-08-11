@@ -1,9 +1,12 @@
 module;
 #include "pch.hpp"
+#include <cstddef>
 export module lib.ui;
 import lib.std;
 import lib.types;
 import lib.win;
+
+export
 struct Rect {
     Vec2<float> pos;
     Vec2<float> size;
@@ -14,14 +17,14 @@ struct Rect {
     }
 };
 
-
+export
 struct ui_ctx {
     Vec2<float> pos;
     Vec2<float> uv;
     Vec4<uint8> color;
 };
 
-// Low-level GPU Draw Command
+export
 struct GLDrawCmd {
     uint32_t element_count = 0; // Number of indices/vertices
     uint32_t index_offset  = 0; // Offset in index buffer
@@ -29,13 +32,14 @@ struct GLDrawCmd {
     uint64_t texture_id    = 0; // Texture handle (0 = white texture for flat rects)
 };
 
+export
 struct InputState {
     Vec2<float> mouse_pos{0.0f, 0.0f};
     bool mouse_down{false};
     bool mouse_clicked{false}; // Single frame trigger
 };
 
-
+export
 struct Style {
     Vec4<uint8_t> bg_color{200, 200, 200, 255};
     Vec4<uint8_t> hover_color{220, 220, 220, 255};
@@ -45,12 +49,14 @@ struct Style {
 
 enum class CommandType { DrawRect, DrawText };
 
+export
 struct DrawCommand {
     CommandType type;
     Rect bounds;
-    Vec4<uint8_t> color;
+    Vec4<uint8> color;
 };
 
+export
 class RenderBuffer {
 public:
     std::vector<ui_ctx> vertices;
@@ -64,7 +70,7 @@ public:
     }
 
     // Add a flat-colored rectangle
-    void push_rect(Vec2<float> pos, Vec2<float> size, Vec4<uint8_t> color, uint64_t texture_id = 0) {
+    void push_rect(Vec2<float> pos, Vec2<float> size,Vec4<uint8_t> color, uint64_t texture_id = 0) {
         // Check if we can batch into the previous draw command
         if (commands.empty() || commands.back().texture_id != texture_id) {
             GLDrawCmd cmd{};
@@ -78,7 +84,7 @@ public:
         const uint32_t base_index = static_cast<uint32_t>(vertices.size());
 
         // 4 Corner Vertices
-        vertices.push_back({{pos.x,            pos.y},     {0.0f, 0.0f}, color }); // Top-Left
+        vertices.push_back({{pos.x,            pos.y},     {0.0f, 0.0f}, color}); // Top-Left
         vertices.push_back({{pos.x + size.x,   pos.y},     {1.0f, 0.0f}, color }); // Top-Right
         vertices.push_back({{pos.x + size.x,   pos.y + size.y},{1.0f, 1.0f}, color }); // Bottom-Right
         vertices.push_back({{pos.x,            pos.y + size.y},{0.0f, 1.0f}, color }); // Bottom-Left
@@ -95,9 +101,23 @@ public:
         commands.back().element_count += 6;
     }
 };
+export
 enum class Axis { Horizontal, Vertical };
+export 
 enum class Alignment { Start, Center, End, Stretch };
 
+export
+enum class RenderType {
+    Null,
+    OpenGL
+};
+
+template<RenderType s> struct uiRenderType;
+template<> struct uiRenderType<RenderType::OpenGL> {
+    using type = RenderBuffer;
+};
+
+export
 struct LayoutItem {
     Vec2<float> pos{0.0f, 0.0f};
     Vec2<float> size{0.0f, 0.0f};
@@ -109,6 +129,7 @@ struct LayoutItem {
     Alignment cross_align = Alignment::Stretch;
 };
 
+export
 struct ContainerStyle {
     Axis axis = Axis::Horizontal;
     Vec2<float> pos{0.0f, 0.0f};
@@ -117,12 +138,90 @@ struct ContainerStyle {
     float gap = 8.0f;
 };
 
+void solve_layout(const ContainerStyle& parent, std::span<LayoutItem> children) {
+    if (children.empty()) return;
+
+    const bool is_row = (parent.axis == Axis::Horizontal);
+    
+    const float parent_main = is_row ? parent.size.x : parent.size.y;
+    const float parent_cross = is_row ? parent.size.y : parent.size.x;
+
+    const float main_available = parent_main - (parent.padding * 2.0f) 
+                                    - (parent.gap * static_cast<float>(children.size() - 1));
+    const float cross_available = std::max(0.0f, parent_cross - (parent.padding * 2.0f));
+
+    // Pass 1: Compute total fixed space used & total flex weights
+    float fixed_space_used = 0.0f;
+    float total_flex_weight = 0.0f;
+
+    for (const auto& item : children) {
+        if (item.size_mode == LayoutItem::SizeMode::Fixed) {
+            fixed_space_used += item.fixed_size;
+        } else {
+            total_flex_weight += item.flex_weight;
+        }
+    }
+
+    const float remaining_space = std::max(0.0f, main_available - fixed_space_used);
+
+    // Pass 2: Solve dimensions (Main & Cross)
+    for (auto& item : children) {
+        float main_dim = 0.0f;
+        if (item.size_mode == LayoutItem::SizeMode::Fixed) {
+            main_dim = item.fixed_size;
+        } else {
+            main_dim = (total_flex_weight > 0.0f)
+                ? (remaining_space * (item.flex_weight / total_flex_weight))
+                : 0.0f;
+        }
+
+        // Cross Axis sizing logic
+        float cross_dim = (item.cross_align == Alignment::Stretch) 
+            ? cross_available 
+            : std::min(item.fixed_size, cross_available);
+
+        item.size = is_row ? Vec2<float>{main_dim, cross_dim} 
+                            : Vec2<float>{cross_dim, main_dim};
+    }
+
+    // Pass 3: Solve absolute positions
+    float current_main_offset = (is_row ? parent.pos.x : parent.pos.y) + parent.padding;
+    const float parent_cross_pos = (is_row ? parent.pos.y : parent.pos.x) + parent.padding;
+
+    for (auto& item : children) {
+        float cross_offset = parent_cross_pos;
+        const float item_cross_size = is_row ? item.size.y : item.size.x;
+
+        // Cross Axis Alignment Math
+        switch (item.cross_align) {
+            case Alignment::Center:
+                cross_offset += (cross_available - item_cross_size) * 0.5f;
+                break;
+            case Alignment::End:
+                cross_offset += (cross_available - item_cross_size);
+                break;
+            default: // Start or Stretch
+                break;
+        }
+
+        if (is_row) {
+            item.pos = { current_main_offset, cross_offset };
+            current_main_offset += item.size.x + parent.gap;
+        } else {
+            item.pos = { cross_offset, current_main_offset };
+            current_main_offset += item.size.y + parent.gap;
+        }
+    }
+}
+
+export
+template<RenderType s>
 class Context {
 public:
     InputState input;
     Style default_style;
     std::vector<DrawCommand> draw_list;
-
+    uiRenderType<s>::type* renderType;
     // Active element state tracking for Immediate Mode
     uint64_t hovered_id = 0;
     uint64_t active_id  = 0;
@@ -134,12 +233,13 @@ public:
     }
 
     void end_frame() {
-        // Send draw_list to your renderer (OpenGL, Vulkan, DirectX, WebGPU)
+        renderType->render();
     }
 };
 
-
-export bool button(Context& ctx, uint64_t id, const Rect& bounds) {
+export 
+template<RenderType s>
+bool button(Context<s>& ctx, uint64_t id, const Rect& bounds) {
     bool result = false;
 
     // 1. Hit Testing
@@ -177,6 +277,8 @@ export bool button(Context& ctx, uint64_t id, const Rect& bounds) {
 
     return result;
 }
+
+
 
 class GLUIRenderer {
 private:
