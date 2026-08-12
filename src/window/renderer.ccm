@@ -320,6 +320,9 @@ public:
     Framebuffer(int width, int height) {
         Resize(width, height);
     }
+    Framebuffer(const WindowDesc& desc) {
+        Resize(desc.width, desc.height);
+    }
 
     ~Framebuffer() {
         Cleanup();
@@ -384,6 +387,10 @@ public:
     static void Unbind(int screenWidth, int screenHeight) {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(0, 0, screenWidth, screenHeight);
+    }
+    static void Unbind(const Framebuffer& fb) {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, fb.mWidth, fb.mHeight);
     }
 
     [[nodiscard]] GLuint GetColorTexture() const noexcept { return mColorTexture; }

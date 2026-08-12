@@ -177,7 +177,7 @@ namespace used_std {
     };
 
     //========================================
-    //              tuple stuff
+    //              TUPLE STUFF
     //========================================
     
     
@@ -254,15 +254,13 @@ namespace used_std {
             }(used_std::make_index_sequence<UpToIdx>{});
         }
 
-        // 2. Find the N-th occurrence of CleanTypeA inside Context TupleB
         template <typename TargetType, typename Tuple, used_std::size_t TargetOccurrence, 
         used_std::size_t CurrentIdx = 0, used_std::size_t FoundCount = 0>
         constexpr used_std::size_t find_nth_matching_context_index() {
             constexpr used_std::size_t TupleSize = used_std::tuple_size_v<Tuple>;
             
-            // BASE CASE 1: Reached end of tuple without finding enough occurrences
             if constexpr (CurrentIdx >= TupleSize) {
-                return static_cast<used_std::size_t>(-1); // Or handle error / return npos
+                return static_cast<used_std::size_t>(-1);
             } 
             else {
                 using ElementType = used_std::remove_cvref_t<used_std::tuple_element_t<CurrentIdx, Tuple>>;
@@ -281,7 +279,6 @@ namespace used_std {
             }
         }
 
-        // 3. Cross index resolver mapping each parameter of TupleA to an index in TupleB
         template <typename TupleA, typename TupleB>
         constexpr auto cross_index_type() {
             constexpr used_std::size_t SizeA = used_std::tuple_size_v<TupleA>;
@@ -294,8 +291,11 @@ namespace used_std {
                     // Determine occurrence index for duplicate parameters in TupleA
                     constexpr used_std::size_t Occurrence = count_previous_occurrences<CleanTypeA, TupleA, IdxA>();
                     constexpr used_std::size_t MatchedIdxB = find_nth_matching_context_index<CleanTypeA, TupleB, Occurrence>();
-
-                    return used_std::index_sequence<MatchedIdxB>{};
+                    // static_assert(MatchedIdxB != static_cast<used_std::size_t>(-1), "Out of bound" );
+                    return used_std::conditional_t<
+                    MatchedIdxB != static_cast<used_std::size_t>(-1), 
+                    used_std::index_sequence<MatchedIdxB>, 
+                    used_std::index_sequence<>>{};
                 };
 
                 return (map_parameter.template operator()<IsA>() + ... + used_std::index_sequence<>{});
@@ -317,13 +317,13 @@ namespace used_std {
     constexpr bool is_one_matching_index_t = (count_total_matches_t<TupleA, TupleB> == 1);
 
     
-    // using Tuple1 = used_std::tuple<int, short, char, float, double,short>;
-    // using Tuple2 = used_std::tuple<short,double,short>;
-    // using test_matchCoord = get_matching_indices_t<Tuple1,Tuple2>;
-    // static_assert(used_std::is_same_v<test_matchCoord, used_std::index_sequence<1,4,5>>,"");
+    using Tuple1 = used_std::tuple<int, short, char, float, double,short>;
+    using Tuple2 = used_std::tuple<short,double,short>;
+    using test_matchCoord = get_matching_indices_t<Tuple2,Tuple1>;
+    static_assert(used_std::is_same_v<test_matchCoord, used_std::index_sequence<1,4,5>>,"");
 
     template <auto Accessor, auto Value, typename Tuple>
-    inline constexpr used_std::size_t find_index_v = []<used_std::size_t... Is>(used_std::index_sequence<Is...>) {
+    constexpr used_std::size_t find_index_v = []<used_std::size_t... Is>(used_std::index_sequence<Is...>) {
         using CleanTuple = used_std::remove_cvref_t<Tuple>;
         used_std::size_t found_index = used_std::tuple_size_v<CleanTuple>;
 
@@ -428,7 +428,7 @@ template <typename TargetType, typename KeyType>
 
 
 // ============================================================================
-// 1. FLOW CONTROL STATE TRACE SIGNALS AND ENUMS
+// FLOW CONTROL STATE TRACE SIGNALS AND ENUMS
 // ============================================================================
 enum class FlowKind : int {
     Terminal,   
@@ -525,7 +525,7 @@ using get_nullary_return_type_t = decltype(
 
 
 // ============================================================================
-// 2. FUNCTION PREDICATES DEFINITIONS
+//  FUNCTION PREDICATES DEFINITIONS
 // ============================================================================
 // --- Free Function / Lambda Predicate Wrapper / Unbound Member Function Predicate ---
 
@@ -659,7 +659,7 @@ constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn fn,Class* instance,A
 }
 
 // ============================================================================
-// 3. MATHEMATICAL INTERVAL DEFINITIONS
+// MATHEMATICAL INTERVAL DEFINITIONS
 // ============================================================================
 enum class RangeType  { Closed, Open, HalfOpenLeft, HalfOpenRight , Or };
 
@@ -737,7 +737,7 @@ constexpr auto make_compound_range(Ranges&&... ranges) noexcept {
 }
 // RangeCompound test {Range<int>{0,12},Range<int>{20,30}};
 // ============================================================================
-// 4. COMPLEX RELATIONAL MULTI-FIELD PREDICATES
+// FIELD PREDICATES
 // ============================================================================
 enum class Op { Eq, Neq, Gt, Gte, Lt, Lte };
 
@@ -806,7 +806,7 @@ constexpr auto fields_match(Rules&&... rules) noexcept {
 }
 
 // ============================================================================
-// 5. UNIFIED DEDUPLICATED ITERATION SUB-PREDICATES (TUPLES, VIEWS, BITS)
+// TUPLES, VIEWS, BITS
 // ============================================================================
 enum class MatchPolicy { Any, All };
 template <MatchPolicy Policy, typename CriterionType>
@@ -860,7 +860,6 @@ constexpr auto match_array(Args&&... args) noexcept {
     return match_array_from<0>(used_std::forward<Args>(args)...);
 }
 
-// Combined Direct/Stack Array literal initializer logic shortcut wrapper
 template <typename T, used_std::size_t N>
 struct DirectArray {
     T data[N];
@@ -877,7 +876,7 @@ constexpr auto match_array_literal(Args&&... args) noexcept {
 }
 
 // ============================================================================
-// 6. C++20 CONCEPT CONSTRAINTS IDENTIFICATION MATRIX
+// C++20 CONCEPT CONSTRAINTS IDENTIFICATION MATRIX
 // ============================================================================
 namespace mini_concepts {
     
@@ -958,11 +957,9 @@ namespace mini_concepts {
     template <BitPolicy P, typename T> struct is_bitwise<BitwisePredicate<P, T>> { static constexpr bool value = true; };
     template <typename T> concept IsBitwise = is_bitwise<used_std::decay_t<T>>::value;
 
-    // Check if a single type is either a reference or a pointer
     template <typename T>
     concept IsReferenceOrPointer = used_std::is_reference_v<T> || used_std::is_pointer_v<T>;
 
-    // Primary helper trait to unpack tuple elements
     template <typename Tuple>
     struct IsTupleOfRefsOrPointers : used_std::false_type {};
 
@@ -970,13 +967,11 @@ namespace mini_concepts {
     struct IsTupleOfRefsOrPointers<used_std::tuple<Elements...>> 
         : used_std::bool_constant<(IsReferenceOrPointer<Elements> && ...)> {};
 
-    // Concept to enforce that a Tuple-like type contains ONLY references or pointers
     template <typename Tuple> 
     concept TupleOfRefsOrPointers = IsTupleOfRefsOrPointers<used_std::remove_cvref_t<Tuple>>::value;
 
    template <typename K, typename T>
     concept IsCallablePredicate = requires(K k, T t) {
-        // Check if directly callable or via invoke without triggering instantiation errors
         { k(t) } -> convertible_to<bool>;
     };  
     
@@ -1070,7 +1065,7 @@ template <typename TargetType, typename KeyType>
 }
 
 // ============================================================================
-// 7. UNIFIED CASING LAYOUT STORAGE WITH HINT PARAMETERS
+// CASE STORAGE WITH HINT PARAMETERS
 // ============================================================================
 
 template <StaticLabel LabelID, typename KeyType, typename ActionType, BranchHint HintValue>
@@ -1081,9 +1076,6 @@ struct ImplCase {
     static constexpr BranchHint hint = HintValue;
 };
 
-// ============================================================================
-// 8. OVERLOADED PIPELINE SUGAR GENERATORS (operator>>)
-// ============================================================================
 template <StaticLabel LabelID, BranchHint Hint, typename KeyType>
 struct SugarProxyKey {
     KeyType key;
@@ -1254,7 +1246,13 @@ struct UnwrapReturnType<GotoValue<LabelID, T>> {
 //     }
 // };
 // Macro trick to generate clean compile-time switch blocks
-#define CASE_DISPATCH(N) case N: if constexpr (N < TotalCases) { step_lambda.template operator()<N>(); } break;
+    //using CaseActionDecay = used_std::decay_t<decltype(execute_action(used_std::get<N>(cases).action, ctx))>;\\
+    //if constexpr (IsStaticGotoSignal<CaseActionDecay>||IsDynamicGotoSignal<CaseActionDecay>||IsFallthroughSignal<CaseActionDecay>) {goto beginLoop;}\\
+    //
+#define CASE_DISPATCH(N) case N: if constexpr (N < TotalCases) \
+{   \
+    step_lambda.template operator()<N>(); \
+} break;
 #define DISPATCH_1(N)  CASE_DISPATCH(N)
 #define DISPATCH_4(N)  DISPATCH_1(N)   DISPATCH_1(N+1) DISPATCH_1(N+2) DISPATCH_1(N+3)
 #define DISPATCH_16(N) DISPATCH_4(N)   DISPATCH_4(N+4) DISPATCH_4(N+8) DISPATCH_4(N+12)
@@ -1272,8 +1270,6 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
 
     used_std::size_t active_index = 0;
     bool executed = false;
-    bool jump_taken = false;
-
     // Storage for return value without default-constructor penalties
     CleanReturnType value{};
     auto step_lambda = [&]<used_std::size_t Is>() noexcept {
@@ -1285,9 +1281,10 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
             using RawActionResult = decltype(execute_action(current_case.action, ctx));
 
             // 2. Handle VOID returning actions
-            if constexpr (used_std::is_same_v<RawActionResult, void> || used_std::is_same_v<RawActionResult, Wildcard>) {
+             if constexpr (used_std::is_same_v<RawActionResult, void> || used_std::is_same_v<RawActionResult, Wildcard>) {
                 execute_action(current_case.action, ctx);
                 executed = true;
+                return;
             } 
             // 3. Handle NON-VOID returning actions (Signals / Values)
             else {
@@ -1297,21 +1294,19 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
                 // Signal: Goto Jump
                 if constexpr (IsStaticGotoSignal<CaseActionDecay>) {
                     active_index = used_std::find_index_v<[]<typename T>{return T::label;},CaseActionDecay::label, used_std::remove_cvref_t<CasesTuple>>;
-                    jump_taken = true;
+                    return;
                 } 
                 else if constexpr (IsDynamicGotoSignal<CaseActionDecay>) {
-                    active_index = 
-                    used_std::find_by_value<[]<typename T>{return T::label;},
-                        unsigned int,used_std::remove_cvref_t<CasesTuple>>(
+                    active_index = used_std::find_by_value<[]<typename T>{return T::label;},unsigned int,used_std::remove_cvref_t<CasesTuple>>(
                         action_result.hash, 
                         used_std::make_index_sequence<TotalCases>{}
                     );
-                    jump_taken = true;
+                    return;
                 }
                 // Signal: Fallthrough
                 else if constexpr (IsFallthroughSignal<CaseActionDecay>) {
                     active_index = Is + 1;
-                    jump_taken = true;
+                    return;
                 }
                 // Terminal Value Return
                 else {
@@ -1322,15 +1317,17 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
                         value = used_std::move(action_result);
                     }
                     executed = true;
+                    active_index++;
+                    return;
                 }
             }
         }
+        active_index++; 
     };
 
-    while (active_index < TotalCases) {
-        executed = false;
-        jump_taken = false;
 
+    for (;active_index < TotalCases;) {
+        executed = false;
         // DynamicSwitch<0, TotalCases>::dispatch(active_index, step_lambda);
         switch (active_index) {
             DISPATCH_64(0)   
@@ -1343,19 +1340,16 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
             } else {
                 return used_std::move(value);
             }
-        }
-
-        if (!jump_taken) {
-            active_index++;
-        }
+        } 
     }
-
+    
     // Default Fallback
     if constexpr (used_std::is_same_v<CleanReturnType, void> || used_std::is_same_v<CleanReturnType, Wildcard>) {
         execute_action(used_std::forward<DefaultType>(default_action), ctx);
     } else {
         return execute_action(used_std::forward<DefaultType>(default_action), ctx);
     }
+    
 }
 #undef CASE_DISPATCH
 // ============================================================================

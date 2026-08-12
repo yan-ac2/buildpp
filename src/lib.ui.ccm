@@ -273,9 +273,6 @@ bool button(Context& ctx, uint64_t id, const Rect& bounds) {
     return result;
 }
 
-
-
-
 export
 class GLUIRenderer {
 private:

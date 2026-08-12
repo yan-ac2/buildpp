@@ -10,13 +10,13 @@ import :common;
 export
 template<EventType::Key V> requires (V <= EventType::keyLast)
 struct keyData {
-    static constexpr unsigned char value = V;
+    static constexpr EventType::Key value = V;
 
     using invoke = void(*)(void*,bool);
     invoke action = nullptr;//[](void*,bool){std::print("noop\n");}; 
     void* ptr = nullptr;
     alignas(std::max_align_t) char buffer[24];
-    
+    keyData() {}
     template<typename F>
     constexpr void setFn(F&& inFN) {
         using decay = std::decay_t<F>;
@@ -54,22 +54,23 @@ template <typename T>
 concept IsKeyData_c = isKeyData_t<std::decay_t<T>>()();
 
 export
-template<IsKeyData_c... KeyDataTypes> 
+// template<IsKeyData_c... KeyDataTypes> 
+template<EventType::Key... Key> 
 class Keyboard {
     template <typename T>
     using decay = std::decay_t<T>;
     public:
 
-    std::tuple<decay<KeyDataTypes>...> keys;
-    KeyState KeysState[sizeof...(KeyDataTypes)] {};
+    std::tuple<decltype(keyData<Key>())...> keys;
+    KeyState KeysState[sizeof...(Key)] {};
     const Event* event = nullptr;
     int32_t inputAccumulator = 0;
-    static constexpr auto indices = std::make_index_sequence<sizeof...(KeyDataTypes)>{};
+    static constexpr auto indices = std::make_index_sequence<sizeof...(Key)>{};
 
-    constexpr Keyboard(Event* e) : event(e) {}
+    constexpr Keyboard(Event* e) : event(e) , keys(keyData<Key>()...) {}
 
     void tickFrame() noexcept {
-        for (size_t i = 0; i < sizeof...(KeyDataTypes); ++i) {
+        for (size_t i = 0; i < sizeof...(Key); ++i) {
             KeysState[i].update();
         }
     }
@@ -90,18 +91,18 @@ class Keyboard {
 
     template<IsKeyData_c K>
     constexpr void isPressed(K& data) noexcept {
-        KeyState& sKeyState = KeysState[GetPosition<static_cast<EventType::Key>(decay<K>::value)>()];
+        KeyState& sKeyState = KeysState[GetPosition<decay<K>::value>()];
         
-        if (sKeyState.IsDown() || sKeyState.ChangedDown()) {
+        if (sKeyState.IsDown() or sKeyState.ChangedDown()) {
             data(); 
         }
     }
 
     template<IsKeyData_c K>
     constexpr void gatherRawInputs(K& data) noexcept {
-        bool isCurrentlyHeld = (GetKeyState(EventType::toPlatform(K::value)) & 0x8000); 
+        bool isCurrentlyHeld = (GetKeyState(EventType::toPlatform(data.value)) & 0x8000); 
         
-        KeysState[GetPosition<static_cast<EventType::Key>(decay<K>::value)>()].setRawDown(isCurrentlyHeld);
+        KeysState[GetPosition<decay<K>::value>()].setRawDown(isCurrentlyHeld);
     }
 
     template<EventType::Key K> requires (K <= EventType::keyLast)
@@ -117,12 +118,8 @@ class Keyboard {
     }
     
     private:
-    template <EventType::Key K> requires (K <= EventType::keyLast)
-    static consteval bool isKeyExist() noexcept {
-        if constexpr (sizeof...(KeyDataTypes) == 0) return false;
-        else return ((KeyDataTypes::value == K) or ...);
-    }
-
+    // template <EventType::Key K> requires (K <= EventType::keyLast)
+    
     template<size_t... Is>
     constexpr void updateKeysHelper(std::index_sequence<Is...>) noexcept {
         (isPressed(std::get<Is>(keys)), ...);
@@ -131,11 +128,16 @@ class Keyboard {
     constexpr void updateRawKeysHelper(std::index_sequence<Is...>) noexcept {
         (gatherRawInputs(std::get<Is>(keys)), ...);
     }
-
+    
+    template <EventType::Key K> requires (K <= EventType::keyLast)
+    static consteval bool isKeyExist() noexcept {
+        if constexpr (sizeof...(Key) == 0) return false;
+        else return ((Key == K) or ...);
+    }
     template <EventType::Key K> requires (K <= EventType::keyLast)
     static consteval size_t GetPosition() noexcept {
         static_assert(isKeyExist<K>(),"Key Doesn't Exists");
-        constexpr std::array keys = { KeyDataTypes::value... };
+        constexpr std::array keys = { Key... };
         for (size_t i = 0; i < keys.size(); ++i) {
             if (keys[i] == K) return i;
         }
@@ -143,8 +145,8 @@ class Keyboard {
     }
 
     static consteval bool UniqueKeyError() noexcept {
-        constexpr std::array keys = { KeyDataTypes::value... };
-            for (size_t i = 0; i < keys.size(); ++i) {
+        constexpr std::array keys = { Key... };
+        for (size_t i = 0; i < keys.size(); ++i) {
             for (size_t j = i + 1; j < keys.size(); ++j) {
                 if (keys[i] == keys[j]) return false;
             }

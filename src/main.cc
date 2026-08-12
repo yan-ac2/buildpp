@@ -66,14 +66,14 @@ int main() {
     glHints.Resize(app.Desc.width, app.Desc.height);
     
     Keyboard <
-    keyData<et::escape>,
-    keyData<et::e>,
-    keyData<et::w>,
-    keyData<et::a>,
-    keyData<et::s>,
-    keyData<et::d>,
-    keyData<et::q>,
-    keyData<et::controlL>> KeyMap (&event);
+    et::escape,
+    et::e,
+    et::w,
+    et::a,
+    et::s,
+    et::d,
+    et::q,
+    et::controlL> KeyMap (&event);
     event.addKeyboard(KeyMap.KeysState);
 
     float x = 0 ,y = 0;
@@ -129,7 +129,7 @@ int main() {
     // Compile GL shaders & set up VAO/VBO/EBO
     renderer.init();
 
-    Framebuffer fmain(800,600);
+    Framebuffer fmain(app.Desc);
     
     auto start = std::chrono::high_resolution_clock::now();
     auto& times = Clock::get();
@@ -142,8 +142,8 @@ int main() {
             // std::cout << "\nMonitor \n"<< "X: "<< monitor->x << " Y: " << monitor->y << " Res: " << monitor->width  << "x" << monitor->height << " Is Primary: " << monitor->isPrimary << "\n";   
         }
         KeyMap.update(8,times.delta_time());
-
         fmain.Bind();
+
         glClearColor(0.1f, 0.15f, 0.2f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         // auto end = std::chrono::high_resolution_clock::now();
@@ -151,8 +151,8 @@ int main() {
         // float second = (std::sin(duration.count()) * 0.5f) + 0.5f;
         // int vertexColorLocation = glGetUniformLocation(shader.ID,"second");
         // glUniform1f(vertexColorLocation,second);
-
         shader.use();
+
         glBindTexture(GL_TEXTURE_2D, texture);
         glBindVertexArray(glCtx.VAO);
         // glDrawArrays(GL_TRIANGLES,0,128);
@@ -166,11 +166,10 @@ int main() {
         GL_COLOR_BUFFER_BIT,
         GL_LINEAR
         );
-        Framebuffer::Unbind(800, 600);
+        Framebuffer::Unbind(fmain);
 
         ui_buffer.clear();
         
-        glUseProgram(renderer.);
         // Submit UI Commands
         ui_buffer.push_rect({20.0f, 20.0f}, {300.0f, 400.0f}, {40, 40, 45, 220});  // Semi-transparent dark panel
         ui_buffer.push_rect({40.0f, 50.0f}, {220.0f, 45.0f}, {220, 60, 60, 255});   // Red button
