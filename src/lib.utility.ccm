@@ -6,7 +6,7 @@ import lib.std;
 export {
     template <class Ty, Ty Val>
     struct integral_constant {
-        Ty value = Val;
+        static constexpr Ty value = Val;
         using value_type = Ty;
         using type       = integral_constant;
         
@@ -35,8 +35,12 @@ export {
     template<typename F>                   struct isFn_ptr                : false_t {};
     template<typename F,typename... Args>  struct isFn_ptr<F(*)(Args...)> : true_t {};
     
-    template<auto V> using IC = integral_constant<decltype(V),V>();
+    
+    template<auto V> inline constexpr integral_constant<decltype(V), V> Comptime{};
 }
+enum test : int {
+    t,w2
+};
 
 export
 namespace Math {

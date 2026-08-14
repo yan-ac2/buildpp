@@ -185,7 +185,7 @@ struct KeyState{
     constexpr bool IsToggled()   const { return (kState & kIsToggled) != 0; }
     constexpr bool RawKeyDown()  const { return (kState & rawKeyDown) != 0; }
     // --- Action Helpers ---
-    
+    constexpr operator bool() const { return (kState & kIsDown) != 0; }
     // True only on the exact frame the key transitions from UP to DOWN
     constexpr bool justPressed() const { 
         return (kState & (kIsDown | kWasDown)) == kIsDown; 

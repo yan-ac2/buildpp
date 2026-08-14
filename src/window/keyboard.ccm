@@ -8,151 +8,35 @@ import lib.utl;
 import :common;
 
 export
-template<EventType::Key V> requires (V <= EventType::keyLast)
-struct keyData {
-    static constexpr EventType::Key value = V;
-
-    using invoke = void(*)(void*,bool);
-    invoke action = nullptr;//[](void*,bool){std::print("noop\n");}; 
-    void* ptr = nullptr;
-    alignas(std::max_align_t) char buffer[24];
-    keyData() {}
-    template<typename F>
-    constexpr void setFn(F&& inFN) {
-        using decay = std::decay_t<F>;
-        static_assert(sizeof(decay) <= 24, "Callable too large for in-place buffer");
-        static_assert(alignof(decay) <= alignof(std::max_align_t), "Alignment mismatch");
-        ptr = new (buffer) decay(std::forward<F>(inFN));
-        
-        action = [](void* ptr,bool destroy) -> void {
-            if (destroy) {
-                return static_cast<decay*>(ptr)->~decay();
-            }
-            return (*static_cast<decay*>(ptr))();
-        };
-    }
-    ~keyData() {
-        if(action) {
-            action(ptr,true);
-        }
-    }
-    void operator ()() {
-        if(action) {
-            return action(ptr,false);
-        }
-    }
-    
-};
-
-template <typename T>
-struct isKeyData_t : false_t {};
-
-template <EventType::Key K>
-struct isKeyData_t<keyData<K>> : true_t {};
-
-template <typename T>
-concept IsKeyData_c = isKeyData_t<std::decay_t<T>>()();
-
-export
-// template<IsKeyData_c... KeyDataTypes> 
-template<EventType::Key... Key> 
-class Keyboard {
-    template <typename T>
-    using decay = std::decay_t<T>;
-    public:
-
-    std::tuple<decltype(keyData<Key>())...> keys;
-    KeyState KeysState[sizeof...(Key)] {};
+struct Keyboard {
+    KeyState KeysState[256] {};
     const Event* event = nullptr;
     int32_t inputAccumulator = 0;
-    static constexpr auto indices = std::make_index_sequence<sizeof...(Key)>{};
+    static constexpr auto indices = std::make_index_sequence<256>{};
 
-    constexpr Keyboard(Event* e) : event(e) , keys(keyData<Key>()...) {}
+    constexpr Keyboard(Event* e) : event(e) {}
 
-    void tickFrame() noexcept {
-        for (size_t i = 0; i < sizeof...(Key); ++i) {
-            KeysState[i].update();
-        }
-    }
 
-    constexpr void update(int32_t tickMS = 0, int32_t dtimeMS = 0) noexcept {
-        if (!event->onFocus) {
-            inputAccumulator = 0;
-            return;
-        }
+    constexpr bool poll(int32_t tickMS = 0, int32_t dtimeMS = 0) noexcept {
         inputAccumulator += inputAccumulator >= tickMS ? -tickMS : dtimeMS;
         if (inputAccumulator >= tickMS) {
-            // input->updateKey();
-            updateRawKeysHelper(indices);
-            tickFrame();
-            updateKeysHelper(indices);
+            gatherRawInputs(indices);
+            return true;
         }
+        return false;
     }
 
-    template<IsKeyData_c K>
-    constexpr void isPressed(K& data) noexcept {
-        KeyState& sKeyState = KeysState[GetPosition<decay<K>::value>()];
-        
-        if (sKeyState.IsDown() or sKeyState.ChangedDown()) {
-            data(); 
-        }
-    }
-
-    template<IsKeyData_c K>
-    constexpr void gatherRawInputs(K& data) noexcept {
-        bool isCurrentlyHeld = (GetKeyState(EventType::toPlatform(data.value)) & 0x8000); 
-        
-        KeysState[GetPosition<decay<K>::value>()].setRawDown(isCurrentlyHeld);
-    }
-
-    template<EventType::Key K> requires (K <= EventType::keyLast)
-    constexpr auto& get() noexcept {
-        static_assert(isKeyExist<K>(),"Key Doesn't Exists");
-        return std::get<GetPosition<K>()>(keys);
-    }
-    
-    template<EventType::Key K> requires (K <= EventType::keyLast)
-    constexpr KeyState& getState() noexcept {
-        static_assert(isKeyExist<K>(),"Key Doesn't Exists");
-        return KeysState[GetPosition<K>()];
-    }
-    
-    private:
-    // template <EventType::Key K> requires (K <= EventType::keyLast)
-    
     template<size_t... Is>
-    constexpr void updateKeysHelper(std::index_sequence<Is...>) noexcept {
-        (isPressed(std::get<Is>(keys)), ...);
-    }
-    template<size_t... Is>
-    constexpr void updateRawKeysHelper(std::index_sequence<Is...>) noexcept {
-        (gatherRawInputs(std::get<Is>(keys)), ...);
+    inline constexpr void gatherRawInputs(std::index_sequence<Is...>) noexcept {
+        BYTE windowsRawBuffer[256] = { 0 };
+        if (GetKeyboardState(windowsRawBuffer)) {
+            ((KeysState[Is].setRawDown(((windowsRawBuffer[Is] & 0x80) != 0)),KeysState[Is].update()), ...);
+        }
     }
     
-    template <EventType::Key K> requires (K <= EventType::keyLast)
-    static consteval bool isKeyExist() noexcept {
-        if constexpr (sizeof...(Key) == 0) return false;
-        else return ((Key == K) or ...);
-    }
-    template <EventType::Key K> requires (K <= EventType::keyLast)
-    static consteval size_t GetPosition() noexcept {
-        static_assert(isKeyExist<K>(),"Key Doesn't Exists");
-        constexpr std::array keys = { Key... };
-        for (size_t i = 0; i < keys.size(); ++i) {
-            if (keys[i] == K) return i;
-        }
-        return -1; 
-    }
-
-    static consteval bool UniqueKeyError() noexcept {
-        constexpr std::array keys = { Key... };
-        for (size_t i = 0; i < keys.size(); ++i) {
-            for (size_t j = i + 1; j < keys.size(); ++j) {
-                if (keys[i] == keys[j]) return false;
-            }
-        }
-        return true;
+    constexpr KeyState& operator[](EventType::Key key) {
+        using underlying = std::underlying_type_t<decltype(key)>;
+        return KeysState[static_cast<underlying>(EventType::toPlatform(key))];
     }
     
-    static_assert(UniqueKeyError(),"KeyMap Error: You cannot bind the same key to multiple actions!");
 };

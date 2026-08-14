@@ -65,30 +65,10 @@ int main() {
     glHints.Initialize(app.mHWND, 4, 3);
     glHints.Resize(app.Desc.width, app.Desc.height);
     
-    Keyboard <
-    et::escape,
-    et::e,
-    et::w,
-    et::a,
-    et::s,
-    et::d,
-    et::q,
-    et::controlL> KeyMap (&event);
+    Keyboard KeyMap (&event);
     event.addKeyboard(KeyMap.KeysState);
 
     float x = 0 ,y = 0;
-
-    KeyMap.get<et::escape>().setFn([&]() { std::cout << "Hello\n";
-        app.CloseApp();}
-    );
-    KeyMap.get<et::w>().setFn([&]() {++(y); std::cout << fmt(x," " ,y,"\n"); });
-    KeyMap.get<et::a>().setFn([&]() {--(x); std::cout << fmt(x," " ,y,"\n"); });
-    KeyMap.get<et::s>().setFn([&]() {--(y); std::cout << fmt(x," " ,y,"\n"); });
-    KeyMap.get<et::controlL>().setFn([&]() {std::print("ctrlL pressed \n") ; });
-    KeyMap.get<et::d>().setFn([&]() {
-        KeyMap.getState<et::controlL>().IsToggled() ? x += 10 : ++(x); 
-        std::cout << fmt(x," " ,y,"\n");
-    });
 
     unsigned int texture = loadTGATexture(fs::path("res/test.tga").string());
     
@@ -124,7 +104,6 @@ int main() {
 
     // 2. Instantiate Renderer & UI Buffer
     GLUIRenderer renderer;
-    RenderBuffer ui_buffer;
 
     // Compile GL shaders & set up VAO/VBO/EBO
     renderer.init();
@@ -141,7 +120,22 @@ int main() {
             std::cout << fmt( "Monitor\n X: {} Y: {} {}x{} isPrimary: {}\n",monitor->x,monitor->y,monitor->width,monitor->height,monitor->isPrimary ? "true" : "false");   
             // std::cout << "\nMonitor \n"<< "X: "<< monitor->x << " Y: " << monitor->y << " Res: " << monitor->width  << "x" << monitor->height << " Is Primary: " << monitor->isPrimary << "\n";   
         }
-        KeyMap.update(8,times.delta_time());
+        if (KeyMap.poll(16,times.delta_time())) {
+            if (KeyMap[et::escape]) { 
+                std::cout << "Closing app\n";
+                app.CloseApp();
+            }
+            if (KeyMap[et::w]) {++(y); std::cout << fmt(x," " ,y,"\n"); };
+            if (KeyMap[et::a]) {--(x); std::cout << fmt(x," " ,y,"\n"); };
+            if (KeyMap[et::s]) {--(y); std::cout << fmt(x," " ,y,"\n"); };
+            if (KeyMap[et::d]) {
+                KeyMap[et::controlL].IsToggled() ? x += 10 : ++(x); 
+                std::cout << fmt(x," " ,y,"\n");
+            };
+            if (KeyMap[et::controlL]) {
+                std::print("ctrlL pressed \n");
+            }
+        }
         fmain.Bind();
 
         glClearColor(0.1f, 0.15f, 0.2f, 1.0f);
@@ -180,6 +174,7 @@ int main() {
         
 
         glCtx.Swapbuffer();
+
         auto timeSleep = times.end(Clock::ms(16));
         // std::cout << fmt("time: {}ms dt: {}ms\n",timeSleep.count(),times.delta_time());
         std::this_thread::sleep_for(timeSleep);
