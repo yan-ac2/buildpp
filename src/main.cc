@@ -103,10 +103,10 @@ int main() {
     shader.CompileProgram();
 
     // 2. Instantiate Renderer & UI Buffer
-    GLUIRenderer renderer;
-
+    GLUIRenderer uirenderer;
+    uiContext ui(&uirenderer);
     // Compile GL shaders & set up VAO/VBO/EBO
-    renderer.init();
+    uirenderer.init();
 
     Framebuffer fmain(app.Desc);
     
@@ -162,15 +162,15 @@ int main() {
         );
         Framebuffer::Unbind(fmain);
 
-        ui_buffer.clear();
+        uirenderer.clear();
         
         // Submit UI Commands
-        ui_buffer.push_rect({20.0f, 20.0f}, {300.0f, 400.0f}, {40, 40, 45, 220});  // Semi-transparent dark panel
-        ui_buffer.push_rect({40.0f, 50.0f}, {220.0f, 45.0f}, {220, 60, 60, 255});   // Red button
-        ui_buffer.push_rect({40.0f, 110.0f}, {220.0f, 100.0f}, {60, 180, 80, 255}); // Green panel
+        uirenderer.push_rect({20.0f, 20.0f}, {300.0f, 400.0f}, {40, 40, 45, 220});  // Semi-transparent dark panel
+        uirenderer.push_rect({40.0f, 50.0f}, {220.0f, 45.0f}, {220, 60, 60, 255});   // Red button
+        uirenderer.push_rect({40.0f, 110.0f}, {220.0f, 100.0f}, {60, 180, 80, 255}); // Green panel
 
         // Execute UI rendering directly over backbuffer with Alpha Blending enabled
-        renderer.render(ui_buffer, 800.0f, 600.0f);
+        uirenderer.render(800.0f, 600.0f);
         
 
         glCtx.Swapbuffer();

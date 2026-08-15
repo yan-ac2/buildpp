@@ -79,8 +79,8 @@ int test()
     #endif
     .setProjectPath(rootPath.string())
     .addSourcePath("testlib")
-    .addSource({(test.Path / test.getMainPath() / "coro.cc").string()})
-    .setMain("coro.cc");
+    .addSource({(test.Path / test.getMainPath() / "taggedarray.cc").string()})
+    .setMain("taggedarray.cc");
     // .getCppFile();
     
     #ifdef __unix__

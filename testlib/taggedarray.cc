@@ -1,4 +1,7 @@
 #include <cstdint>
+#include <cstddef>
+#include <iostream>
+#include <ranges>
 
 
 // enum SlotState : uintptr_t {
@@ -100,19 +103,67 @@
 //         }
 //     }
 // };
+template <typename T, std::size_t N>
+class taggedArray {
+    static constexpr std::size_t BITS_PER_WORD = 64;
 
-template<typename T,size_t N>
-struct taggedArray {
-    enum SlotState : uintptr_t {
-        VALID       = 0, // 00 -> Active inline value exists
-        EMPTY       = 1, // 01 -> Never used
-        DEALLOCATED = 2  // 10 -> Tombstone / Recently freed
+    std::uint64_t skipfield[N < 64 ? 1 : (N + BITS_PER_WORD - 1) / BITS_PER_WORD]{0};
+    struct element {
+        T e;
+        constexpr element& set(T value) {e = value; return *this;} 
+        constexpr T& get() { return e;} 
+        constexpr element& operator =(T rhs) { set(rhs); return *this; }
+
+        constexpr operator T() {return e;}
     };
-    T data[N];
-    
-    taggedArray() {
-        for (auto& d : data) {
-            std::uintptr_t =
+public:
+    element data[N]{}; // Value-initialization compatible with any default-constructible type T
+
+    constexpr taggedArray() {};
+
+    // Mutator to set bit state
+    constexpr void changeState(std::size_t idx, bool state) {
+
+        const std::size_t word_idx = idx / BITS_PER_WORD;
+        const std::size_t bit_idx  = idx % BITS_PER_WORD;
+        const std::uint64_t mask   = 1ULL << bit_idx;
+
+        if (state) {
+            skipfield[word_idx] |= mask;
+        } else {
+            skipfield[word_idx] &= ~mask;
         }
     }
+
+    // Accessor to query bit state
+    [[nodiscard]] constexpr bool getState(std::size_t idx) const {
+        const std::size_t word_idx = idx / BITS_PER_WORD;
+        const std::size_t bit_idx  = idx % BITS_PER_WORD;
+        
+        return (skipfield[word_idx] & (1ULL << bit_idx)) != 0;
+    }
+
+    constexpr element& operator [](size_t idx) const {
+        return data[idx];
+    }
+    
+    constexpr element* begin() {return data;}
+    constexpr element* end()   {return data + N;}
+    constexpr const element* begin() const {return data;}
+    constexpr const element* end() const {return data + N;}
 };
+
+int main() {
+    taggedArray<int, 32> test;
+    size_t i = 0;
+    for (auto& a : test) {
+        a = ++i;
+    }
+    size_t sum = 0;
+    for (auto& a : test) {
+        std::cout << a << ", ";
+        sum += a;
+    }
+    std::cout << "\n";
+    std::cout << sum << "\n";
+}
