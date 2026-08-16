@@ -665,24 +665,23 @@ enum class RangeType  { Closed, Open, HalfOpenLeft, HalfOpenRight , Or };
 
 template <RangeType  iType = RangeType ::Closed,typename T = int> requires (used_std::is_arithmetic_v<T>)
 struct Range {
-    T lhs;
-    T rhs;
+    T data[2];
     
     constexpr bool contains(const T& target) const noexcept {
         if constexpr (iType == RangeType::Closed) {
-            return (target >= lhs) && (target <= rhs);
+            return (target >= data[0]) && (target <= data[1]);
         } 
         else if constexpr (iType == RangeType::Open) {
-            return (target > lhs) && (target < rhs);
+            return (target > data[0]) && (target < data[1]);
         }
         else if constexpr (iType == RangeType::HalfOpenLeft) { // (min, max]
-            return (target > lhs) && (target <= rhs);
+            return (target > data[0]) && (target <= data[1]);
         }
         else if constexpr (iType == RangeType::HalfOpenRight) { // [min, max)
-            return (target >= lhs) && (target < rhs);
+            return (target >= data[0]) && (target < data[1]);
         }
         else if constexpr (iType == RangeType::Or) { // Outside (min, max)
-            return (target < lhs) || (target > rhs);
+            return (target < data[0]) || (target > data[1]);
         } 
         else {
             return false;
@@ -979,7 +978,7 @@ namespace mini_concepts {
 
 // Global Core Match Evaluator Implementation
 template <typename TargetType, typename KeyType>
-[[nodiscard]] constexpr bool evaluate_match(const TargetType& target, const KeyType& key) noexcept {
+[[nodiscard]] inline constexpr bool evaluate_match(const TargetType& target, const KeyType& key) noexcept {
     using TargetDecay = used_std::decay_t<TargetType>;
     using KeyDecay    = used_std::decay_t<KeyType>;
 
@@ -1080,55 +1079,55 @@ template <StaticLabel LabelID, BranchHint Hint, typename KeyType>
 struct SugarProxyKey {
     KeyType key;
     template <typename ActionType>
-    constexpr auto operator>>(ActionType&& action) && noexcept {
+    inline constexpr auto operator>>(ActionType&& action) && noexcept {
         return ImplCase<LabelID, KeyType, used_std::decay_t<ActionType>, Hint>{
-            .key=used_std::forward<KeyType>(key), .action=used_std::forward<ActionType>(action)
+            .key=used_std::move(key), .action=used_std::forward<ActionType>(action)
         };
     }
 };
 
-// Consolidated syntactic sugar match nodes (Default Label ID is set to 0)
-template <BranchHint Hint = BranchHint::None,typename T> 
-constexpr auto Case(T&& val) noexcept { return SugarProxyKey<0, Hint, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
-template <typename T> 
-constexpr auto likely_Case(T&& val) noexcept { return SugarProxyKey<0, BranchHint::Likely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
-template <typename T> 
-constexpr auto unlikely_Case(T&& val) noexcept { return SugarProxyKey<0, BranchHint::Unlikely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
-
-template <StaticLabel LabelID, typename T>
-constexpr auto label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::None, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
-template <StaticLabel LabelID, typename T> 
-constexpr auto likely_label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::Likely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
-template <StaticLabel LabelID, typename T> 
-constexpr auto unlikely_label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::Unlikely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
 
 //  Syntactic sugar for range
 template <RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T> requires (used_std::is_arithmetic_v<T>) 
-constexpr auto Case(const T(&range)[2]) noexcept { 
-    return SugarProxyKey<0, Hint, Range<iType,T>>{ {.lhs=range[0],.rhs=range[1]}}; 
+inline constexpr auto Case(Range<iType,T>&& range) noexcept { 
+    return SugarProxyKey<0, Hint, Range<iType,T>>{ used_std::forward<Range<iType,T>>(range) }; 
 }
 template <CompoundOp cOp = CompoundOp::Or,BranchHint Hint = BranchHint::None,typename... T> requires (is_range_instance<T> && ...) 
-constexpr auto Case( T&&... ranges ) noexcept { 
+inline constexpr auto Case( T&&... ranges ) noexcept { 
     auto compound = make_compound_range<cOp>(used_std::forward<T>(ranges)...);
     return SugarProxyKey<0, Hint, decltype(compound)>{ used_std::move(compound) };
 }
 template <StaticLabel LabelID,RangeType iType = RangeType::Closed,BranchHint Hint = BranchHint::None,typename T> requires (used_std::is_arithmetic_v<T>) 
-constexpr auto label_Case(const T(&range)[2]) noexcept { 
-    return SugarProxyKey<LabelID, Hint, Range<iType,T>>{ {.lhs=range[0],.rhs=range[1]}}; 
+inline constexpr auto label_Case(Range<iType,T>&& range) noexcept { 
+    return SugarProxyKey<LabelID, Hint, Range<iType,T>>{ used_std::forward<Range<iType,T>>(range) }; 
 }
 template <StaticLabel LabelID,CompoundOp cOp = CompoundOp::Or,BranchHint Hint = BranchHint::None,typename... T> requires (is_range_instance<T> && ...) 
-constexpr auto label_Case(T&&... ranges) noexcept { 
+inline constexpr auto label_Case(T&&... ranges) noexcept { 
     auto compound = make_compound_range<cOp>(used_std::forward<T>(ranges)...);
     return SugarProxyKey<0, Hint, decltype(compound)>{ used_std::move(compound) };
 }
 
+// Consolidated syntactic sugar match nodes (Default Label ID is set to 0)
 
+template <BranchHint Hint = BranchHint::None,typename T> 
+inline constexpr auto Case(T&& val) noexcept { return SugarProxyKey<0, Hint, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
+template <typename T> 
+inline constexpr auto likely_Case(T&& val) noexcept { return SugarProxyKey<0, BranchHint::Likely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
+template <typename T> 
+inline constexpr auto unlikely_Case(T&& val) noexcept { return SugarProxyKey<0, BranchHint::Unlikely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
+
+template <StaticLabel LabelID, typename T>
+inline constexpr auto label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::None, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
+template <StaticLabel LabelID, typename T> 
+inline constexpr auto likely_label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::Likely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
+template <StaticLabel LabelID, typename T> 
+inline constexpr auto unlikely_label_Case(T&& val) noexcept { return SugarProxyKey<LabelID, BranchHint::Unlikely, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
 
 
 
 // Hardware Prediction Branch Optimizer Hints Primitive Mapping
 template <BranchHint Hint>
-[[nodiscard]] constexpr bool apply_hardware_hint(bool condition) noexcept {
+[[nodiscard]] inline constexpr bool apply_hardware_hint(bool condition) noexcept {
     if constexpr (Hint == BranchHint::Likely) {
 #if defined(__GNUC__) || defined(__clang__)
         return __builtin_expect(static_cast<bool>(condition), 1);
@@ -1157,7 +1156,7 @@ template <BranchHint Hint>
 }
 
 template <typename ActionType, typename ContextType> 
-constexpr decltype(auto) execute_action(ActionType&& action, ContextType& ctx) {
+inline constexpr decltype(auto) execute_action(ActionType&& action, ContextType& ctx) {
     using ActionDecay  = used_std::remove_cvref_t<ActionType>;
     using CleanContext = used_std::remove_cvref_t<ContextType>;
     
@@ -1261,7 +1260,7 @@ struct UnwrapReturnType<GotoValue<LabelID, T>> {
 template <typename TargetType, typename DefaultType, typename ContextTuple, typename CasesTuple>
 requires (mini_concepts::TupleLike<used_std::remove_cvref_t<ContextTuple>> && 
           mini_concepts::TupleLike<used_std::remove_cvref_t<CasesTuple>>)
-constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& default_action, ContextTuple&& ctx, CasesTuple&& cases) noexcept {
+inline constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& default_action, ContextTuple&& ctx, CasesTuple&& cases) noexcept {
     using RawCases = used_std::remove_cvref_t<CasesTuple>;
     constexpr used_std::size_t TotalCases = used_std::tuple_size_v<RawCases>;
 
@@ -1272,7 +1271,7 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
     bool executed = false;
     // Storage for return value without default-constructor penalties
     CleanReturnType value{};
-    auto step_lambda = [&]<used_std::size_t Is>() noexcept {
+    auto step_lambda = [&]<used_std::size_t Is>() noexcept  {
         auto& current_case = used_std::get<Is>(cases);
         using RawCaseType = used_std::remove_cvref_t<decltype(current_case)>;
 
@@ -1280,14 +1279,13 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
         if (apply_hardware_hint<RawCaseType::hint>(evaluate_match(target, current_case.key))) {
             using RawActionResult = decltype(execute_action(current_case.action, ctx));
 
+            if constexpr (used_std::is_same_v<RawActionResult, void> || used_std::is_same_v<RawActionResult, Wildcard>) {
             // 2. Handle VOID returning actions
-             if constexpr (used_std::is_same_v<RawActionResult, void> || used_std::is_same_v<RawActionResult, Wildcard>) {
                 execute_action(current_case.action, ctx);
                 executed = true;
                 return;
-            } 
+            } else {
             // 3. Handle NON-VOID returning actions (Signals / Values)
-            else {
                 decltype(auto) action_result = execute_action(current_case.action, ctx);
                 using CaseActionDecay = used_std::decay_t<decltype(action_result)>;
 
@@ -1317,9 +1315,9 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
                         value = used_std::move(action_result);
                     }
                     executed = true;
-                    active_index++;
-                    return;
                 }
+                active_index++;
+                return;
             }
         }
         active_index++; 
@@ -1358,7 +1356,7 @@ constexpr auto universal_switch_matrix(const TargetType& target, DefaultType&& d
 
 template <typename TargetType, typename ContextTuple, typename... AllTrailingArgs> 
 requires (mini_concepts::TupleLike<used_std::remove_cvref_t<ContextTuple>>)
-constexpr auto universal_switch(const TargetType& target, ContextTuple&& ctx, AllTrailingArgs&&... args) {
+inline constexpr auto universal_switch(const TargetType& target, ContextTuple&& ctx, AllTrailingArgs&&... args) {
     constexpr used_std::size_t TotalArgs = sizeof...(AllTrailingArgs);
     static_assert(TotalArgs >= 1, "Library Error: You must supply a terminal fallback default action.");
     
@@ -1395,7 +1393,7 @@ struct SwitchPipelineProxy {
     ContextTuple ctx;
 
     template <typename... CaseTypes>
-    constexpr decltype(auto) operator()(CaseTypes&&... cases) && {
+    inline constexpr decltype(auto) operator()(CaseTypes&&... cases) && {
         return universal_switch(target,used_std::forward<ContextTuple>(ctx), used_std::forward<CaseTypes>(cases)...);
     }
 };
@@ -1405,14 +1403,14 @@ struct SwitchTargetProxy {
     const TargetType& target;
 
     template <typename ContextArgs> requires (mini_concepts::IsWildcard<ContextArgs>)
-    constexpr auto operator[](ContextArgs& arg) && noexcept {
+    inline constexpr auto operator[](ContextArgs& arg) && noexcept {
         using EmptyTuple = used_std::tuple<>;
         return SwitchPipelineProxy<TargetType, EmptyTuple>{ target, EmptyTuple{} };
     }
 
     template <typename... ContextArgs> requires (sizeof...(ContextArgs) > 0) 
-    constexpr auto operator[](ContextArgs&&... args) && noexcept {
-        auto ctx_tuple = used_std::tuple<ContextArgs...>(used_std::forward<ContextArgs>(args)...);
+    inline constexpr auto operator[](ContextArgs&&... args) && noexcept {
+        auto ctx_tuple = used_std::forward_as_tuple(used_std::forward<ContextArgs>(args)...);
         using TupleType = decltype(ctx_tuple);
         static_assert(
             mini_concepts::TupleOfRefsOrPointers<TupleType>,
@@ -1421,8 +1419,8 @@ struct SwitchTargetProxy {
         return SwitchPipelineProxy<TargetType, TupleType>{ target, used_std::move(ctx_tuple) };
     }
     template <typename... ContextArgs> requires (sizeof...(ContextArgs) > 0) 
-    constexpr auto operator()(ContextArgs&&... args) && noexcept {
-        auto ctx_tuple = used_std::tuple<ContextArgs...>(used_std::forward<ContextArgs>(args)...);
+    inline constexpr auto operator()(ContextArgs&&... args) && noexcept {
+        auto ctx_tuple = used_std::forward_as_tuple(used_std::forward<ContextArgs>(args)...) ;
         using TupleType = decltype(ctx_tuple);
         static_assert(
             mini_concepts::TupleOfRefsOrPointers<TupleType>,
@@ -1433,7 +1431,7 @@ struct SwitchTargetProxy {
 };
 
 template <typename TargetType>
-constexpr auto Match(const TargetType& target) noexcept {
+inline constexpr auto Match(const TargetType& target) noexcept {
     return SwitchTargetProxy<TargetType>{ target };
 }
 // ============================================================================

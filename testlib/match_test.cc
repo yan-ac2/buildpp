@@ -6,11 +6,11 @@ void showcase_numeric_and_ranges(int score) {
     std::cout << "\n=== 1. Numeric & Range Pattern Matching ===" << std::endl;
     char test = 't';
     // std::size_t score2 = 2;
-    std::string_view result = Match(score)(score,test)  (
+    std::string_view result = Match(score)[score,test]  (
         Case(100)                      >> [] { return "Perfect Score!"; },
-        Case({90,99})        >> [] { return "Grade: A"; },
-        Case({80, 89})       >> [] { return "Grade: B"; },
-        Case({70, 79})       >> [] { return "Grade: C"; },
+        Case(Range{90,99})        >> [] { return "Grade: A"; },
+        Case(Range{80, 89})       >> [] { return "Grade: B"; },
+        Case(Range{70, 79})       >> [] { return "Grade: C"; },
         [](int& s) { 
             return (s < 70 ? "Grade: Fail" : "Grade: Invalid"); 
 
@@ -26,7 +26,7 @@ void showcase_hash_labels(std::string_view command) {
     int test = 1;
     std::size_t cmd_hash = used_std::strHash::fnv1a_hash(command.data(), command.size());
 
-    std::string_view response = Match(command)(command,&cmd_hash,&test) (
+    std::string_view response = Match(command)[command,&cmd_hash,&test] (
         Case("start")   >> [] { return "System Starting..."; },
         label_Case<"stop">
         ("stop")        >> [](int* i) { 
@@ -96,7 +96,7 @@ int main () {
     // -------------------------------------------------------------
     int number = -43;
     std::string_view num_res = Match(number)[__](
-        Case(Predicate(&is_even))     >> [] { return "Even Number"; },
+        Case(&is_even)     >> [] { return "Even Number"; },
         Case(Predicate(&is_positive)) >> [] { return "Positive Odd Number"; },
         [] { return "Other"; }
     );
@@ -161,7 +161,7 @@ int main () {
         label_Case<"id">(Range{0,15},Range{20,30}) >> []{return true;},
         []{return false;}), "" );
     static_assert(Match(num)[__] (
-        Case(Range<RangeType::Or>(0,10),Range<RangeType::Or>(20,40)) >> []{return true;},
+        Case(Range<RangeType::Or>{0,10},Range<RangeType::Or>{20,40}) >> []{return true;},
         []{return false;}), "" );
     constexpr int a = 0b1010;
     static_assert(Match(a)[__] (
@@ -181,10 +181,10 @@ int main () {
     );
     int num2 = 0;
     Match(num2)[num2] (
-        label_Case<"inRange">({20,40}) >> []{
+        label_Case<"inRange">(Range{20,40}) >> []{
             std::cout << "is in range";
         },
-        label_Case<"outRange">({0,20}) >> [](int& i){
+        label_Case<"outRange">(Range{0,20}) >> [](int& i){
             ++i;
             std::cout << "increase" << i << '\n';
             if (i == 15) {
