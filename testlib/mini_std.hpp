@@ -166,12 +166,13 @@ namespace mini_std {
 
     template <typename T>
     struct is_fundamental 
-        : mini_std::bool_constant<
-            mini_std::is_arithmetic<T>::value ||
-            mini_std::is_void<T>::value ||
-            mini_std::is_null_pointer<T>::value
-        > {};
-
+    : mini_std::bool_constant<
+        mini_std::is_arithmetic<T>::value ||
+        mini_std::is_void<T>::value ||
+        mini_std::is_null_pointer<T>::value
+    > {};
+    template<typename T>
+    constexpr bool is_fundamental_v = is_fundamental<T>::value;
     template <typename T>
     struct is_scalar
         : mini_std::bool_constant<
@@ -618,5 +619,4 @@ namespace mini_std {
 #       endif
     }
 }
-
 #endif
