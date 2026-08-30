@@ -1418,6 +1418,7 @@ struct machine {
 
     // 2. Accept universal references and forward/move into stored value members
     constexpr machine(StoreTarget t) : target(t) {}
+    constexpr machine(StoreTarget t,StoreContext c) : target(t),ctx(c) {}
 
     template <typename T, typename CT, typename CA, typename D>
     constexpr machine(T&& t, CT&& ct, CA&& ca, D&& d) 
@@ -1434,7 +1435,10 @@ struct machine {
         } else {
             auto ctx_tuple = used_std::make_tuple(used_std::forward<ContextArgs>(args)...);
             using TupleType = decltype(ctx_tuple);
-            return machine<TargetType, TupleType, Wildcard>{ used_std::move(target), used_std::move(ctx_tuple) };
+            return machine<TargetType, TupleType, Wildcard>(
+                used_std::move(target), 
+                used_std::move(ctx_tuple) 
+            );
         }
     }
 
@@ -1451,26 +1455,33 @@ struct machine {
         );
     }
     
-    template <typename Target, typename Context, typename Cases, typename DefaultAction, used_std::size_t... Is>
-    inline constexpr decltype(auto) helper(Target&& target, Context&& ctx, Cases&& cases, DefaultAction&& default_action, used_std::index_sequence<Is...>) 
+    template <typename Cases, typename DefaultAction, used_std::size_t... Is>
+    inline constexpr decltype(auto) helper(StoreTarget&& target, StoreContext&& ctx, Cases&& cases, DefaultAction&& default_action, used_std::index_sequence<Is...>) 
     {
         auto cases_tup = used_std::make_tuple(used_std::get<Is>(used_std::forward<Cases>(cases))...);
         
-        using CleanTarget = std::remove_cvref_t<Target>;
-        using CleanContext = std::remove_cvref_t<Context>;
+        using CleanTarget = std::remove_cvref_t<StoreTarget>;
+        using CleanContext = std::remove_cvref_t<StoreContext>;
         using CleanCases = decltype(cases_tup);
         using CleanDefault = std::remove_cvref_t<DefaultAction>;
 
         // Construct fully-formed machine and execute matrix evaluation
         return machine<CleanTarget, CleanContext, CleanCases, CleanDefault>(
-            used_std::forward<Target>(target),
-            used_std::forward<Context>(ctx),
+            used_std::forward<StoreTarget>(target),
+            used_std::forward<StoreContext>(ctx),
             used_std::move(cases_tup),
             used_std::forward<DefaultAction>(default_action)
         );
     }
 
-    constexpr operator CleanReturnType() const {
+    constexpr operator CleanReturnType() const & {
+        return run();
+    }
+    constexpr operator CleanReturnType() && {
+        return used_std::move(*this).run();
+    }
+
+    constexpr auto run() const {
         using RawCases = used_std::remove_cvref_t<CasesTuple>;
         constexpr used_std::size_t TotalCases = used_std::tuple_size_v<RawCases>;
 
@@ -1496,7 +1507,7 @@ struct machine {
             if (state.matched) break;
         }
         
-        if constexpr (used_std::is_same_v<CleanReturnType, void> || used_std::is_same_v<CleanReturnType, Wildcard>) {
+        if constexpr (used_std::is_same_v<CleanReturnType, void> or used_std::is_same_v<CleanReturnType, Wildcard>) {
             if (state.matched) {
                 return;
             } else {
@@ -1514,7 +1525,8 @@ struct machine {
 template <typename TargetType>
 machine(TargetType) -> machine<TargetType>;
 
-constexpr auto mt = machine(__)(Case(__) >> true,true);
+
+constexpr bool mt = machine(__)(Case(__) >> true,true);
 static_assert(mt, "");
 template <typename TargetType, typename ContextTuple>
 struct SwitchPipelineProxy {
