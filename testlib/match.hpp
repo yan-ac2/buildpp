@@ -3,9 +3,9 @@
 #define MATCH_H
 
 
-    // #include <type_traits>
-    // #include <tuple>
-    // #include <utility>
+    #include <type_traits>
+    #include <tuple>
+    #include <utility>
     #include "mini_std.hpp"
 
 
@@ -14,7 +14,7 @@
 // ============================================================================
 
 namespace used_std {
-    using namespace mini_std; 
+    using namespace std; 
 
     template <typename T, typename = void>
     struct is_tuple_like : used_std::false_type {};
@@ -209,20 +209,25 @@ namespace used_std {
     
     
     namespace detail {
-        template <typename Seq1, typename Seq2>
-        struct concat_index_sequence;
+        // template <typename Seq1, typename Seq2>
+        // struct concat_index_sequence;
     
-        template <used_std::size_t... Is1, used_std::size_t... Is2>
-        struct concat_index_sequence<used_std::index_sequence<Is1...>, used_std::index_sequence<Is2...>> {
-            using type = used_std::index_sequence<Is1..., Is2...>;
-        };
+        // template <used_std::size_t... Is1, used_std::size_t... Is2>
+        // struct concat_index_sequence<used_std::index_sequence<Is1...>, used_std::index_sequence<Is2...>> {
+        //     using type = used_std::index_sequence<Is1..., Is2...>;
+        // };
     
-        template <typename Seq1, typename Seq2>
-        using concat_index_sequence_t = typename concat_index_sequence<Seq1, Seq2>::type;
-    
-        template <used_std::size_t... Is1, used_std::size_t... Is2>
-        constexpr auto operator+(used_std::index_sequence<Is1...>, used_std::index_sequence<Is2...>) {
-            return concat_index_sequence_t<used_std::index_sequence<Is1...>, used_std::index_sequence<Is2...>>{};
+        // template <typename Seq1, typename Seq2>
+        // using concat_index_sequence_t = typename concat_index_sequence<Seq1, Seq2>::type;
+        template <std::size_t... Is1, std::size_t... Is2>
+        constexpr auto concat(index_sequence<Is1...>, index_sequence<Is2...>) {
+            return index_sequence<Is1..., Is2...>{};
+        }
+
+        // Equivalent operator version
+        template <std::size_t... Is1, std::size_t... Is2>
+        constexpr auto operator+(index_sequence<Is1...>, index_sequence<Is2...>) {
+            return index_sequence<Is1..., Is2...>{};
         }
 
         // Helper to extract the size of an index_sequence
@@ -340,7 +345,7 @@ namespace used_std {
         return used_std::invoke(used_std::forward<Fn>(fn),used_std::get<I>(t)...);
     }
 
-    constexpr auto unreachable = mini_std::unreachable;
+    inline auto unreachable = [] {__builtin_unreachable();};
 }
 template <used_std::size_t N>
 struct StaticString {
@@ -1073,43 +1078,6 @@ template <typename TargetType, typename KeyType>
 // ============================================================================
 // CASE STORAGE WITH HINT PARAMETERS
 // ============================================================================
-struct SelfBase {};
-
-template <typename Derived>
-struct Self : public SelfBase {
-    using ConcreteType = Derived;
-    constexpr Derived& self() noexcept { 
-        return static_cast<Derived&>(*this); 
-    }
-    
-    constexpr const Derived& self() const noexcept { 
-        return static_cast<const Derived&>(*this); 
-    }
-};
-
-template <StaticLabel LabelID,BranchHint HintValue = BranchHint::None, typename KeyType = Wildcard, typename ActionType = Wildcard>
-struct ImplCase {
-    KeyType key;
-    ActionType action;
-    static constexpr auto label = LabelID;
-    static constexpr BranchHint hint = HintValue;
-    template <typename NewAction>
-    inline constexpr auto operator>>(NewAction&& action) && noexcept {
-        return ImplCase<LabelID,HintValue, KeyType, used_std::decay_t<NewAction>>{
-            .key=used_std::move(key), .action=used_std::forward<NewAction>(action)
-        };
-    }
-};
-
-
-template <StaticLabel LabelID = 0,BranchHint Hint = BranchHint::None,typename T> 
-inline constexpr auto Case(T&& val) noexcept { return ImplCase<LabelID, Hint, used_std::decay_t<T>>{ .key=used_std::forward<T>(val) }; }
-template <StaticLabel LabelID = 0,typename T> 
-inline constexpr auto likely_Case(T&& val) noexcept { return ImplCase<LabelID, BranchHint::Likely, used_std::decay_t<T>>{ .key=used_std::forward<T>(val) }; }
-template <StaticLabel LabelID = 0,typename T> 
-inline constexpr auto unlikely_Case(T&& val) noexcept { return ImplCase<LabelID, BranchHint::Unlikely, used_std::decay_t<T>>{ .key=used_std::forward<T>(val) }; }
-
-// Hardware Prediction Branch Optimizer Hints Primitive Mapping
 template <BranchHint Hint>
 [[nodiscard]] inline constexpr bool apply_hardware_hint(bool condition) noexcept {
     if constexpr (Hint == BranchHint::Likely) {
@@ -1174,6 +1142,118 @@ inline constexpr decltype(auto) execute_action(ActionType&& action, ContextType&
     } 
 }
 
+struct SelfBase {};
+
+template <typename Derived>
+struct Self : public SelfBase {
+    using ConcreteType = Derived;
+    constexpr Derived& self() noexcept { 
+        return static_cast<Derived&>(*this); 
+    }
+    
+    constexpr const Derived& self() const noexcept { 
+        return static_cast<const Derived&>(*this); 
+    }
+};
+
+template <StaticLabel LabelID,BranchHint HintValue = BranchHint::None, typename KeyType = Wildcard, typename ActionType = Wildcard>
+struct ImplCase {
+    KeyType key;
+    ActionType action;
+    static constexpr auto label = LabelID;
+    static constexpr BranchHint hint = HintValue;
+    template <typename NewAction>
+    inline constexpr auto operator>>(NewAction&& action) && noexcept {
+        return ImplCase<LabelID,HintValue, KeyType, used_std::decay_t<NewAction>>{
+            .key=used_std::move(key), .action=used_std::forward<NewAction>(action)
+        };
+    }
+
+    template<used_std::size_t Is>
+    constexpr auto caseDispatch (auto& current_state, auto& ctx, auto& cases,used_std::integral_constant<used_std::size_t, Is>) const {
+        using RawCases = used_std::remove_cvref_t<decltype(cases)>;
+        constexpr auto TotalCases = used_std::tuple_size_v<RawCases>;
+        using CasesIndex = used_std::make_index_sequence<TotalCases>;
+        using PureStateType = used_std::remove_cvref_t<decltype(current_state)>;
+        if constexpr (Is >= TotalCases) {
+            __builtin_unreachable();
+            return PureStateType{current_state.Guard + 1,Is, current_state.current_target, false, false};
+        } else {
+            auto& current_case = used_std::get<Is>(cases);
+            using RawCaseType = typename used_std::decay<decltype(current_case)>::type;
+
+            if (current_state.jump_signal or apply_hardware_hint<RawCaseType::hint>(evaluate_match(current_state.current_target, current_case.key))) {
+                using RawActionResult = decltype(execute_action(current_case.action, ctx));
+
+                if constexpr (used_std::is_same_v<RawActionResult, void> || used_std::is_same_v<RawActionResult, Wildcard>) {
+                    execute_action(current_case.action, ctx);
+                    return PureStateType{current_state.Guard + 1,Is, current_state.current_target, false, true};
+                } else {
+                    decltype(auto) action_result = execute_action(current_case.action, ctx);
+                    using CaseActionDecay = used_std::decay_t<decltype(action_result)>;
+
+                    // Signal 1: Static Goto
+                    if constexpr (concepts::IsStaticGotoSignal<CaseActionDecay>) {
+                        constexpr used_std::size_t comptime_index = used_std::find_index_v<[]<typename T>{return T::label;}, CaseActionDecay::label, RawCases>;
+                        
+                        if constexpr (comptime_index >= TotalCases) {
+                            __builtin_unreachable();
+                            return PureStateType{current_state.Guard + 1,Is, current_state.current_target, false, false};
+                        } else {
+                            if constexpr (concepts::IsGotoValue<CaseActionDecay>) {
+                                return PureStateType{current_state.Guard + 1,comptime_index, used_std::move(action_result.value), true, false}; 
+                            } else {
+                                return PureStateType{current_state.Guard + 1,comptime_index, current_state.current_target, true, false}; 
+                            }
+                        }
+                    } 
+                    // Signal 2: Dynamic Goto
+                    else if constexpr (concepts::IsDynamicGotoSignal<CaseActionDecay>) {
+                        used_std::size_t active_index = used_std::find_by_value<[]<typename T>{return T::label;}, unsigned int, RawCases>(
+                            action_result.hash, 
+                            CasesIndex{}
+                        );
+                        if (current_state.Guard > TotalCases) {
+                            __builtin_unreachable();
+                            return PureStateType{current_state.Guard + 1,active_index, current_state.current_target, true, false};
+                        } else {
+                            return PureStateType{current_state.Guard + 1,active_index, current_state.current_target, true, false};
+                        }
+                    }
+                    // Signal 3: Fallthrough
+                    else if constexpr (concepts::IsFallthroughSignal<CaseActionDecay>) {
+                        if constexpr (concepts::IsFallthroughValue<CaseActionDecay>) {
+                            return PureStateType{current_state.Guard + 1,Is + 1, used_std::move(action_result.value), true, false};
+                        } else {
+                            return PureStateType{current_state.Guard + 1,Is + 1, current_state.current_target, true, false};
+                        }
+                    }
+                    // Terminal Return Value
+                    else {
+                        if constexpr (!concepts::IsGotoSignal<CaseActionDecay> && 
+                                      !concepts::IsFallthroughSignal<CaseActionDecay> && 
+                                      !used_std::is_same_v<CaseActionDecay, void> && 
+                                      !used_std::is_same_v<CaseActionDecay, Wildcard>) {
+                            return PureStateType{current_state.Guard + 1,Is, current_state.current_target, false, true,used_std::move(action_result)};
+                        }
+                        return PureStateType{current_state.Guard + 1,Is, current_state.current_target, false, true};
+                    }
+                }
+            } else {
+                return PureStateType{current_state.Guard + 1,Is + 1, current_state.current_target, false, false};
+            }
+        }
+    }
+};
+
+
+template <StaticLabel LabelID = 0,BranchHint Hint = BranchHint::None,typename T> 
+inline constexpr auto Case(T&& val) noexcept { return ImplCase<LabelID, Hint, used_std::decay_t<T>>{ .key=used_std::forward<T>(val) }; }
+template <StaticLabel LabelID = 0,typename T> 
+inline constexpr auto likely_Case(T&& val) noexcept { return ImplCase<LabelID, BranchHint::Likely, used_std::decay_t<T>>{ .key=used_std::forward<T>(val) }; }
+template <StaticLabel LabelID = 0,typename T> 
+inline constexpr auto unlikely_Case(T&& val) noexcept { return ImplCase<LabelID, BranchHint::Unlikely, used_std::decay_t<T>>{ .key=used_std::forward<T>(val) }; }
+
 template <typename T>
 struct UnwrapReturnType { using type = used_std::remove_cvref_t<T>;};
 
@@ -1204,36 +1284,38 @@ template <auto LabelID, typename T>
 struct UnwrapReturnType<GotoValue<LabelID, T>> {
     using type = T;
 };
+
 template <used_std::size_t Low, used_std::size_t High, typename Fn>
-static constexpr auto dispatch(auto& State, Fn&& fn, used_std::size_t idx) noexcept {
+static constexpr auto dispatch(Fn&& fn, used_std::size_t idx) noexcept {
     constexpr used_std::size_t Range = High - Low;
     if constexpr (Range <= 8) {
         switch(idx) {
-            case(Low + 0): if constexpr ((Low + 0) < High) {return fn(used_std::forward<decltype(State)>(State), used_std::integral_constant<used_std::size_t, Low + 0>{});}
-            case(Low + 1): if constexpr ((Low + 1) < High) {return fn(used_std::forward<decltype(State)>(State), used_std::integral_constant<used_std::size_t, Low + 1>{});}
-            case(Low + 2): if constexpr ((Low + 2) < High) {return fn(used_std::forward<decltype(State)>(State), used_std::integral_constant<used_std::size_t, Low + 2>{});}
-            case(Low + 3): if constexpr ((Low + 3) < High) {return fn(used_std::forward<decltype(State)>(State), used_std::integral_constant<used_std::size_t, Low + 3>{});}
-            case(Low + 4): if constexpr ((Low + 4) < High) {return fn(used_std::forward<decltype(State)>(State), used_std::integral_constant<used_std::size_t, Low + 4>{});}
-            case(Low + 5): if constexpr ((Low + 5) < High) {return fn(used_std::forward<decltype(State)>(State), used_std::integral_constant<used_std::size_t, Low + 5>{});}
-            case(Low + 6): if constexpr ((Low + 6) < High) {return fn(used_std::forward<decltype(State)>(State), used_std::integral_constant<used_std::size_t, Low + 6>{});}
-            case(Low + 7): if constexpr ((Low + 7) < High) {return fn(used_std::forward<decltype(State)>(State), used_std::integral_constant<used_std::size_t, Low + 7>{});}
-            default: used_std::unreachable();
+            case(Low + 0): if constexpr ((Low + 0) < High) {return fn(used_std::integral_constant<used_std::size_t, Low + 0>{});}
+            case(Low + 1): if constexpr ((Low + 1) < High) {return fn(used_std::integral_constant<used_std::size_t, Low + 1>{});}
+            case(Low + 2): if constexpr ((Low + 2) < High) {return fn(used_std::integral_constant<used_std::size_t, Low + 2>{});}
+            case(Low + 3): if constexpr ((Low + 3) < High) {return fn(used_std::integral_constant<used_std::size_t, Low + 3>{});}
+            case(Low + 4): if constexpr ((Low + 4) < High) {return fn(used_std::integral_constant<used_std::size_t, Low + 4>{});}
+            case(Low + 5): if constexpr ((Low + 5) < High) {return fn(used_std::integral_constant<used_std::size_t, Low + 5>{});}
+            case(Low + 6): if constexpr ((Low + 6) < High) {return fn(used_std::integral_constant<used_std::size_t, Low + 6>{});}
+            case(Low + 7): if constexpr ((Low + 7) < High) {return fn(used_std::integral_constant<used_std::size_t, Low + 7>{});}
+            default: __builtin_unreachable();
         }
     } else {
         constexpr used_std::size_t Mid = Low + (High - Low) / 2;
         if (idx < Mid) {
-            return dispatch<Low, Mid>(used_std::forward<decltype(State)>(State), fn, idx);
+            return dispatch<Low, Mid>(used_std::forward<Fn>(fn), idx);
         } else {
-            return dispatch<Mid, High>(used_std::forward<decltype(State)>(State), fn, idx);
+            return dispatch<Mid, High>(used_std::forward<Fn>(fn), idx);
         }
     }
 }
+
 
 template <typename TargetType, typename DefaultType, typename ContextTuple, typename CasesTuple>
 inline constexpr auto universal_switch_matrix(TargetType target, DefaultType&& default_action, ContextTuple&& ctx, CasesTuple&& cases) noexcept {
     using RawCases = used_std::remove_cvref_t<CasesTuple>;
     constexpr used_std::size_t TotalCases = used_std::tuple_size_v<RawCases>;
-    constexpr auto CasesIndex = used_std::make_index_sequence<TotalCases>{};
+    // constexpr auto CasesIndex = used_std::make_index_sequence<TotalCases>{};
     using CoreReturnType  = decltype(execute_action(default_action, ctx));
     using CleanReturnType = typename UnwrapReturnType<CoreReturnType>::type;
 
@@ -1243,85 +1325,19 @@ inline constexpr auto universal_switch_matrix(TargetType target, DefaultType&& d
         TargetType current_target;
         bool jump_signal;
         bool matched;
+        CleanReturnType result;
     };
     // Storage for return value without default-constructor penalties
-    CleanReturnType result{};
-    State state{0, 0 , target , false , false };
+    State state{0, 0 , target , false , false , {}};
 
-    auto step_lambda = [&]<used_std::size_t Is>(State& current_state, used_std::integral_constant<used_std::size_t, Is>) noexcept -> State {
-        if constexpr (Is >= TotalCases) {
-            used_std::unreachable();
-            return State{current_state.Guard + 1,Is, current_state.current_target, false, false};
-        } else {
-            auto& current_case = used_std::get<Is>(cases);
-            using RawCaseType = typename used_std::decay<decltype(current_case)>::type;
-
-            if (current_state.jump_signal or apply_hardware_hint<RawCaseType::hint>(evaluate_match(current_state.current_target, current_case.key))) {
-                using RawActionResult = decltype(execute_action(current_case.action, ctx));
-
-                if constexpr (used_std::is_same_v<RawActionResult, void> || used_std::is_same_v<RawActionResult, Wildcard>) {
-                    execute_action(current_case.action, ctx);
-                    return State{current_state.Guard + 1,Is, current_state.current_target, false, true};
-                } else {
-                    decltype(auto) action_result = execute_action(current_case.action, ctx);
-                    using CaseActionDecay = used_std::decay_t<decltype(action_result)>;
-
-                    // Signal 1: Static Goto
-                    if constexpr (concepts::IsStaticGotoSignal<CaseActionDecay>) {
-                        constexpr used_std::size_t comptime_index = used_std::find_index_v<[]<typename T>{return T::label;}, CaseActionDecay::label, RawCases>;
-                        
-                        if constexpr (comptime_index >= TotalCases) {
-                            used_std::unreachable();
-                            return State{current_state.Guard + 1,Is, current_state.current_target, false, false};
-                        } else {
-                            if constexpr (concepts::IsGotoValue<CaseActionDecay>) {
-                                return State{current_state.Guard + 1,comptime_index, used_std::move(action_result.value), true, false}; 
-                            } else {
-                                return State{current_state.Guard + 1,comptime_index, current_state.current_target, true, false}; 
-                            }
-                        }
-                    } 
-                    // Signal 2: Dynamic Goto
-                    else if constexpr (concepts::IsDynamicGotoSignal<CaseActionDecay>) {
-                        used_std::size_t active_index = used_std::find_by_value<[]<typename T>{return T::label;}, unsigned int, RawCases>(
-                            action_result.hash, 
-                            CasesIndex
-                        );
-                        if (current_state.Guard > TotalCases) {
-                            used_std::unreachable();
-                            return State{current_state.Guard + 1,active_index, current_state.current_target, true, false};
-                        } else {
-                            return State{current_state.Guard + 1,active_index, current_state.current_target, true, false};
-                        }
-                    }
-                    // Signal 3: Fallthrough
-                    else if constexpr (concepts::IsFallthroughSignal<CaseActionDecay>) {
-                        if constexpr (concepts::IsFallthroughValue<CaseActionDecay>) {
-                            return State{current_state.Guard + 1,Is + 1, used_std::move(action_result.value), true, false};
-                        } else {
-                            return State{current_state.Guard + 1,Is + 1, current_state.current_target, true, false};
-                        }
-                    }
-                    // Terminal Return Value
-                    else {
-                        if constexpr (!concepts::IsGotoSignal<CaseActionDecay> && 
-                                      !concepts::IsFallthroughSignal<CaseActionDecay> && 
-                                      !used_std::is_same_v<CaseActionDecay, void> && 
-                                      !used_std::is_same_v<CaseActionDecay, Wildcard>) {
-                            result = used_std::move(action_result);
-                        }
-                        return State{current_state.Guard + 1,Is, current_state.current_target, false, true};
-                    }
-                }
-            } else {
-                return State{current_state.Guard + 1,Is + 1, current_state.current_target, false, false};
-            }
-        }
+    auto dispatch_case = [&]<size_t in>(used_std::integral_constant<used_std::size_t, in>) {
+        auto* current_case = &used_std::get<in>(cases);
+        return current_case->caseDispatch(state,ctx,cases,used_std::integral_constant<used_std::size_t, in>{});
+        
     };
 
-
     while (state.next_idx < TotalCases) {
-        state = dispatch<0, TotalCases>(state,step_lambda,state.next_idx);
+        state = dispatch<0, TotalCases>(dispatch_case,state.next_idx);
         if (state.matched) break;
     }
     
@@ -1333,7 +1349,7 @@ inline constexpr auto universal_switch_matrix(TargetType target, DefaultType&& d
         }
     } else {
         if (state.matched) { 
-            return result;
+            return state.result;
         } else {
             return execute_action(used_std::forward<DefaultType>(default_action), ctx);
         }
@@ -1379,6 +1395,127 @@ inline constexpr decltype(auto) universal_switch(TargetType target, ContextTuple
 // ============================================================================
 // 10. HIGH-UTILITY PROXY WRAPPERS (uswitch DSL FRONTEND ENTRY)
 // ============================================================================
+template <typename TargetType, 
+          typename ContextTuple = Wildcard, 
+          typename CasesTuple = used_std::tuple<Wildcard>, 
+          typename Default = Wildcard>
+struct machine {
+    // 1. Force stored types to be value types (no reference fields dangling to parameters)
+    using StoreTarget = std::remove_cvref_t<concepts::primitive_param_t<TargetType>>;
+    using StoreContext = std::remove_cvref_t<ContextTuple>;
+    using StoreCases = std::remove_cvref_t<CasesTuple>;
+    using StoreDefault = std::remove_cvref_t<Default>;
+    
+    
+    StoreTarget target;
+    StoreContext ctx;
+    StoreCases cases;
+    StoreDefault default_action;
+    using CoreReturnType  = decltype(execute_action(default_action, ctx));
+    using CleanReturnType = typename UnwrapReturnType<CoreReturnType>::type;
+
+    constexpr machine() : target(__) {}
+
+    // 2. Accept universal references and forward/move into stored value members
+    constexpr machine(StoreTarget t) : target(t) {}
+
+    template <typename T, typename CT, typename CA, typename D>
+    constexpr machine(T&& t, CT&& ct, CA&& ca, D&& d) 
+        : target(used_std::forward<T>(t)), 
+          ctx(used_std::forward<CT>(ct)), 
+          cases(used_std::forward<CA>(ca)), 
+          default_action(used_std::forward<D>(d)) 
+    {}
+    
+    template <typename... ContextArgs>
+    constexpr auto arg(ContextArgs&&... args) noexcept {
+        if constexpr (sizeof...(ContextArgs) == 0) {
+            return machine<TargetType, Wildcard, Wildcard>{ used_std::move(target), __ };
+        } else {
+            auto ctx_tuple = used_std::make_tuple(used_std::forward<ContextArgs>(args)...);
+            using TupleType = decltype(ctx_tuple);
+            return machine<TargetType, TupleType, Wildcard>{ used_std::move(target), used_std::move(ctx_tuple) };
+        }
+    }
+
+    template <typename... ContextArgs>
+    constexpr auto operator()(ContextArgs&&... args) && noexcept {
+        auto cases_tuple = used_std::forward_as_tuple(used_std::forward<ContextArgs>(args)...);
+        decltype(auto) def = used_std::get<sizeof...(args) - 1>(cases_tuple);
+        return helper(
+            used_std::move(target),
+            used_std::move(ctx), 
+            used_std::move(cases_tuple),
+            used_std::forward<decltype(def)>(def),
+            used_std::make_index_sequence<sizeof...(args) - 1>{}
+        );
+    }
+    
+    template <typename Target, typename Context, typename Cases, typename DefaultAction, used_std::size_t... Is>
+    inline constexpr decltype(auto) helper(Target&& target, Context&& ctx, Cases&& cases, DefaultAction&& default_action, used_std::index_sequence<Is...>) 
+    {
+        auto cases_tup = used_std::make_tuple(used_std::get<Is>(used_std::forward<Cases>(cases))...);
+        
+        using CleanTarget = std::remove_cvref_t<Target>;
+        using CleanContext = std::remove_cvref_t<Context>;
+        using CleanCases = decltype(cases_tup);
+        using CleanDefault = std::remove_cvref_t<DefaultAction>;
+
+        // Construct fully-formed machine and execute matrix evaluation
+        return machine<CleanTarget, CleanContext, CleanCases, CleanDefault>(
+            used_std::forward<Target>(target),
+            used_std::forward<Context>(ctx),
+            used_std::move(cases_tup),
+            used_std::forward<DefaultAction>(default_action)
+        );
+    }
+
+    constexpr operator CleanReturnType() const {
+        using RawCases = used_std::remove_cvref_t<CasesTuple>;
+        constexpr used_std::size_t TotalCases = used_std::tuple_size_v<RawCases>;
+
+        struct State {
+            used_std::size_t Guard;
+            used_std::size_t next_idx;
+            TargetType current_target;
+            bool jump_signal;
+            bool matched;
+            CleanReturnType result;
+        };
+        // Storage for return value without default-constructor penalties
+        State state{0, 0 , target , false , false , {}};
+
+        auto dispatch_case = [&]<size_t in>(used_std::integral_constant<used_std::size_t, in>) {
+            auto& current_case = used_std::get<in>(cases);
+            return current_case.caseDispatch(state,ctx,cases,used_std::integral_constant<used_std::size_t, in>{});
+            
+        };
+
+        while (state.next_idx < TotalCases) {
+            state = dispatch<0, TotalCases>(dispatch_case,state.next_idx);
+            if (state.matched) break;
+        }
+        
+        if constexpr (used_std::is_same_v<CleanReturnType, void> || used_std::is_same_v<CleanReturnType, Wildcard>) {
+            if (state.matched) {
+                return;
+            } else {
+                execute_action(default_action, ctx);
+            }
+        } else {
+            if (state.matched) { 
+                return state.result;
+            } else {
+                return execute_action(default_action, ctx);
+            }
+        }
+    }
+};
+template <typename TargetType>
+machine(TargetType) -> machine<TargetType>;
+
+constexpr auto mt = machine(__)(Case(__) >> true,true);
+static_assert(mt, "");
 template <typename TargetType, typename ContextTuple>
 struct SwitchPipelineProxy {
     TargetType target;

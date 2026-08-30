@@ -70,9 +70,9 @@ namespace mini_std {
     template <typename T> using remove_cvref_t = typename mini_std::remove_cvref<T>::type;
 
     // --- FORWARD & MOVE ---
-    template <typename T> constexpr T&& forward(mini_std::remove_reference_t<T>& t) noexcept { return static_cast<T&&>(t); }
-    template <typename T> constexpr T&& forward(mini_std::remove_reference_t<T>&& t) noexcept { return static_cast<T&&>(t); }
-    template <typename T> constexpr mini_std::remove_reference_t<T>&& move(T&& t) noexcept { return static_cast<mini_std::remove_reference_t<T>&&>(t); }
+    template <typename T> [[nodiscard]] inline constexpr T&& forward(mini_std::remove_reference_t<T>& t) noexcept { return static_cast<T&&>(t); }
+    template <typename T> [[nodiscard]] inline constexpr T&& forward(mini_std::remove_reference_t<T>&& t) noexcept { return static_cast<T&&>(t); }
+    template <typename T> [[nodiscard]] inline constexpr mini_std::remove_reference_t<T>&& move(T&& t) noexcept { return static_cast<mini_std::remove_reference_t<T>&&>(t); }
 
     template <typename T> struct add_lvalue_reference { using type = T&; };
     template <> struct add_lvalue_reference<void> { using type = void; };
@@ -362,7 +362,7 @@ namespace mini_std {
     template <size_t N, size_t... Is> struct make_index_sequence_impl : make_index_sequence_impl<N - 1, N - 1, Is...> {};
     template <size_t... Is> struct make_index_sequence_impl<0, Is...> { using type = index_sequence<Is...>; };
     template <size_t N> using make_index_sequence = typename mini_std::make_index_sequence_impl<N>::type;
-
+    
     // --- TUPLE IMPL ---
     template <typename... Args> struct tuple;
     template <> struct tuple<> {};
@@ -416,8 +416,8 @@ namespace mini_std {
     }
 
     // --- TUPLE GET INTERFACE ---
-    template <size_t I, typename Head, typename... Tail>
-    [[nodiscard]] constexpr decltype(auto) get(tuple<Head, Tail...>& t) noexcept {
+    template <size_t I,typename Head, typename... Tail>
+    [[nodiscard]] constexpr decltype(auto) get(tuple<Head,Tail...>& t) noexcept {
         if constexpr (I == 0) {
             return (t.value);
         } else {
@@ -512,10 +512,6 @@ namespace mini_std {
         constexpr decltype(auto) apply_impl(Fn&& f, Tuple&& t, mini_std::index_sequence<Is...>) {
             return mini_std::invoke(mini_std::forward<Fn>(f), mini_std::get<Is>(mini_std::forward<Tuple>(t))...);
         }
-        // template <typename Fn, typename T, size_t N,size_t... Is>
-        // constexpr decltype(auto) apply_impl(Fn&& f, const T(&arr)[N], mini_std::index_sequence<Is...>) {
-        //     return mini_std::invoke(mini_std::forward<Fn>(f), arr[Is]...);
-        // }
     }
 
     // 3. User-facing public interface
@@ -612,7 +608,7 @@ namespace mini_std {
 
     // --- UNREACHABLE ---
     [[noreturn]] inline void unreachable() noexcept {
-#       if defined(__GNACT__) || defined(__GNUC__) || defined(__clang__)
+#       if defined(__GNUC__) or defined(__clang__)
             __builtin_unreachable();
 #       elif defined(_MSC_VER)
             __assume(0);

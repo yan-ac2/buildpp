@@ -29,7 +29,7 @@ void showcase_hash_labels(std::string_view command) {
     std::size_t cmd_hash = used_std::strHash::fnv1a_hash(command.data(), command.size());
 
     std::string_view response = Match(command)(command,&cmd_hash,&test) (
-        Case("start")   >> [] { return "System Starting..."; },
+        Case<"start">("start")   >> [] { return "System Starting..."; },
         Case<"stop">
         ("stop")        >> [](int* i) { 
             if (*i == 1) {

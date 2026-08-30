@@ -124,3 +124,28 @@ auto main() -> int {
     printf("%s",type_t::getname(1.689f + 2));
     return 0;
 }
+
+template<typename T>
+constexpr auto eType() {
+    struct storage {
+        using type = T;
+        // int v = 0;
+    };
+    return  []{return storage{};};
+}
+
+using type_e = decltype(eType<void>()());
+template<typename T>
+using type_e_t = decltype(eType<T>()());
+template<typename T>
+auto type_storage_v = type_e_t<T>{};
+struct tso {
+    decltype(eType<void>()()) t;
+};
+
+constexpr auto tt = eType<int>()(); 
+constexpr auto tt2 = eType<float>()();
+
+static_assert(std::is_same_v<decltype(type_storage_v<int>)::type, int>, "" );
+static_assert(std::is_same_v<decltype(tt2)::type, float>, "" );
+
