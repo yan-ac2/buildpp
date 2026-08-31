@@ -1,14 +1,14 @@
 
 #include <iostream>
-#include <Ranges>
+#include <ranges>
 #include "match.hpp"
 
-// --- A. Numeric & Range Matching ---
+// --- A. Numeric & Range matching ---
 void showcase_numeric_and_ranges(int score) {
-    std::cout << "\n=== 1. Numeric & Range Pattern Matching ===" << std::endl;
+    std::cout << "\n=== 1. Numeric & Range Pattern matching ===" << std::endl;
     char test = 't';
     // std::size_t score2 = 2;
-    std::string_view result = Match(score)(score,test)  (
+    std::string_view result = match(score)(score,test)  (
         Case(100)                      >> [] { return "Perfect Score!"; },
         Case(Range{90,99})        >> [] { return "Grade: A"; },
         Case(Range{80, 89})       >> [] { return "Grade: B"; },
@@ -22,13 +22,13 @@ void showcase_numeric_and_ranges(int score) {
     std::cout << "Score [" << score << "] -> " << result << std::endl;
 }
 
-// --- B. StaticLabel / FNV-1a Hash Matching ---
+// --- B. StaticLabel / FNV-1a Hash matching ---
 void showcase_hash_labels(std::string_view command) {
-    std::cout << "\n=== 2. StaticLabel Hash Matching ===" << std::endl;
+    std::cout << "\n=== 2. StaticLabel Hash matching ===" << std::endl;
     int test = 1;
     std::size_t cmd_hash = used_std::strHash::fnv1a_hash(command.data(), command.size());
 
-    std::string_view response = Match(command)(command,&cmd_hash,&test) (
+    std::string_view response = match(command)(command,&cmd_hash,&test) (
         Case<"start">("start")   >> [] { return "System Starting..."; },
         Case<"stop">
         ("stop")        >> [](int* i) { 
@@ -50,7 +50,7 @@ void showcase_hash_labels(std::string_view command) {
 void showcase_branch_hints(int http_code) {
     std::cout << "\n=== 3. Branch Hint Guided Dispatch ===" << std::endl;
 
-    std::string_view status = Match(http_code)() (
+    std::string_view status = match(http_code)() (
         // Common paths marked as likely
         likely_Case(200)   >> []() { return "200 OK (Fast Path)"; },
         likely_Case(404)   >> []() { return "404 Not Found"; },
@@ -91,13 +91,13 @@ int main () {
     std::cout << "       PATTERN MATCHING LIBRARY SHOWCASE         " << std::endl;
     std::cout << "=================================================" << std::endl;
 
-    std::cout << "=== Free Function & Member Function Matching ===\n";
+    std::cout << "=== Free Function & Member Function matching ===\n";
 
     // -------------------------------------------------------------
     // 1. Standalone / Free Function Evaluation
     // -------------------------------------------------------------
     int number = -43;
-    std::string_view num_res = Match(number)()(
+    std::string_view num_res = match(number)()(
         Case(&is_even)     >> [] { return "Even Number"; },
         Case(Predicate(&is_positive)) >> [] { return "Positive Odd Number"; },
         [] { return "Other"; }
@@ -109,7 +109,7 @@ int main () {
     // -------------------------------------------------------------
     User u1{"Alice", 22, true};
     
-    std::string_view user_res = Match(u1)() (
+    std::string_view user_res = match(u1)() (
         Case(Predicate(&User::is_adult))  >> [] { return "Adult User"; },
         Case(Predicate(&User::is_active)) >> [] { return "Active Minor"; },
         [] { return "Inactive Minor"; }
@@ -122,7 +122,7 @@ int main () {
     Validator validator{30};
     int score = 75;
 
-    std::string_view val_res = Match(score)()(
+    std::string_view val_res = match(score)()(
         Case(Predicate(&Validator::exceeds_threshold,&validator)) >> [] {
             return "Passed Validation";
         },
@@ -159,18 +159,18 @@ int main () {
     };
     constexpr s test = 20;
     constexpr int num = 15;
-    static_assert(Match(num)() (
+    static_assert(match(num)() (
         Case<"id">(make_compound_range(Range{0,15},Range{20,30})) >> []{return true;},
         []{return false;}), "" );
-    static_assert(Match(num)() (
+    static_assert(match(num)() (
         Case(make_compound_range(Range<RangeType::Or>{0,10},Range<RangeType::Or>{20,40})) >> []{return true;},
         []{return false;}), "" );
     constexpr int a = 0b1010;
-    static_assert(Match(a)() (
+    static_assert(match(a)() (
         Case(bits_all_clear(0b0100 | 0b0001)) >> []{return true;},
         []{return false;}), "" );
         
-    Match(test)() (
+    match(test)(__) (
         Case(ProjectionCase(20,&s::get,&test)) >> []{
             std::cout << "is 20";
         },
@@ -180,12 +180,14 @@ int main () {
         []{
             std::cout << "Error";
         }
-    );
+    ).run();
     std::cout << "\n";
     int num2 = 0;
-    Match(num2)(&num2) (
-        Case<"inRange">(Range{20,40}) >> []{
+    for (int i = 0 ;i < 5; ++i)
+    match(num2)(&num2) (
+        Case<"inRange">(Range{20,40}) >> [](int* i){
             std::cout << "is in range";
+            *i = 0;
         },
         Case<"outRange">(Range{0,20}) >> [](int* i){
             ++*i;
@@ -204,10 +206,10 @@ int main () {
         []{
             std::cout << "is not range";
         }
-    );
+    ).run();
 
     int arrtest[] {1,2,3,4,5,6,7,8};
-    auto rangetest = arrtest | std::ranges::views::filter(MatchPredicate(Case(Range{1,5}) >> true,false));
+    auto rangetest = arrtest | std::ranges::views::filter(match(int{})()(Case(Range{1,5}) >> true,false));
 
     for (int i : rangetest) {
         std::cout << i << ", ";
