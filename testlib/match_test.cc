@@ -33,9 +33,9 @@ void showcase_hash_labels(std::string_view command) {
         Case<"stop">
         ("stop")        >> [](int* i) { 
             if (*i == 1) {
-                return Goto("start"); 
+                return Goto<"start">; 
             } else {
-                return Goto("err"); 
+                return Goto<"err">; 
             }
         },
         Case("pause")           >> [] { return "System Paused."; },
@@ -171,7 +171,7 @@ int main () {
         []{return false;}), "" );
         
     match(test)(__) (
-        Case(ProjectionCase(20,&s::get,&test)) >> []{
+        Case(field(&test.i,20) >> []{
             std::cout << "is 20";
         },
         Case(__) >> [&]() {
@@ -180,39 +180,50 @@ int main () {
         []{
             std::cout << "Error";
         }
-    ).run();
+    )();
     std::cout << "\n";
     int num2 = 0;
-    for (int i = 0 ;i < 5; ++i)
-    match(num2)(&num2) (
-        Case<"inRange">(Range{20,40}) >> [](int* i){
-            std::cout << "is in range";
-            *i = 0;
-        },
-        Case<"outRange">(Range{0,20}) >> [](int* i){
-            ++*i;
-            std::cout << "increase" << *i << '\n';
-            if (*i >= 15) {
-                *i = 50;
-                return Goto("any");
+    for (int i = 0 ;i < 5; ++i) {
+        match(num2)(&num2) (
+            Case<"inRange">(Range{20,40}) >> [](int* i){
+                std::cout << "is in range";
+                *i = 0;
+            },
+            Case<"outRange">(Range{0,20}) >> [](int* i){
+                ++*i;
+                std::cout << "increase" << *i << '\n';
+                if (*i >= 15) {
+                    *i = 50;
+                    return Goto<"any">;
+                }
+                return Goto<"outRange">;
+            },
+            Case<"any">(__) >> [](int* i) {
+                --*i;
+                std::cout << "decrease" << *i << '\n';
+                return Range{20,40}.contains(*i) ? Goto<"inRange"> : Goto<"any">;
+            },
+            []{
+                std::cout << "is not range";
             }
-            return Goto("outRange");
-        },
-        Case<"any">(__) >> [](int* i) {
-            --*i;
-            std::cout << "decrease" << *i << '\n';
-            return Range{20,40}.contains(*i) ? Goto("inRange") : Goto("any");
-        },
-        []{
-            std::cout << "is not range";
-        }
-    ).run();
+        )();
+    }
 
     int arrtest[] {1,2,3,4,5,6,7,8};
-    auto rangetest = arrtest | std::ranges::views::filter(match(int{})()(Case(Range{1,5}) >> true,false));
+    // auto rangetest = arrtest | std::ranges::views::filter(match(int{})()(Case(Range{1,5}) >> true,false).to_predicate());
 
-    for (int i : rangetest) {
-        std::cout << i << ", ";
+    // for (int i : rangetest) {
+    //     std::cout << i << ", ";
+    // }
+    // std::cout << "\n";
+    for (int i : arrtest) {
+        match(i)(__) (
+            Case<"eval">(Range{1,5}) >> Goto<"print">,
+            Case<"print">(false) >> [i]{
+                std::cout << i << ", ";
+            },
+            false
+        )();
     }
     std::cout << "\n";
     return 1;

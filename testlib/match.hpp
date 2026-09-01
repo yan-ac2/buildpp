@@ -3,9 +3,9 @@
 #define MATCH_H
 
 
-    #include <type_traits>
-    #include <tuple>
-    #include <utility>
+    // #include <type_traits>
+    // #include <tuple>
+    // #include <utility>
     #include "mini_std.hpp"
 
 
@@ -14,7 +14,7 @@
 // ============================================================================
 
 namespace used_std {
-    using namespace std; 
+    using namespace mini_std; 
 
     template <typename T, typename = void>
     struct is_tuple_like : used_std::false_type {};
@@ -209,23 +209,9 @@ namespace used_std {
     
     
     namespace detail {
-        // template <typename Seq1, typename Seq2>
-        // struct concat_index_sequence;
-    
-        // template <used_std::size_t... Is1, used_std::size_t... Is2>
-        // struct concat_index_sequence<used_std::index_sequence<Is1...>, used_std::index_sequence<Is2...>> {
-        //     using type = used_std::index_sequence<Is1..., Is2...>;
-        // };
-    
-        // template <typename Seq1, typename Seq2>
-        // using concat_index_sequence_t = typename concat_index_sequence<Seq1, Seq2>::type;
-        template <std::size_t... Is1, std::size_t... Is2>
-        constexpr auto concat(index_sequence<Is1...>, index_sequence<Is2...>) {
-            return index_sequence<Is1..., Is2...>{};
-        }
 
         // Equivalent operator version
-        template <std::size_t... Is1, std::size_t... Is2>
+        template <used_std::size_t... Is1, used_std::size_t... Is2>
         constexpr auto operator+(index_sequence<Is1...>, index_sequence<Is2...>) {
             return index_sequence<Is1..., Is2...>{};
         }
@@ -341,11 +327,13 @@ namespace used_std {
     }
 
     template<typename Fn,typename Tuple ,used_std::size_t... I>
-    constexpr auto apply_index (Fn&& fn,Tuple& t,used_std::index_sequence<I...>) noexcept {
-        return used_std::invoke(used_std::forward<Fn>(fn),used_std::get<I>(t)...);
+    inline constexpr auto apply_index (Fn&& fn,Tuple& t,used_std::index_sequence<I...>) 
+    noexcept(noexcept(used_std::forward<Fn>(fn)(used_std::get<I>(t)...))) 
+    {
+        return used_std::forward<Fn>(fn)(used_std::get<I>(t)...);
     }
 
-    inline auto unreachable = [] {__builtin_unreachable();};
+    inline auto unreachable = []() noexcept {__builtin_unreachable();};
 }
 template <used_std::size_t N>
 struct StaticString {
@@ -457,11 +445,6 @@ struct SignalBase {
 // 1. Fallthrough signals
 struct fallthrough_t : SignalBase<FlowKind::Fallthrough> {};
 
-template <typename T>
-struct FallthroughValue : SignalBase<FlowKind::Fallthrough> { 
-    T value; 
-};
-
 // 2. Dynamic Hash Goto
 struct goto_hash_t : SignalBase<FlowKind::Goto> { 
     unsigned int hash {0}; 
@@ -477,30 +460,11 @@ struct goto_case_t : SignalBase<FlowKind::Goto> {
     static constexpr auto static_label = LabelID;
 };
 
-// 4. Static Label Goto with Payload
-template <StaticLabel LabelID, typename T>
-struct GotoValue : SignalBase<FlowKind::Goto> {
-    static constexpr bool is_static_label = true;
-    static constexpr auto static_label = LabelID;
-    T value;
-};
 
-// 5. Composite Dynamic Signal
-struct CompositeSignalBase : SignalBase<FlowKind::Composite> {};
+inline constexpr fallthrough_t fallthrough = fallthrough_t{};
+template <StaticLabel LabelID> inline constexpr goto_hash_t Goto = goto_hash_t{LabelID.hash};
+template <StaticLabel LabelID> inline constexpr goto_case_t<LabelID> Goto_v = goto_case_t<LabelID>{};
 
-constexpr fallthrough_t fallthrough_to_next() noexcept { return fallthrough_t{}; }
-template <typename T> constexpr auto pass_and_fallthrough(T&& val) noexcept { return FallthroughValue<used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
-template <StaticLabel LabelID> constexpr auto Goto() noexcept { return goto_case_t<LabelID>{}; }
-template <used_std::size_t N>
-constexpr goto_hash_t Goto(const char (&input)[N]) {
-    return goto_hash_t(used_std::strHash::fnv1a_hash(input, N));
-}
-constexpr goto_hash_t Goto(StaticLabel label) {
-    return goto_hash_t{ label.hash };
-}
-template <StaticLabel LabelID, typename T> constexpr auto pass_and_goto(T&& val) noexcept { return GotoValue<LabelID, used_std::decay_t<T>>{ used_std::forward<T>(val) }; }
-
-// Static compile-time label jump
 namespace concepts {
     template <typename T>
     concept IsSignal = requires { T::static_flow_kind; };
@@ -603,10 +567,6 @@ struct ProjectionCaseimpl {
             }
         }
     }
-    private:
-    enum __ {
-        Instance = 0
-    };
 };
 
 template <typename T> struct is_fn_predicate : used_std::false_type {};
@@ -629,7 +589,6 @@ template <IsCallableType Fn,typename Class>
 constexpr auto Predicate(Fn&& fn,Class* obj) {
     return FnPredicate<Fn>{ .fn=used_std::forward<Fn>(fn) ,.instance=obj};
 }
-
 
 // Helper builder function for Case(Pattern, &fn)
 template <typename ExpectedPattern, IsCallableType Fn,typename... Args>
@@ -797,13 +756,13 @@ MultiFieldPredicate(HeadRule, TailRules...)
     -> MultiFieldPredicate<typename is_field_rule<used_std::decay_t<HeadRule>>::class_type, HeadRule, TailRules...>;
 
 template <typename ClassType, typename MemberType>
-constexpr auto field(MemberType ClassType::*member, Op op, MemberType&& val) noexcept {
-    return FieldRule<ClassType, used_std::decay_t<MemberType>>{member, op, used_std::forward<MemberType>(val)};
+constexpr auto field(MemberType ClassType::*member, Op op, used_std::decay_t<MemberType>&& val) noexcept {
+    return FieldRule<ClassType, used_std::decay_t<MemberType>>{member, op, used_std::forward<used_std::decay_t<MemberType>>(val)};
 }
 
 template <typename ClassType, typename MemberType>
-constexpr auto field(MemberType ClassType::*member, MemberType&& val) noexcept {
-    return FieldRule<ClassType, used_std::decay_t<MemberType>>{member, Op::Eq, used_std::forward<MemberType>(val)};
+constexpr auto field(MemberType ClassType::*member, used_std::decay_t<MemberType>&& val) noexcept {
+    return FieldRule<ClassType, used_std::decay_t<MemberType>>{member, Op::Eq, used_std::forward<used_std::decay_t<MemberType>>(val)};
 }
 
 template <typename ClassType, typename... Rules>
@@ -1177,7 +1136,7 @@ struct ImplCase {
         using PureStateType = used_std::remove_cvref_t<decltype(current_state)>;
         if constexpr (Is >= TotalCases) {
             __builtin_unreachable();
-            return PureStateType{current_state.Guard + 1,Is, current_state.current_target, false, false};
+            return PureStateType{Is, current_state.current_target, false, false};
         } else {
             auto& current_case = used_std::get<Is>(cases);
             using RawCaseType = typename used_std::decay<decltype(current_case)>::type;
@@ -1187,7 +1146,7 @@ struct ImplCase {
 
                 if constexpr (used_std::is_same_v<RawActionResult, void> || used_std::is_same_v<RawActionResult, Wildcard>) {
                     execute_action(current_case.action, ctx);
-                    return PureStateType{current_state.Guard + 1,Is, current_state.current_target, false, true};
+                    return PureStateType{Is, current_state.current_target, false, true};
                 } else {
                     decltype(auto) action_result = execute_action(current_case.action, ctx);
                     using CaseActionDecay = used_std::decay_t<decltype(action_result)>;
@@ -1198,12 +1157,12 @@ struct ImplCase {
                         
                         if constexpr (comptime_index >= TotalCases) {
                             __builtin_unreachable();
-                            return PureStateType{current_state.Guard + 1,Is, current_state.current_target, false, false};
+                            return PureStateType{Is, current_state.current_target, false, false};
                         } else {
                             if constexpr (concepts::IsGotoValue<CaseActionDecay>) {
-                                return PureStateType{current_state.Guard + 1,comptime_index, used_std::move(action_result.value), true, false}; 
+                                return PureStateType{comptime_index, used_std::move(action_result.value), true, false}; 
                             } else {
-                                return PureStateType{current_state.Guard + 1,comptime_index, current_state.current_target, true, false}; 
+                                return PureStateType{comptime_index, current_state.current_target, true, false}; 
                             }
                         }
                     } 
@@ -1213,19 +1172,15 @@ struct ImplCase {
                             action_result.hash, 
                             CasesIndex{}
                         );
-                        if (current_state.Guard > TotalCases) {
-                            __builtin_unreachable();
-                            return PureStateType{current_state.Guard + 1,active_index, current_state.current_target, true, false};
-                        } else {
-                            return PureStateType{current_state.Guard + 1,active_index, current_state.current_target, true, false};
-                        }
+                        return PureStateType{active_index, current_state.current_target, true, false};
+                        
                     }
                     // Signal 3: Fallthrough
                     else if constexpr (concepts::IsFallthroughSignal<CaseActionDecay>) {
                         if constexpr (concepts::IsFallthroughValue<CaseActionDecay>) {
-                            return PureStateType{current_state.Guard + 1,Is + 1, used_std::move(action_result.value), true, false};
+                            return PureStateType{Is + 1, used_std::move(action_result.value), true, false};
                         } else {
-                            return PureStateType{current_state.Guard + 1,Is + 1, current_state.current_target, true, false};
+                            return PureStateType{Is + 1, current_state.current_target, true, false};
                         }
                     }
                     // Terminal Return Value
@@ -1234,13 +1189,13 @@ struct ImplCase {
                                       !concepts::IsFallthroughSignal<CaseActionDecay> && 
                                       !used_std::is_same_v<CaseActionDecay, void> && 
                                       !used_std::is_same_v<CaseActionDecay, Wildcard>) {
-                            return PureStateType{current_state.Guard + 1,Is, current_state.current_target, false, true,used_std::move(action_result)};
+                            return PureStateType{Is, current_state.current_target, false, true,used_std::move(action_result)};
                         }
-                        return PureStateType{current_state.Guard + 1,Is, current_state.current_target, false, true};
+                        return PureStateType{Is, current_state.current_target, false, true};
                     }
                 }
             } else {
-                return PureStateType{current_state.Guard + 1,Is + 1, current_state.current_target, false, false};
+                return PureStateType{Is + 1, current_state.current_target, false, false};
             }
         }
     }
@@ -1270,34 +1225,26 @@ struct UnwrapReturnType<void> {
     using type = void;
 };
 
-template <typename T>
-struct UnwrapReturnType<FallthroughValue<T>> {
-    using type = T;
-};
-
 template <auto LabelID>
 struct UnwrapReturnType<goto_case_t<LabelID>> {
     using type = goto_case_t<LabelID>;//decltype(LabelID);
 };
 
-template <auto LabelID, typename T>
-struct UnwrapReturnType<GotoValue<LabelID, T>> {
-    using type = T;
-};
-
 template <used_std::size_t Low, used_std::size_t High, typename Fn>
-static constexpr auto dispatch(Fn&& fn, used_std::size_t idx) noexcept {
+static constexpr auto dispatch(Fn&& fn, used_std::size_t idx) 
+noexcept(noexcept(used_std::forward<Fn>(fn)(used_std::integral_constant<used_std::size_t, Low + 0>{}))) 
+{
     constexpr used_std::size_t Range = High - Low;
     if constexpr (Range <= 8) {
         switch(idx) {
-            case(Low + 0): if constexpr ((Low + 0) < High) {return fn(used_std::integral_constant<used_std::size_t, Low + 0>{});}
-            case(Low + 1): if constexpr ((Low + 1) < High) {return fn(used_std::integral_constant<used_std::size_t, Low + 1>{});}
-            case(Low + 2): if constexpr ((Low + 2) < High) {return fn(used_std::integral_constant<used_std::size_t, Low + 2>{});}
-            case(Low + 3): if constexpr ((Low + 3) < High) {return fn(used_std::integral_constant<used_std::size_t, Low + 3>{});}
-            case(Low + 4): if constexpr ((Low + 4) < High) {return fn(used_std::integral_constant<used_std::size_t, Low + 4>{});}
-            case(Low + 5): if constexpr ((Low + 5) < High) {return fn(used_std::integral_constant<used_std::size_t, Low + 5>{});}
-            case(Low + 6): if constexpr ((Low + 6) < High) {return fn(used_std::integral_constant<used_std::size_t, Low + 6>{});}
-            case(Low + 7): if constexpr ((Low + 7) < High) {return fn(used_std::integral_constant<used_std::size_t, Low + 7>{});}
+            case(Low + 0): if constexpr ((Low + 0) < High) {return used_std::forward<Fn>(fn)(used_std::integral_constant<used_std::size_t, Low + 0>{});}
+            case(Low + 1): if constexpr ((Low + 1) < High) {return used_std::forward<Fn>(fn)(used_std::integral_constant<used_std::size_t, Low + 1>{});}
+            case(Low + 2): if constexpr ((Low + 2) < High) {return used_std::forward<Fn>(fn)(used_std::integral_constant<used_std::size_t, Low + 2>{});}
+            case(Low + 3): if constexpr ((Low + 3) < High) {return used_std::forward<Fn>(fn)(used_std::integral_constant<used_std::size_t, Low + 3>{});}
+            case(Low + 4): if constexpr ((Low + 4) < High) {return used_std::forward<Fn>(fn)(used_std::integral_constant<used_std::size_t, Low + 4>{});}
+            case(Low + 5): if constexpr ((Low + 5) < High) {return used_std::forward<Fn>(fn)(used_std::integral_constant<used_std::size_t, Low + 5>{});}
+            case(Low + 6): if constexpr ((Low + 6) < High) {return used_std::forward<Fn>(fn)(used_std::integral_constant<used_std::size_t, Low + 6>{});}
+            case(Low + 7): if constexpr ((Low + 7) < High) {return used_std::forward<Fn>(fn)(used_std::integral_constant<used_std::size_t, Low + 7>{});}
             default: __builtin_unreachable();
         }
     } else {
@@ -1310,103 +1257,21 @@ static constexpr auto dispatch(Fn&& fn, used_std::size_t idx) noexcept {
     }
 }
 
-
-template <typename TargetType, typename DefaultType, typename ContextTuple, typename CasesTuple>
-inline constexpr auto universal_switch_matrix(TargetType target, DefaultType&& default_action, ContextTuple&& ctx, CasesTuple&& cases) noexcept {
-    using RawCases = used_std::remove_cvref_t<CasesTuple>;
-    constexpr used_std::size_t TotalCases = used_std::tuple_size_v<RawCases>;
-    // constexpr auto CasesIndex = used_std::make_index_sequence<TotalCases>{};
-    using CoreReturnType  = decltype(execute_action(default_action, ctx));
-    using CleanReturnType = typename UnwrapReturnType<CoreReturnType>::type;
-
-    struct State {
-        used_std::size_t Guard;
-        used_std::size_t next_idx;
-        TargetType current_target;
-        bool jump_signal;
-        bool matched;
-        used_std::conditional_t<used_std::is_same_v<CleanReturnType, void>, Wildcard, CleanReturnType> result;
-    };
-    // Storage for return value without default-constructor penalties
-    State state{0, 0 , target , false , false , {}};
-
-    auto dispatch_case = [&]<size_t in>(used_std::integral_constant<used_std::size_t, in>) {
-        auto* current_case = &used_std::get<in>(cases);
-        return current_case->caseDispatch(state,ctx,cases,used_std::integral_constant<used_std::size_t, in>{});
-        
-    };
-
-    while (state.next_idx < TotalCases) {
-        state = dispatch<0, TotalCases>(dispatch_case,state.next_idx);
-        if (state.matched) break;
-    }
-    
-    if constexpr (used_std::is_same_v<CleanReturnType, void>) {
-        if (state.matched) {
-            return;
-        } else {
-            execute_action(used_std::forward<DefaultType>(default_action), ctx);
-        }
-    } else {
-        if (state.matched) { 
-            return state.result;
-        } else {
-            return execute_action(used_std::forward<DefaultType>(default_action), ctx);
-        }
-    }
-}
-// ============================================================================
-// 9. PACK SEPARATION & DELAYED UNIVERSAL INITIALIZATION
-// ============================================================================
-template <typename TargetType, typename ContextTuple, typename DefaultAction, typename CasesTuple, used_std::size_t... Is>
-inline constexpr decltype(auto) universal_switch_helper(TargetType target, DefaultAction&& default_action, ContextTuple&& ctx, CasesTuple&& cases, used_std::index_sequence<Is...>) 
-{
-    return universal_switch_matrix(
-        target,
-        used_std::forward<DefaultAction>(default_action),
-        used_std::forward<ContextTuple>(ctx),
-        used_std::forward_as_tuple(used_std::get<Is>(used_std::forward<CasesTuple>(cases))...)
-    );
-}
-
-template <typename TargetType, typename ContextTuple, typename... AllTrailingArgs>
-inline constexpr decltype(auto) universal_switch(TargetType target, ContextTuple&& ctx, AllTrailingArgs&&... args) {
-    constexpr used_std::size_t TotalArgs = sizeof...(AllTrailingArgs);
-    static_assert(TotalArgs >= 1, "Library Error: You must supply a terminal fallback default action.");
-    
-    constexpr used_std::size_t CaseCount = TotalArgs - 1;
-
-    // Direct pack access to the default action (last argument) without tuple wrapping
-    auto args_tuple = used_std::forward_as_tuple(used_std::forward<AllTrailingArgs>(args)...);
-    decltype(auto) default_action = used_std::get<CaseCount>(args_tuple);
-
-    if constexpr (CaseCount == 0) {
-        return execute_action(used_std::forward<decltype(default_action)>(default_action), ctx, target);
-    } else {
-        return universal_switch_helper(
-            target, 
-            used_std::forward<decltype(default_action)>(default_action), 
-            used_std::forward<ContextTuple>(ctx), 
-            used_std::move(args_tuple),
-            used_std::make_index_sequence<CaseCount>{}
-        );
-    }
-}
 // ============================================================================
 //                               WRAPPERS 
 // ============================================================================
-template <typename TargetType, typename ContextTuple = Wildcard, typename CasesTuple = used_std::tuple<Wildcard>, typename Default = Wildcard>
+struct empty{};
+template <typename TargetType, typename ContextTuple = empty, typename CasesTuple = used_std::tuple<empty>, typename Default = Wildcard>
 struct match {
-    static constexpr bool defaultContext = used_std::is_same_v<ContextTuple, Wildcard>; 
-    static constexpr bool defaultCases   = used_std::is_same_v<CasesTuple, used_std::tuple<Wildcard>>;
-    
-    // Core Engine Rule: If either context or cases are defaults, the engine is unconfigured
+    static constexpr bool defaultContext = used_std::is_same_v<ContextTuple, empty>; 
+    static constexpr bool defaultCases   = used_std::is_same_v<CasesTuple, used_std::tuple<empty>>;
     static constexpr bool is_configured = !defaultContext && !defaultCases;
-    // 1. Force stored types to be value types (no reference fields dangling to parameters)
-    using StoreTarget = std::remove_cvref_t<concepts::primitive_param_t<TargetType>>;
-    using StoreContext = std::remove_cvref_t<ContextTuple>;
-    using StoreCases = std::remove_cvref_t<CasesTuple>;
-    using StoreDefault = std::remove_cvref_t<Default>;
+    
+    using StoreTarget = used_std::remove_cvref_t<concepts::primitive_param_t<TargetType>>;
+    using StoreContext = used_std::remove_cvref_t<ContextTuple>;
+    using StoreCases = used_std::remove_cvref_t<CasesTuple>;
+    using StoreDefault = used_std::remove_cvref_t<Default>;
+    using TotalCases = used_std::tuple_size<StoreCases>;
     
     StoreTarget target;
     StoreContext ctx;
@@ -1420,50 +1285,42 @@ struct match {
 
     // 2. Accept universal references and forward/move into stored value members
     constexpr match(StoreTarget t) : target(t) {}
-    constexpr match(StoreTarget t,StoreContext c) : target(t),ctx(used_std::move(c)) {}
+    constexpr match(StoreTarget t,StoreContext c) requires(!defaultContext) : target(used_std::move(t)),ctx(used_std::move(c)) {}
 
     template <typename T, typename CT, typename CA, typename D>
-    constexpr match(T&& t, CT&& ct, CA&& ca, D&& d) 
+    constexpr match(T&& t, CT&& ct, CA&& ca, D&& d) requires (!defaultContext)
         : target(used_std::forward<T>(t)), 
           ctx(used_std::forward<CT>(ct)), 
           cases(used_std::forward<CA>(ca)), 
           default_action(used_std::forward<D>(d)) 
     {}
 
-    template <typename Element> requires (is_configured)
-    constexpr bool operator()(Element&& elem) const & {
-        auto temp_match = *this;
-        temp_match.target = used_std::forward<Element>(elem);
-        
-        if constexpr (std::is_same_v<CleanReturnType, bool>) {
-            return temp_match.run();
-        } else {
-            return static_cast<bool>(temp_match.run());
-        }
+    constexpr ReturnType operator()() && requires (is_configured) {
+        return used_std::move(*this).run();
     }
 
     template <typename Element> requires (is_configured)
-    constexpr bool operator()(Element&& elem) && {
+    constexpr auto operator()(Element&& elem) && {
         this->target = used_std::forward<Element>(elem);
         
-        if constexpr (std::is_same_v<CleanReturnType, bool>) {
-            return std::move(*this).run();
+        if constexpr (used_std::is_same_v<CleanReturnType, bool>) {
+            return used_std::move(*this).run();
         } else {
-            return static_cast<bool>(std::move(*this).run());
+            return static_cast<bool>(used_std::move(*this).run());
         }
     }
 
-    template <typename... ContextArgs>
+    template <typename... ContextArgs> requires (defaultContext or defaultCases)
     constexpr auto operator()(ContextArgs&&... args) && noexcept {
         if constexpr (defaultContext) {
             if constexpr (sizeof...(ContextArgs) == 0) {
                 auto ctx_tuple = used_std::make_tuple(__);
                 using TupleType = decltype(ctx_tuple);
-                return match<TargetType, TupleType, Wildcard>{ used_std::move(target), used_std::move(ctx_tuple) };
+                return match<TargetType, TupleType, used_std::tuple<empty>>{ used_std::move(target), used_std::move(ctx_tuple) };
             } else {
                 auto ctx_tuple = used_std::make_tuple(used_std::forward<ContextArgs>(args)...);
                 using TupleType = decltype(ctx_tuple);
-                return match<TargetType, TupleType, Wildcard>(
+                return match<TargetType, TupleType, used_std::tuple<empty>>(
                     used_std::move(target), 
                     used_std::move(ctx_tuple) 
                 );
@@ -1474,7 +1331,7 @@ struct match {
             auto cases_tuple = used_std::forward_as_tuple(used_std::forward<ContextArgs>(args)...);
             
             // std::get requires a compile-time constant size expression
-            constexpr std::size_t num_cases = sizeof...(ContextArgs) - 1;
+            constexpr used_std::size_t num_cases = sizeof...(ContextArgs) - 1;
             decltype(auto) def = used_std::get<num_cases>(cases_tuple);
             
             return helper(
@@ -1488,15 +1345,15 @@ struct match {
     }
 
     
-    template <typename Cases, typename DefaultAction, used_std::size_t... Is>
+    template <typename Cases, typename DefaultAction, used_std::size_t... Is> requires (!defaultContext)
     inline constexpr auto helper(StoreTarget&& target, StoreContext&& ctx, Cases&& cases, DefaultAction&& default_action, used_std::index_sequence<Is...>) 
     {
         auto cases_tup = used_std::make_tuple(used_std::get<Is>(used_std::forward<Cases>(cases))...);
     
-        using CleanTarget = std::remove_cvref_t<StoreTarget>;
-        using CleanContext = std::remove_cvref_t<StoreContext>;
+        using CleanTarget = used_std::remove_cvref_t<StoreTarget>;
+        using CleanContext = used_std::remove_cvref_t<StoreContext>;
         using CleanCases = decltype(cases_tup);
-        using CleanDefault = std::remove_cvref_t<DefaultAction>;
+        using CleanDefault = used_std::remove_cvref_t<DefaultAction>;
 
         // Construct the fully-formed evaluator and immediately call .run()
         return match<CleanTarget, CleanContext, CleanCases, CleanDefault>(
@@ -1508,23 +1365,12 @@ struct match {
     }
 
     template<typename T>
-    constexpr operator T() && {
+    constexpr operator T() && requires (is_configured) {
         return used_std::move(*this).run();
     }
 
-    constexpr auto predicate() {
-        return [&](const auto& Element) {
-            auto moved = this;
-            moved->target = Element;
-            return static_cast<bool>(moved->run());
-        };
-    }
-    constexpr ReturnType run() {
-        using RawCases = used_std::remove_cvref_t<CasesTuple>;
-        constexpr used_std::size_t TotalCases = defaultCases ? 0 : used_std::tuple_size_v<RawCases>;
-
+    constexpr ReturnType run() requires (is_configured) {
         struct State {
-            used_std::size_t Guard;
             used_std::size_t next_idx;
             TargetType current_target;
             bool jump_signal;
@@ -1532,20 +1378,20 @@ struct match {
             CleanReturnType result;
         };
         // Storage for return value without default-constructor penalties
-        State state{0, 0 , target , false , false , {}};
+        State state{ 0 , target , false , false , {}};
 
-        auto dispatch_case = [&]<size_t in>(used_std::integral_constant<used_std::size_t, in>) {
+        auto dispatch_case = [&]<used_std::size_t in>(used_std::integral_constant<used_std::size_t, in>) {
             auto& current_case = used_std::get<in>(cases);
             return current_case.caseDispatch(state,ctx,cases,used_std::integral_constant<used_std::size_t, in>{});
             
         };
 
-        while (state.next_idx < TotalCases) {
-            state = dispatch<0, TotalCases>(dispatch_case,state.next_idx);
+        while (state.next_idx < TotalCases::value) {
+            state = dispatch<0, TotalCases::value>(dispatch_case,state.next_idx);
             if (state.matched) break;
         }
         
-        if constexpr (used_std::is_same_v<CleanReturnType, void> || used_std::is_same_v<CleanReturnType, Wildcard>) {
+        if constexpr (used_std::is_same_v<CleanReturnType, void> or used_std::is_same_v<CleanReturnType, Wildcard>) {
             if (state.matched) {
                 return;
             } else {
@@ -1553,60 +1399,165 @@ struct match {
                 return;
             }
         } else {
-            if (state.matched) { 
-                return state.result;
-            } else {
-                return execute_action(default_action, ctx);
-            }
+            return state.matched ? state.result : execute_action(default_action, ctx);
         }
+    }
+    
+    constexpr auto to_predicate() && requires (is_configured) {
+        return [self = used_std::move(*this)](const auto& elem) mutable {
+            constexpr auto is = used_std::make_index_sequence<TotalCases::value>{};
+            struct State {
+                used_std::size_t next_idx;
+                used_std::remove_cvref_t<decltype(elem)> current_target;
+                bool jump_signal;
+                bool matched;
+                bool result;
+            };
+            State state{0 , elem , false , false};
+            return [&]<used_std::size_t... Is>(used_std::index_sequence<Is...>) {
+                ((state = used_std::get<Is>(self.cases).caseDispatch(state,__,self.cases,used_std::integral_constant<used_std::size_t, Is>{})), ...);
+            if constexpr (used_std::is_same_v<CleanReturnType, void> or used_std::is_same_v<CleanReturnType, Wildcard>) {
+                if (state.matched) {
+                    return;
+                } else {
+                    execute_action(self.default_action, self.ctx);
+                    return;
+                }
+            } else {
+                return state.matched ? state.result : execute_action(self.default_action, self.ctx);
+            } 
+            }(is);
+        };
     }
 };
 template <typename TargetType>
 match(TargetType) -> match<TargetType>;
-
-static_assert(match(__)()(Case(__) >> true,true), "");
-template <typename TargetType, typename ContextTuple>
-struct SwitchPipelineProxy {
-    TargetType target;
-    ContextTuple ctx;
-
-    template <typename... CaseTypes>
-    inline constexpr decltype(auto) operator()(CaseTypes&&... cases) && {
-        return universal_switch(target,used_std::forward<ContextTuple>(ctx), used_std::forward<CaseTypes>(cases)...);
-    }
-};
-
-template <typename TargetType>
-struct SwitchTargetProxy {
-    TargetType target;
- 
-    inline constexpr auto operator()() && noexcept {
-        return SwitchPipelineProxy<TargetType, Wildcard>{ target, __ };
-    }
-    template <typename... ContextArgs> 
-    inline constexpr auto operator()(ContextArgs&&... args) && noexcept {
-        auto ctx_tuple = used_std::forward_as_tuple(used_std::forward<ContextArgs>(args)...);
-        using TupleType = decltype(ctx_tuple);
-        return SwitchPipelineProxy<TargetType, TupleType>{ target, used_std::move(ctx_tuple) };
-    }
-};
-
-inline constexpr auto Match() noexcept {
-    return SwitchTargetProxy<Wildcard>{ __ };
-}
-
-template <typename TargetType>
-inline constexpr auto Match(TargetType&& target) noexcept {
-    using StoreType = concepts::primitive_param_t<TargetType>;
-    return SwitchTargetProxy<StoreType>{ target };
-}
-template <typename... Cases>
-inline constexpr auto MatchPredicate(Cases&&... target) noexcept {
-    return [... cases = used_std::forward<Cases>(target)](const auto& Element) {
-        return static_cast<bool>(universal_switch(Element,__,cases...));
-    };
-}
 // ============================================================================
 //                                    END
 // ============================================================================
 #endif
+
+
+// ============================================================================
+//                                GRAVEYARD
+// ============================================================================
+// template <typename TargetType, typename DefaultType, typename ContextTuple, typename CasesTuple>
+// inline constexpr auto universal_switch_matrix(TargetType target, DefaultType&& default_action, ContextTuple&& ctx, CasesTuple&& cases) noexcept {
+//     using RawCases = used_std::remove_cvref_t<CasesTuple>;
+//     constexpr used_std::size_t TotalCases = used_std::tuple_size_v<RawCases>;
+//     // constexpr auto CasesIndex = used_std::make_index_sequence<TotalCases>{};
+//     using CoreReturnType  = decltype(execute_action(default_action, ctx));
+//     using CleanReturnType = typename UnwrapReturnType<CoreReturnType>::type;
+
+//     struct State {
+//         used_std::size_t Guard;
+//         used_std::size_t next_idx;
+//         TargetType current_target;
+//         bool jump_signal;
+//         bool matched;
+//         used_std::conditional_t<used_std::is_same_v<CleanReturnType, void>, Wildcard, CleanReturnType> result;
+//     };
+//     // Storage for return value without default-constructor penalties
+//     State state{0, 0 , target , false , false , {}};
+
+//     auto dispatch_case = [&]<size_t in>(used_std::integral_constant<used_std::size_t, in>) {
+//         auto* current_case = &used_std::get<in>(cases);
+//         return current_case->caseDispatch(state,ctx,cases,used_std::integral_constant<used_std::size_t, in>{});
+        
+//     };
+
+//     while (state.next_idx < TotalCases) {
+//         state = dispatch<0, TotalCases>(dispatch_case,state.next_idx);
+//         if (state.matched) break;
+//     }
+    
+//     if constexpr (used_std::is_same_v<CleanReturnType, void>) {
+//         if (state.matched) {
+//             return;
+//         } else {
+//             execute_action(used_std::forward<DefaultType>(default_action), ctx);
+//         }
+//     } else {
+//         if (state.matched) { 
+//             return state.result;
+//         } else {
+//             return execute_action(used_std::forward<DefaultType>(default_action), ctx);
+//         }
+//     }
+// }
+// template <typename TargetType, typename ContextTuple, typename DefaultAction, typename CasesTuple, used_std::size_t... Is>
+// inline constexpr decltype(auto) universal_switch_helper(TargetType target, DefaultAction&& default_action, ContextTuple&& ctx, CasesTuple&& cases, used_std::index_sequence<Is...>) 
+// {
+//     return universal_switch_matrix(
+//         target,
+//         used_std::forward<DefaultAction>(default_action),
+//         used_std::forward<ContextTuple>(ctx),
+//         used_std::forward_as_tuple(used_std::get<Is>(used_std::forward<CasesTuple>(cases))...)
+//     );
+// }
+
+// template <typename TargetType, typename ContextTuple, typename... AllTrailingArgs>
+// inline constexpr decltype(auto) universal_switch(TargetType target, ContextTuple&& ctx, AllTrailingArgs&&... args) {
+//     constexpr used_std::size_t TotalArgs = sizeof...(AllTrailingArgs);
+//     static_assert(TotalArgs >= 1, "Library Error: You must supply a terminal fallback default action.");
+    
+//     constexpr used_std::size_t CaseCount = TotalArgs - 1;
+
+//     // Direct pack access to the default action (last argument) without tuple wrapping
+//     auto args_tuple = used_std::forward_as_tuple(used_std::forward<AllTrailingArgs>(args)...);
+//     decltype(auto) default_action = used_std::get<CaseCount>(args_tuple);
+
+//     if constexpr (CaseCount == 0) {
+//         return execute_action(used_std::forward<decltype(default_action)>(default_action), ctx, target);
+//     } else {
+//         return universal_switch_helper(
+//             target, 
+//             used_std::forward<decltype(default_action)>(default_action), 
+//             used_std::forward<ContextTuple>(ctx), 
+//             used_std::move(args_tuple),
+//             used_std::make_index_sequence<CaseCount>{}
+//         );
+//     }
+// }
+// static_assert(match(__)()(Case(__) >> true,true), "");
+// template <typename TargetType, typename ContextTuple>
+// struct SwitchPipelineProxy {
+//     TargetType target;
+//     ContextTuple ctx;
+
+//     template <typename... CaseTypes>
+//     inline constexpr decltype(auto) operator()(CaseTypes&&... cases) && {
+//         return universal_switch(target,used_std::forward<ContextTuple>(ctx), used_std::forward<CaseTypes>(cases)...);
+//     }
+// };
+// template <typename TargetType>
+// struct SwitchTargetProxy {
+//     TargetType target;
+ 
+//     inline constexpr auto operator()() && noexcept {
+//         return SwitchPipelineProxy<TargetType, Wildcard>{ target, __ };
+//     }
+//     template <typename... ContextArgs> 
+//     inline constexpr auto operator()(ContextArgs&&... args) && noexcept {
+//         auto ctx_tuple = used_std::forward_as_tuple(used_std::forward<ContextArgs>(args)...);
+//         using TupleType = decltype(ctx_tuple);
+//         return SwitchPipelineProxy<TargetType, TupleType>{ target, used_std::move(ctx_tuple) };
+//     }
+// };
+
+// inline constexpr auto Match() noexcept {
+//     return SwitchTargetProxy<Wildcard>{ __ };
+// }
+
+// template <typename TargetType>
+// inline constexpr auto Match(TargetType&& target) noexcept {
+//     using StoreType = concepts::primitive_param_t<TargetType>;
+//     return SwitchTargetProxy<StoreType>{ target };
+// }
+// template <typename... Cases>
+// inline constexpr auto MatchPredicate(Cases&&... target) noexcept {
+//     return [... cases = used_std::forward<Cases>(target)](const auto& Element) {
+//         return static_cast<bool>(universal_switch(Element,__,cases...));
+//     };
+// }
+//
