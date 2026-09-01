@@ -99,7 +99,7 @@ int main () {
     int number = -43;
     std::string_view num_res = match(number)()(
         Case(&is_even)     >> [] { return "Even Number"; },
-        Case(Predicate(&is_positive)) >> [] { return "Positive Odd Number"; },
+        Case(&is_positive) >> [] { return "Positive Odd Number"; },
         [] { return "Other"; }
     );
     std::cout << "Number " << number << " -> " << num_res << "\n";
@@ -171,7 +171,7 @@ int main () {
         []{return false;}), "" );
         
     match(test)(__) (
-        Case(field(&test.i,20) >> []{
+        Case(field(&s::i,20)) >> []{
             std::cout << "is 20";
         },
         Case(__) >> [&]() {

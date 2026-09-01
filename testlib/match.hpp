@@ -706,9 +706,9 @@ constexpr auto make_compound_range(Ranges&&... ranges) noexcept {
 // ============================================================================
 enum class Op { Eq, Neq, Gt, Gte, Lt, Lte };
 
-
-template <typename ClassType, typename MemberType> requires 
-(used_std::is_class<ClassType>::value and (used_std::is_member_object_pointer_v<MemberType> || used_std::is_member_pointer<class Tp>::value))
+// FIX 1: Removed invalid 'class Tp' reference from concept
+template <typename ClassType, typename MemberType> 
+requires (used_std::is_class_v<ClassType> && used_std::is_member_object_pointer_v<MemberType ClassType::*>)
 struct FieldRule {
     MemberType ClassType::*member_ptr;
     Op op_tag = Op::Eq;
@@ -736,38 +736,52 @@ struct is_field_rule<FieldRule<Class, Member>> : used_std::true_type {
     using class_type = Class;
 };
 
-template <typename ClassType, typename... Rules> requires ((is_field_rule<Rules>::value and ...))
+template <typename ClassType, typename... Rules> 
+requires ((is_field_rule<Rules>::value && ...))
 struct MultiFieldPredicate {
     used_std::tuple<Rules...> rules;
 
     constexpr bool matches(const ClassType& obj) const noexcept {
         return evaluate_all(obj, used_std::make_index_sequence<sizeof...(Rules)>{});
     }
+
+    // Making predicate callable as std::predicate / functor
+    constexpr bool operator()(const ClassType& obj) const noexcept {
+        return matches(obj);
+    }
+
 private:
     template <used_std::size_t... Is>
     constexpr bool evaluate_all(const ClassType& obj, used_std::index_sequence<Is...>) const noexcept {
         return (used_std::get<Is>(rules).eval(obj) && ...);
     }
 };
+
+// Deduction Guide for MultiFieldPredicate
 template <typename HeadRule, typename... TailRules>
 requires (is_field_rule<used_std::decay_t<HeadRule>>::value && 
          (is_field_rule<used_std::decay_t<TailRules>>::value && ...))
 MultiFieldPredicate(HeadRule, TailRules...) 
     -> MultiFieldPredicate<typename is_field_rule<used_std::decay_t<HeadRule>>::class_type, HeadRule, TailRules...>;
 
+// FIX 2: Accept const MemberType& to allow passing both lvalues and rvalues
 template <typename ClassType, typename MemberType>
-constexpr auto field(MemberType ClassType::*member, Op op, used_std::decay_t<MemberType>&& val) noexcept {
-    return FieldRule<ClassType, used_std::decay_t<MemberType>>{member, op, used_std::forward<used_std::decay_t<MemberType>>(val)};
+constexpr auto field(MemberType ClassType::*member, Op op, const MemberType& val) noexcept {
+    return FieldRule<ClassType, MemberType>{member, op, val};
 }
 
 template <typename ClassType, typename MemberType>
-constexpr auto field(MemberType ClassType::*member, used_std::decay_t<MemberType>&& val) noexcept {
-    return FieldRule<ClassType, used_std::decay_t<MemberType>>{member, Op::Eq, used_std::forward<used_std::decay_t<MemberType>>(val)};
+constexpr auto field(MemberType ClassType::*member, const MemberType& val) noexcept {
+    return FieldRule<ClassType, MemberType>{member, Op::Eq, val};
 }
 
-template <typename ClassType, typename... Rules>
-constexpr auto fields_match(Rules&&... rules) noexcept {
-    return MultiFieldPredicate<ClassType, used_std::decay_t<Rules>...>{ used_std::tuple<used_std::decay_t<Rules>...>(used_std::forward<Rules>(rules)...) };
+// FIX 3: Deduce ClassType directly from the HeadRule using CTAD
+template <typename HeadRule, typename... TailRules>
+constexpr auto fields_match(HeadRule&& head, TailRules&&... tail) noexcept {
+    using Class = typename is_field_rule<used_std::decay_t<HeadRule>>::class_type;
+    return MultiFieldPredicate<Class, used_std::decay_t<HeadRule>, used_std::decay_t<TailRules>...>{
+        used_std::tuple{used_std::forward<HeadRule>(head), used_std::forward<TailRules>(tail)...}
+    };
 }
 
 // ============================================================================
