@@ -1,269 +1,34 @@
 module;
-
+#include <cstddef>
+#include <cstdint>
+#include <array>
+#include <algorithm>
+#include <span>
+#include <utility>
 export module lib.types;
-import lib.std;
-import lib.utl;
 
 export
 {
     
-    using ptrdiff = decltype([]{char ptr[2]; return ptr - (ptr + 1);}());
+    using ptrdiff   = decltype(static_cast<int*>(0) - static_cast<int*>(0));
     using size_t    = decltype(sizeof(0));
     using f32       = float;
     using f64       = double;
     using int8      = char;
-    using uint8     = unsigned char;
-    using int32     = decltype(0);
-    using uint32    = unsigned int;
+    using uint8     = std::uint8_t;
+    using int16     = std::int16_t;
+    using uint16    = std::uint16_t;
+    using int32     = std::int32_t;
+    using uint32    = std::uint32_t;
     using int64     = std::int64_t;
     using uint64    = std::uint64_t;
-    
-    namespace fs = std::filesystem;
 };
-
-template <typename T>
-concept Formattable = 
-    requires(T t) { { std::string_view(t) } -> std::same_as<std::string_view>; } || 
-    std::integral<std::decay_t<T>> ||
-    std::floating_point<std::decay_t<T>>;
-
-template <typename... Args>
-concept onlyStr = (Formattable<Args> && ...);
-
-export
-
-struct fmt {
-    std::string str;
-
-    enum colors {
-        Not_color,
-        Black,     Bold_Black,     High_Black,
-        Red,       Bold_Red,       High_Red,
-        Green,     Bold_Green,     High_Green,
-        Yellow,    Bold_Yellow,    High_Yellow,
-        Blue,      Bold_Blue,      High_Blue,
-        Purple,    Bold_Purple,    High_Purple,
-        Cyan,      Bold_Cyan,      High_Cyan,
-        White,     Bold_White,     High_White,
-    };
-
-    // 1. Variadic Concatenation Constructor: fmt("hello ", 123, " world")
-    template<onlyStr... Args>
-    constexpr fmt(Args&&... args) {
-        varConcat(std::forward<Args>(args)...);
-    }
-    template<onlyStr... Args>
-    constexpr fmt& varConcat(Args&&... args) { 
-        size_t preAlloc = (getArgSize(args) + ... + 0);
-        str.reserve(preAlloc);
-        (appendArg(std::forward<Args>(args)), ...);
-        return *this;
-    }
-    // 2. Format String Constructor: fmt("Value: {}, Status: {}", 42, "OK")
-    template<onlyStr... Args>
-    constexpr fmt(const char* in, Args&&... args) {
-        if (std::string_view(in).find('{') == std::string_view::npos) {
-            varConcat(in, std::forward<Args>(args)...);
-            return;
-        }
-        std::string_view fmtStr(in);
-        size_t preAlloc = fmtStr.size() + (getArgSize(args) + ... + 0);
-        formatHelper help;
-        size_t lastPos = 0;
-
-        // Lambda executed once per parameter in fold expression
-        auto processArg = [this, &fmtStr, &lastPos,&help](auto&& arg) {
-            size_t pBegin = fmtStr.find('{',lastPos);
-            if (pBegin != std::string_view::npos) {
-                size_t pEnd = fmtStr.find('}', pBegin + 1);
-                if (pEnd != std::string_view::npos) {
-                    str.append(fmtStr.substr(lastPos, pBegin - lastPos));
-                    appendArg(std::forward<decltype(arg)>(arg), &help);
-                    lastPos = pEnd + 1;
-                }
-            }
-        };
-
-        str.reserve(preAlloc);
-        (processArg(std::forward<Args>(args)), ...);
-        if (lastPos < fmtStr.size()) {
-            str.append(fmtStr.substr(lastPos));
-        }
-    }
-
-    // Apply ANSI Color
-    constexpr fmt& color(colors c) { 
-        str.reserve(str.size() + 14);
-        str.insert(0, this->getColor(c));
-        str.append(this->getColor(Not_color));
-        return *this;
-    }
-
-    // Collapse multiple contiguous spaces into a single space
-    constexpr fmt& clean() { 
-        if (str.empty()) return *this;
-
-        size_t writeIdx = 0;
-        bool inSpace = false;
-
-        for (size_t readIdx = 0; readIdx < str.size(); ++readIdx) {
-            char c = str[readIdx];
-            if (c == ' ') {
-                if (!inSpace) {
-                    str[writeIdx++] = c;
-                    inSpace = true;
-                }
-            } else {
-                str[writeIdx++] = c;
-                inSpace = false;
-            }
-        }
-        str.resize(writeIdx);
-        return *this;
-    }
-
-    constexpr fmt& endl() { str.append("\n"); return *this; }
-
-    constexpr std::string_view sv() const { return str; }
-    constexpr const char* cstr() const { return str.c_str(); }
-    constexpr operator std::string_view() const { return sv(); }
-    constexpr operator const char*() const { return cstr(); }
-    
-    friend std::ostream& operator<<(std::ostream& os, const fmt& f) {
-        return os << f.str;
-    }
-
-private:
-    struct formatHelper {
-        int attr = 0;
-        int attr2 = 0;
-        constexpr formatHelper() {}
-    };
-
-    template<onlyStr T>
-    constexpr size_t getArgSize(const T& arg) const {
-        using Raw = std::remove_cvref_t<T>;
-        if constexpr (std::is_convertible_v<Raw, std::string_view>) {
-            return std::string_view (arg).size();
-        } else if constexpr (std::integral<Raw>) {
-            return Math::digitLength(arg);
-        } else if constexpr (std::floating_point<Raw>) {
-            return Math::digitLength(arg);
-        }
-        return 0;
-    }
-
-    template<onlyStr T>
-    constexpr void appendArg(T&& arg,formatHelper* help = nullptr) {
-        using Raw = std::remove_cvref_t<T>;
-        if constexpr (std::is_convertible_v<Raw, std::string_view>) {
-            str += std::string_view(arg);
-        } else if constexpr (std::integral<Raw>) {
-            char digit[Math::maxDigits<Raw>()];
-            auto [eDigit, ec] = std::to_chars(digit, digit + Math::maxDigits<Raw>(), std::forward<T>(arg));
-            str.append(digit, static_cast<std::size_t>(eDigit - digit));
-        } else if constexpr (std::floating_point<Raw>) {
-            char digit[Math::maxDigits<Raw>()];
-            auto [eDigit, ec] = std::to_chars(digit, digit + Math::maxDigits<Raw>(), std::forward<T>(arg));
-            str.append(digit, static_cast<std::size_t>(eDigit - digit));
-        } else {
-            std::unreachable();
-        }
-    }
-
-    
-
-    constexpr std::string_view getColor(colors color) const {
-        switch (color) {
-            case Not_color:    return "\033[0m";
-            case Black:        return "\033[0;30m";
-            case Red:          return "\033[0;31m";
-            case Green:        return "\033[0;32m";
-            case Yellow:       return "\033[0;33m";
-            case Blue:         return "\033[0;34m";
-            case Purple:       return "\033[0;35m";
-            case Cyan:         return "\033[0;36m";
-            case White:        return "\033[0;37m";
-            case Bold_Black:   return "\033[1;30m";
-            case Bold_Red:     return "\033[1;31m";
-            case Bold_Green:   return "\033[1;32m";
-            case Bold_Yellow:  return "\033[1;33m";
-            case Bold_Blue:    return "\033[1;34m";
-            case Bold_Purple:  return "\033[1;35m";
-            case Bold_Cyan:    return "\033[1;36m";
-            case Bold_White:   return "\033[1;37m";
-            case High_Black:   return "\033[0;90m";
-            case High_Red:     return "\033[0;91m";
-            case High_Green:   return "\033[0;92m";
-            case High_Yellow:  return "\033[0;93m";
-            case High_Blue:    return "\033[0;94m";
-            case High_Purple:  return "\033[0;95m";
-            case High_Cyan:    return "\033[0;96m";
-            case High_White:   return "\033[0;97m";
-            default:           return "";
-        }
-    }
-};
-
-// constexpr std::string s (fmt("{}  hello",453).clean());
-constexpr fmt gs ("{ } hello {}",43,54);
-static_assert(std::string_view(gs) == "43 hello 54", "");
-// s.clean();
-// 
-// constexpr unsigned int a = 0b11010;
-// constexpr unsigned int b = 0b11010;
-// static_assert(pow10<20>[19] == 10000000000000000000ul, "");
-
-export
-template <size_t N>
-struct StaticString
-{
-    char data[N] {};
-
-    constexpr StaticString(const char (&input)[N + 1])
-    {
-        for(size_t i {0};input[i] != '\0';i++) {
-            data[i] = input[i];
-        }
-    }
-    constexpr bool operator ==(const char* other) {
-        return std::string_view(data) == other;
-    }
-    constexpr const size_t getSize() const {return N;}
-    constexpr const char* getData () const {return data;}
-    constexpr operator const char*() const {return data;}
-};
-template <size_t N> StaticString(const char(&)[N]) -> StaticString<N - 1>;
-
-template <class Ty,int ID,StaticString S>
-struct var {
-    static constexpr std::string_view Name {S.getData(),S.getSize()};
-    static constexpr int id = ID; 
-    using type = Ty;
-};
-
-struct buffer {char buff;};
-inline void* operator new(size_t size,buffer* Buff) {return Buff;} 
-
-export
-struct RGBA {
-    uint8 col[4];
-    constexpr RGBA() {}
-    constexpr RGBA(uint8 r,uint8 g,uint8 b,uint8 a) : col(r,g,b,a) {}
-    // void operator =(RGBA c) {
-    //     copy(col, c.col, 4 * sizeof(uint8));
-    // }
-    operator const uint8*() const {return col;}
-    operator uint8*() {return col;}
-    
-};
-
+        
 template <size_t Num>
-struct vecutl {
-    // void compilation_failed_invalid_swizzle_character();
+struct Swizzle_impl {
     size_t num[Num];
     
-    constexpr vecutl(const char (&input)[Num + 1]) : num{} {
+    constexpr Swizzle_impl(const char (&input)[Num + 1]) : num{} {
         for (size_t i = 0; i < Num; ++i) {
             char c = input[i];
 
@@ -276,10 +41,8 @@ struct vecutl {
     constexpr size_t operator[](size_t i) const {
         return num[i];
     }
-    // constexpr std::size_t err(int i) {
-    // }
-    constexpr size_t getSize() const { return Num; }
-    constexpr bool max(int m) const { 
+    constexpr size_t size() const { return Num; }
+    constexpr bool in_bound(int m) const { 
         for (const int& i : num) {
             if (i > m - 1) return false;
         }
@@ -287,316 +50,125 @@ struct vecutl {
     }
 };
 template <size_t Num>
-vecutl(const char(&)[Num]) -> vecutl<Num - 1>;
+Swizzle_impl(const char(&)[Num]) -> Swizzle_impl<Num - 1>;
+// template <typename T>
+// struct vec_iterator {
+//     using iterator_category = std::forward_iterator_tag;
+//     using value_type        = std::remove_cvref_t<T>;
+//     using difference_type   = std::ptrdiff_t;
+//     using pointer           = T*;
+//     using reference         = T&;
 
+//     constexpr vec_iterator() noexcept : i(nullptr) {}
+//     constexpr explicit vec_iterator(pointer ptr) noexcept : i(ptr) {}
+
+//     template <typename U> requires std::is_same_v<std::remove_const_t<T>, U>
+//     constexpr vec_iterator(const vec_iterator<U>& other) noexcept : i(other.base()) {}
+
+//     constexpr reference operator*() const noexcept { return *i; }
+//     constexpr pointer operator->() const noexcept { return i; }
+
+//     constexpr vec_iterator& operator++() noexcept { ++i; return *this; }
+//     constexpr vec_iterator operator++(int) noexcept { vec_iterator tmp = *this; ++(*this); return tmp; }
+
+//     [[nodiscard]] constexpr pointer base() const noexcept { return i; }
+//     [[nodiscard]] friend constexpr bool operator==(const vec_iterator& a, const vec_iterator& b) noexcept = default;
+
+// private:
+//     pointer i{nullptr};
+// };
 export
-template <typename T>
-class Vec2 {
-    void idxErr() {
-        // std::cerr << "index > 1 \n";
-        std::exit(1);
-    }
-public:
-    T x {};
-    T y {};
-
-    T& operator [](int idx) {
-        switch(idx) {
-            case 0: return x;
-            case 1: return y;
-            default: {
-                idxErr();
-                return x;
-            }
-        }
-    }
-
-    template <vecutl s> requires (s.getSize() > 1 && s.max(2))
-    constexpr std::array<T, s.getSize()> swizzle() {
-        std::array<T, s.getSize()> buffer;
-        
-        for (size_t i = 0; i < s.getSize(); ++i) {
-            buffer[i] = (*this)[s.num[i]];
-        }
-        
-        return buffer; 
+template <typename T,size_t Len>
+struct Vec {
+    using value_type = T;
+    using reference = T&;
+    using pointer = T*;
+    using const_reference = const T&;
+    using const_pointer = const T*;
     
-    }
-};
+    using vec_index_seq = std::make_index_sequence<Len>;
+    template<size_t N>
+    using vec_util = Swizzle_impl<N>;
 
-export
-template <typename T>
-class Vec3 {
-    void idxErr() {
-        // std::cerr << "index > 1 \n";
-        std::exit(1);
-    }
-public:
-    T x {};
-    T y {};
-    T z {};
+    T m_elem[Len];
 
-    constexpr T& operator [](size_t idx) {
-        switch(idx) {
-            case 0: return x;
-            case 1: return y;
-            case 2: return z;
-            default: {
-                idxErr();
-                return x;
-            }
-        }
+    [[nodiscard]] constexpr reference operator [](size_t idx) noexcept {
+        return m_elem[idx];
     }
+    [[nodiscard]] constexpr const_reference operator[](size_t idx) const noexcept {
+        return m_elem[idx];
+    }
+    
 
-    template <vecutl s> requires (s.getSize() > 1 && s.max(3))
-    constexpr std::array<T, s.getSize()> swizzle() {
-        std::array<T, s.getSize()> buffer;
-        
-        for (size_t i = 0; i < s.getSize(); ++i) {
-            buffer[i] = (*this)[s.num[i]];
-        }
-        return buffer;
+    template <vec_util s> requires (s.size() > 1 && s.in_bound(Len))
+    [[nodiscard]] constexpr std::array<value_type, s.size()> swizzle() const noexcept {
+        constexpr auto seq = std::make_index_sequence<s.size()>{};
+        return [this]<size_t... I>(std::index_sequence<I...>) {
+            return std::array<value_type, s.size()>{m_elem[s.num[I]]...};
+        }(seq); 
     }
-     constexpr Vec3<T>& operator =(const Vec3<T>& other) {
-        return this[0] = other[0],this[1] = other[1],this[2] = other[2];
+    template <vec_util s> requires (s.size() > 1 && s.in_bound(Len))
+    [[nodiscard]] constexpr Vec<pointer,s.size()> swizzle_ptr() & noexcept {
+        constexpr auto seq = std::make_index_sequence<s.size()>{};
+        return [this]<size_t... I>(std::index_sequence<I...>) {
+            return Vec<pointer,s.size()>{&m_elem[s.num[I]]...};
+        }(seq); 
     }
-};
-
-export
-template <typename T>
-class Vec4 {
-    void idxErr() {
-        std::exit(1);
+    [[nodiscard]] constexpr Vec operator +(const Vec& other) noexcept {
+        return [&]<size_t... I>(std::index_sequence<I...>) constexpr {
+            return Vec{((m_elem[I] += other.m_elem[I]),...)};
+        }(vec_index_seq{});
     }
-    void idxErr() const {
-        std::exit(1);
-    }
-public:
-    T x {};
-    T y {};
-    T z {};
-    T w {};
-
-    T& operator [](int idx) {
-        switch(idx) {
-            case 0: return x;
-            case 1: return y;
-            case 2: return z;
-            case 3: return 2;
-            default: {
-                idxErr();
-                return x;
-            }
-        }
-    }
-    const T operator [](int idx) const {
-        switch(idx) {
-            case 0: return x;
-            case 1: return y;
-            case 2: return z;
-            case 3: return 2;
-            default: {
-                idxErr();
-                return x;
-            }
-        }
+    [[nodiscard]] constexpr Vec& operator +=(const Vec& other) noexcept {
+        [&]<size_t... I>(std::index_sequence<I...>) constexpr {
+            ((m_elem[I] += other.m_elem[I]),...);
+        }(vec_index_seq{});
+        return *this;
     }
 
-    template <vecutl s> requires (s.getSize() > 1 && s.max(4))
-    constexpr std::array<T, s.getSize()> swizzle() {
-        std::array<T, s.getSize()> buffer;
-        
-        for (size_t i = 0; i < s.getSize(); ++i) {
-            buffer[i] = (*this)[s.num[i]];
-        }
-        return buffer;
-    }
-    constexpr Vec4<T>& operator =(const Vec4<T>& other) {
-        return *this = {other[0],other[1],other[2],other[3]};
-    }
-};
+    [[nodiscard]] constexpr pointer data() {return m_elem;}
+    [[nodiscard]] constexpr const_pointer data() const {return m_elem;}
+    [[nodiscard]] constexpr size_t size() const {return Len;}
 
-static_assert( []{
-    Vec3<int> i {4,2,1};
-    auto sw = i.swizzle<"zzz">();
-    std::array<int,3> ws {1,1,1};
-    return sw == ws ;
-}() == true,"test");
-
-export
-class model {
-    std::vector<Vec3<double>> verts = {};
-    std::vector<int> faces = {};
-    public: 
-    model(const fs::path file) {
-        static const char* vert = "v ";
-        static const char* face = "f ";
-        static const fs::path path = fs::current_path();
-        std::ifstream in; in.open( path / file);
-        if (!in) {
-            // std::cerr << "failed " << path / file <<"\n"; 
-            return;}
-        std::string line;
-        while(!in.eof()) {
-            std::getline(in,line);
-            std::istringstream iss(line.c_str());
-            char trash;
-            if (!line.compare(0,2,vert)) {
-                iss >> trash;
-                Vec3<double> v;
-                for(int i :{0,1,2}) iss >> v[i];
-                verts.push_back(v);
-            } else if (!line.compare(0,2,face)) {
-                int f,t,n, cnt = 0;
-                iss >> trash;
-                while (iss >> f >> trash >> t >> trash >> n) {
-                    faces.push_back(--f);
-                    cnt++;
-                } 
-                if (3 != cnt) {
-                    // std::cerr <<  "Error: the obj file is supposed to be triangulated \n"; 
-                    return;
-                }
-            }
-        }
-        // std::cerr << "# v# " << nverts() << " f# "  << nfaces() << std::endl;
-    }
-    int nverts() const {return verts.size();}
-    int nfaces() const {return faces.size()/3;}
-    Vec3<double> vert(const int i) const {return verts[i];}
-    Vec3<double> vert(const int iface,const int nthvert) const {return verts[faces[iface*3+nthvert]];}
-};
-
-export
-class FastBoolGenerator {
-public:
-    FastBoolGenerator() : m_rand(0), m_counter(0) {}
-
-    bool next() {
-        if (m_counter == 0) {
-            // Fetch a new 64-bit random number
-            m_rand = std::uniform_int_distribution<uint64_t>{}(m_gen);
-            m_counter = 64;
-        }
-        // Extract the least significant bit
-        bool result = (m_rand & 1);
-        m_rand >>= 1; // Shift right for next call
-        --m_counter;
-        return result;
-    }
-
-private:
-    std::mt19937 m_gen{std::random_device{}()};
-    uint64_t m_rand;
-    int m_counter;
-};
-
-template <size_t N>
-struct bitBool {
-    // 32 bytes * 8 bits = 256 bits total capacity
-    unsigned char bit[N] = {0};
-
-    // Helper proxy class to allow writing: myBits[10] = true;
-    struct BitReference {
-        unsigned char& byteRef;
-        unsigned char mask;
-
-        // Automatically implicitly converts to bool when reading: bool value = myBits[10];
-        operator bool() const {
-            return (byteRef & mask) != 0;
-        }
-
-        // Handles writing: myBits[10] = true;
-        BitReference& operator=(bool value) {
-            if (value) byteRef |= mask;
-            else       byteRef &= ~mask;
-            return *this;
-        }
+    [[nodiscard]] constexpr pointer begin() {return m_elem;}
+    [[nodiscard]] constexpr pointer end() {return m_elem + Len;}
+    [[nodiscard]] constexpr const_pointer begin() const {return m_elem;}
+    [[nodiscard]] constexpr const_pointer end() const {return m_elem + Len;}
+    
+    [[nodiscard]] constexpr bool operator==(const Vec&) const = default;
+    [[nodiscard]] constexpr bool operator==(std::span<const value_type> other) const {
+        return (other.size() > Len) ? false :
+        std::equal(this->begin(),this->end(),other.begin());
     };
-
-    // Non-const operator[]: supports both reading and writing
-    BitReference operator[](size_t IDX) {
-        size_t bytePos = IDX / 8; // Find which of the 32 bytes holds the bit
-        size_t bitPos  = IDX % 8; // Find the bit offset inside that byte
-        
-        unsigned char mask = static_cast<unsigned char>(1 << bitPos);
-        return BitReference{ bit[bytePos], mask };
+    template<size_t offset,size_t Count = Len>
+    [[nodiscard]] constexpr bool eq_from(std::span<const value_type> other) const {
+        if constexpr (Count != Len) {return false;}
+        return (offset > other.size() || Len > (other.size() - offset)) ? false :
+        (*this == other.subspan(offset,Len));
     }
-
-    // Const operator[]: for when the bitBool instance is read-only
-    bool operator[](size_t IDX) const {
-        size_t bytePos = IDX / 8;
-        size_t bitPos  = IDX % 8;
-        return (bit[bytePos] & (1 << bitPos)) != 0;
+    [[nodiscard]] constexpr bool eq_from(size_t offset,std::span<const value_type> other) const {
+        return (offset > other.size() || Len > (other.size() - offset)) ? false : 
+        (*this == other.subspan(offset,Len));
     }
 };
 
+template<typename T>
+struct mat {
+    using member = T;
 
-export
-class Clock {
-    using clock = std::chrono::high_resolution_clock;
-    
-    int32_t frame_debt= 0; 
-    int32_t dt_ms     = 16;
-    Clock() = default;
-    
-    public:
-    using ms = std::chrono::milliseconds;
-    clock::time_point m_start = clock::now();
-    clock::time_point m_end   = clock::now();
-    static Clock& get() {
-        static Clock instance;
-        return instance;
-    }
-    void start() { 
-        m_start = clock::now(); 
-    }
-    
-    int32_t end(int32_t target_ms) { 
-        m_end = clock::now(); 
-        auto duration = std::chrono::duration_cast<ms>(m_end - m_start);
-        int32_t frame_time = static_cast<int32_t>(duration.count());
-
-        int32_t sleep_time = (target_ms - frame_time) - frame_debt;
-
-        if (sleep_time > 0) {
-            frame_debt = 0;
-            dt_ms = frame_time + sleep_time;
-            return sleep_time;
-        } else {
-            frame_debt = static_cast<int32_t>((-sleep_time) * 0.25f);
-            if (frame_debt > target_ms * 2) {
-                frame_debt = target_ms * 2;
-            }
-            dt_ms = frame_time;
-            return 0;
-        }
-    }
-
-    ms end(ms target_ms) { 
-        m_end = clock::now(); 
-        auto duration = std::chrono::duration_cast<ms>(m_end - m_start);
-
-        ms sleep_time = (target_ms - duration) - ms(frame_debt);
-
-        if (sleep_time > ms(0)) {
-            frame_debt = 0;
-            dt_ms = duration.count() + sleep_time.count();
-            return sleep_time;
-        } else {
-            frame_debt = static_cast<int32_t>((-sleep_time.count()) * 0.25f);
-            if (frame_debt > target_ms.count() * 2) {
-                frame_debt = target_ms.count() * 2;
-            }
-            dt_ms = duration.count();
-            return ms(0);
-        }
-    }
-    
-    int32_t delta_time() const {
-        return dt_ms;
-    }
-    
 };
+export {
+    template<typename T> using Vec2 = Vec<T,2>;
+    template<typename T> using Vec3 = Vec<T,3>;
+    template<typename T> using Vec4 = Vec<T,4>;
+}
+
+static_assert([] {
+    Vec3<int32> v {1,2,3};
+    // Vec3<i32> v2 {1,2,3};
+    std::array<int32,7> a {1,1,1,1,1,2,3};
+    // auto s = v2.swizzle_ptr<"xxx">();
+    return v.eq_from<4>(a);
+}() == true, "");
 
 

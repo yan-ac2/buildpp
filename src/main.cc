@@ -4,7 +4,6 @@
 // import lib;
 #include "pch.hpp"
 
-import lib.std;
 import lib.types;
 import lib.win;
 import lib.utl;

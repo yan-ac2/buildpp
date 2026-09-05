@@ -5,9 +5,13 @@ module;
     #include "retard.h"
 */
 #include "pch.hpp"
+#include <filesystem>
+#include <algorithm>
+#include <numeric>
+#include <iostream>
+#include <unordered_map>
 export module lib.win:renderer;
 // import somethisng;
-import lib.std;
 import lib.types; // test
 import lib.utl; // test
 import :common;
@@ -215,7 +219,7 @@ class GlHints : public IRenderer {
         // 4. Create the high-performance context
         mHGLRC = wglCreateContextAttribsARB(mHDC, nullptr, contextAttribs);
         if (!mHGLRC) {
-            std::print("Failed to create modern WGL context.\n");
+            std::cout << "Failed to create modern WGL context.\n";
             return false;
         }
 
@@ -505,7 +509,7 @@ class Shader
     fileTime lastWrite = {};
     str shaderPath;
     
-    Shader(const str& path) : shaderPath((fs::current_path()/path).string()) {
+    Shader(const str& path) : shaderPath((std::filesystem::current_path()/path).string()) {
         scanShader();
     }
     ~Shader() {
@@ -524,8 +528,8 @@ class Shader
     }
 
     void scanShader() {
-        str base = fs::current_path().string();
-        for(const auto& f : fs::directory_iterator(shaderPath)) {
+        str base = std::filesystem::current_path().string();
+        for(const auto& f : std::filesystem::directory_iterator(shaderPath)) {
             const auto& file = f.path();
             if (file.extension() == ".tga") continue;
             std::cout << file.lexically_relative(base) << " test\n";
@@ -556,8 +560,8 @@ class Shader
                 
                 cmpShader(sourceCode.c_str(), &value);
                 
-                if (fs::last_write_time(key) > lastWrite) {
-                lastWrite = fs::last_write_time(key);}
+                if (std::filesystem::last_write_time(key) > lastWrite) {
+                lastWrite = std::filesystem::last_write_time(key);}
 
             } else std::cout << key << " ERROR: cant open file \n";
 
@@ -628,9 +632,9 @@ class Renderer<"software"> {
     }
 
     inline void clear() {
-        for (int i = 0;; i+=100) {
+        for (size_t i = 0;; i+=100) {
             uint8* buffview = buffer + i;
-            for(int n = 0; n <= (i >= bufferSize ? Math::abs(bufferSize - i) : 100) ;++n) {
+            for(size_t n = 0; n <= (i >= bufferSize ? Math::abs(bufferSize - i) : 100) ;++n) {
                 *(buffview + n) = 0;
             }
             if(i >= bufferSize) break;

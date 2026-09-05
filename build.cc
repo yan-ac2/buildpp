@@ -71,7 +71,7 @@ int test()
 
     #ifdef _WIN32
     test.setCompiler("clang++")
-    .setOptions("-O2 -flto -Wall -std=c++20 -fno-rtti")
+    .setOptions("-O2 -Wall -Wextra -Wpedantic -Werror -std=c++20 -fno-rtti")
     .setLdOptions("-s ")
     #elif __unix__
     test.setCompiler("clang++")
@@ -112,8 +112,8 @@ int selfCompile(bool recompile)
 
     #ifdef _WIN32
     rebuild.setCompiler("clang++")
-    .setOptions("-Os -flto=thin -fno-rtti -fuse-ld=lld -Wall -std=c++23")
-    .setLdOptions("-s")
+    .setOptions("-Os -Wall -Wextra -Wpedantic -Werror -fno-rtti -fuse-ld=lld -std=c++20")
+    .setLdOptions("-fuse-ld=lld")
     #elif __unix__
     rebuild.setCompiler("clang++")
     .setOptions("-O3 -Wall -std=c++26 -stdlib=libc++ ")
@@ -196,8 +196,8 @@ int compileProject(bool recompile)
     
         #ifdef _WIN32
         mainProj.setCompiler("clang++")
-        .setOptions(" -O2 -flto=thin -fno-rtti -fno-exceptions -fuse-ld=lld -std=c++26")
-        .setLdOptions("-s ")
+        .setOptions(" -O2 -Wall -Wextra -Wpedantic -Werror -flto=thin -fno-rtti -fno-exceptions -std=c++26")
+        .setLdOptions("-fuse-ld=lld ")
         #elif __unix__
         mainProj.setCompiler("clang++")
         .setOptions("-O3 -fno-exceptions  -stdlib=libc++ -std=c++26")
@@ -225,7 +225,7 @@ int compileProject(bool recompile)
         // .addDependency("lib.std.ccm",{"c++","c++abi"})
         #endif
         .dumpProject()
-        .compilePCH("pch.hpp")
+        // .compilePCH("pch.hpp")
         ;
 
         // while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};

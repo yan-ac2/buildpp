@@ -1,6 +1,6 @@
 
 #include <iostream>
-#include <ranges>
+// #include <ranges>
 #include "match.hpp"
 
 // --- A. Numeric & Range matching ---
@@ -39,7 +39,7 @@ void showcase_hash_labels(std::string_view command) {
             }
         },
         Case("pause")           >> [] { return "System Paused."; },
-        Case<"err">(__)   >> [](std::string_view& s) { return "err"; },
+        Case<"err">(__)   >> []() { return "err"; },
         []{return "UNDEFINED!";}
     );
 
@@ -98,7 +98,7 @@ int main () {
     // -------------------------------------------------------------
     int number = -43;
     std::string_view num_res = match(number)()(
-        Case(&is_even)     >> [] { return "Even Number"; },
+        Case(ProjectionCase(true,&is_even))     >> [] { return "Even Number"; },
         Case(&is_positive) >> [] { return "Positive Odd Number"; },
         [] { return "Other"; }
     );
@@ -110,7 +110,7 @@ int main () {
     User u1{"Alice", 22, true};
     
     std::string_view user_res = match(u1)() (
-        Case(Predicate(&User::is_adult))  >> [] { return "Adult User"; },
+        Case(ProjectionCase(true,&User::is_adult))  >> [] { return "Adult User"; },
         Case(Predicate(&User::is_active)) >> [] { return "Active Minor"; },
         [] { return "Inactive Minor"; }
     );

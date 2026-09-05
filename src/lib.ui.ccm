@@ -1,18 +1,17 @@
 module;
 #include "pch.hpp"
 #include <cstddef>
-#include <span>
+
 export module lib.ui;
-import lib.std;
 import lib.types;
 import lib.win;
 
 export
 struct Rect {
-    Vec2<float> pos;
-    Vec2<float> size;
+    Vec2<f32> pos;
+    Vec2<f32> size;
 
-    constexpr bool contains(Vec2<float> pt) const noexcept {
+    constexpr bool contains(Vec2<f32> pt) const noexcept {
         return pt.x >= pos.x && pt.x <= (pos.x + size.x) &&
                 pt.y >= pos.y && pt.y <= (pos.y + size.y);
     }
@@ -20,22 +19,22 @@ struct Rect {
 
 export
 struct ui_ctx {
-    Vec2<float> pos;
-    Vec2<float> uv;
+    Vec2<f32> pos;
+    Vec2<f32> uv;
     Vec4<uint8> color;
 };
 
 export
 struct GLDrawCmd {
-    uint32_t element_count = 0; // Number of indices/vertices
-    uint32_t index_offset  = 0; // Offset in index buffer
-    uint32_t vertex_offset = 0; // Offset in vertex buffer
-    uint64_t texture_id    = 0; // Texture handle (0 = white texture for flat rects)
+    uint32 element_count = 0; // Number of indices/vertices
+    uint32 index_offset  = 0; // Offset in index buffer
+    uint32 vertex_offset = 0; // Offset in vertex buffer
+    uint64 texture_id    = 0; // Texture handle (0 = white texture for flat rects)
 };
 
 export
 struct InputState {
-    Vec2<float> mouse_pos{0.0f, 0.0f};
+    Vec2<f32> mouse_pos{0.0f, 0.0f};
     bool mouse_down{false};
     bool mouse_clicked{false}; // Single frame trigger
 };
@@ -270,8 +269,8 @@ public:
     InputState input;
     // Style default_style;
     std::vector<DrawCommand> draw_list;
-    uint64_t hovered_id = 0;
-    uint64_t active_id  = 0;
+    u64 hovered_id = 0;
+    u64 active_id  = 0;
     uiContext(std::variant<GLUIRenderer*> back) : backend(back) {}
     void begin_frame(InputState current_input) {
         input = current_input;

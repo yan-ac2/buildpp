@@ -1,7 +1,14 @@
 module;
 
+#include <type_traits>
+#include <chrono>
+#include <vector>
+#include <fstream>
+#include <random>
+#include <filesystem>
+
 export module lib.utl;
-import lib.std;
+import lib.types;
 
 export {
     template <class Ty, Ty Val>
@@ -38,15 +45,12 @@ export {
     
     template<auto V> inline constexpr integral_constant<decltype(V), V> Comptime{};
 }
-enum test : int {
-    t,w2
-};
 
 export
 namespace Math {
     // template <typename T> concept 
     template<typename T> requires (std::integral<std::decay_t<T>> || std::floating_point<std::decay_t<T>>)
-    inline consteval std::size_t maxDigits() {
+    inline consteval size_t maxDigits() {
         using Unqualified = std::remove_cvref_t<T>;
         if (std::integral<Unqualified>) {
             constexpr bool isSigned = std::is_signed_v<Unqualified>;
@@ -56,19 +60,19 @@ namespace Math {
         }
     }
 
-    inline constexpr double PI          = 3.14159265358979323846;
-    inline constexpr double TWO_PI      = 2.0 * PI;
-    inline constexpr double TWO_PI_DIV  = 1 / TWO_PI;
-    inline constexpr double HALF_PI     = PI / 2.0;
-    inline constexpr double E           = 2.71828182845904523536;
-    inline constexpr double DEG_TO_RAD  = PI / 180.0;
-    inline constexpr double RAD_TO_DEG  = 180.0 / PI;
-    inline constexpr double BRAD16_TO_RAD = (2.0 * Math::PI) / 65536.0;
-    inline constexpr double RAD_TO_BRAD16 = 65536.0 / (2.0 * Math::PI);
-    inline constexpr std::array<double, 19> CompactPow10 = []() consteval {
-        std::array<double, 19> arr{};
+    inline constexpr f64 PI          = 3.14159265358979323846;
+    inline constexpr f64 TWO_PI      = 2.0 * PI;
+    inline constexpr f64 TWO_PI_DIV  = 1 / TWO_PI;
+    inline constexpr f64 HALF_PI     = PI / 2.0;
+    inline constexpr f64 E           = 2.71828182845904523536;
+    inline constexpr f64 DEG_TO_RAD  = PI / 180.0;
+    inline constexpr f64 RAD_TO_DEG  = 180.0 / PI;
+    inline constexpr f64 BRAD16_TO_RAD = (2.0 * Math::PI) / 65536.0;
+    inline constexpr f64 RAD_TO_BRAD16 = 65536.0 / (2.0 * Math::PI);
+    inline constexpr std::array<f64, 19> CompactPow10 = []() consteval {
+        std::array<f64, 19> arr{};
         arr[0] = 1.0;
-        for (std::size_t i = 1; i < arr.size(); ++i) {
+        for (size_t i = 1; i < arr.size(); ++i) {
             arr[i] = arr[i - 1] * 10.0;
         }
         return arr;
@@ -367,8 +371,409 @@ namespace Math {
         }
     };
 };
-// static constexpr pow10 test;
-// static constexpr double test2 = Math::sin(90.0 * Math::DEG_TO_RAD);
-// static_assert(Math::cachedSin(Math::BradDegree(10)) == Math::sin(10 * Math::DEG_TO_RAD)," " );
-static_assert(Math::Radians(Math::Radians::fromDegrees(90)).toDegrees() == 90," " );
-static_assert(Math::digitLength(123342) == 6," " );
+
+
+template <typename T>
+concept Formattable = 
+    requires(T t) { { std::string_view(t) } -> std::same_as<std::string_view>; } || 
+    std::integral<std::decay_t<T>> ||
+    std::floating_point<std::decay_t<T>>;
+
+template <typename... Args>
+concept onlyStr = (Formattable<Args> && ...);
+
+export
+struct fmt {
+    std::string str;
+
+    enum colors {
+        Not_color,
+        Black,     Bold_Black,     High_Black,
+        Red,       Bold_Red,       High_Red,
+        Green,     Bold_Green,     High_Green,
+        Yellow,    Bold_Yellow,    High_Yellow,
+        Blue,      Bold_Blue,      High_Blue,
+        Purple,    Bold_Purple,    High_Purple,
+        Cyan,      Bold_Cyan,      High_Cyan,
+        White,     Bold_White,     High_White,
+    };
+
+    // 1. Variadic Concatenation Constructor: fmt("hello ", 123, " world")
+    template<onlyStr... Args>
+    constexpr fmt(Args&&... args) {
+        varConcat(std::forward<Args>(args)...);
+    }
+    template<onlyStr... Args>
+    constexpr fmt& varConcat(Args&&... args) { 
+        size_t preAlloc = (getArgSize(args) + ... + 0);
+        str.reserve(preAlloc);
+        (appendArg(std::forward<Args>(args)), ...);
+        return *this;
+    }
+    // 2. Format String Constructor: fmt("Value: {}, Status: {}", 42, "OK")
+    template<onlyStr... Args>
+    constexpr fmt(const char* in, Args&&... args) {
+        if (std::string_view(in).find('{') == std::string_view::npos) {
+            varConcat(in, std::forward<Args>(args)...);
+            return;
+        }
+        std::string_view fmtStr(in);
+        size_t preAlloc = fmtStr.size() + (getArgSize(args) + ... + 0);
+        size_t lastPos = 0;
+
+        // Lambda executed once per parameter in fold expression
+        auto processArg = [this, &fmtStr, &lastPos](auto&& arg) {
+            size_t pBegin = fmtStr.find('{',lastPos);
+            if (pBegin != std::string_view::npos) {
+                size_t pEnd = fmtStr.find('}', pBegin + 1);
+                if (pEnd != std::string_view::npos) {
+                    str.append(fmtStr.substr(lastPos, pBegin - lastPos));
+                    appendArg(std::forward<decltype(arg)>(arg));
+                    lastPos = pEnd + 1;
+                }
+            }
+        };
+
+        str.reserve(preAlloc);
+        (processArg(std::forward<Args>(args)), ...);
+        if (lastPos < fmtStr.size()) {
+            str.append(fmtStr.substr(lastPos));
+        }
+    }
+
+    // Apply ANSI Color
+    constexpr fmt& color(colors c) { 
+        str.reserve(str.size() + 14);
+        str.insert(0, this->getColor(c));
+        str.append(this->getColor(Not_color));
+        return *this;
+    }
+
+    // Collapse multiple contiguous spaces into a single space
+    constexpr fmt& clean() { 
+        if (str.empty()) return *this;
+
+        size_t writeIdx = 0;
+        bool inSpace = false;
+
+        for (size_t readIdx = 0; readIdx < str.size(); ++readIdx) {
+            char c = str[readIdx];
+            if (c == ' ') {
+                if (!inSpace) {
+                    str[writeIdx++] = c;
+                    inSpace = true;
+                }
+            } else {
+                str[writeIdx++] = c;
+                inSpace = false;
+            }
+        }
+        str.resize(writeIdx);
+        return *this;
+    }
+
+    constexpr fmt& endl() { str.append("\n"); return *this; }
+
+    constexpr std::string_view sv() const { return str; }
+    constexpr const char* cstr() const { return str.c_str(); }
+    constexpr operator std::string_view() const { return sv(); }
+    constexpr operator const char*() const { return cstr(); }
+    
+    friend std::ostream& operator<<(std::ostream& os, const fmt& f) {
+        return os << f.str;
+    }
+
+private:
+    struct formatHelper {
+        int attr = 0;
+        int attr2 = 0;
+        constexpr formatHelper() {}
+    };
+
+    template<onlyStr T>
+    constexpr size_t getArgSize(const T& arg) const {
+        using Raw = std::remove_cvref_t<T>;
+        if constexpr (std::is_convertible_v<Raw, std::string_view>) {
+            return std::string_view (arg).size();
+        } else if constexpr (std::integral<Raw>) {
+            return Math::digitLength(arg);
+        } else if constexpr (std::floating_point<Raw>) {
+            return Math::digitLength(arg);
+        }
+        return 0;
+    }
+
+    template<onlyStr T>
+    constexpr void appendArg(T&& arg) {
+        using Raw = std::remove_cvref_t<T>;
+        if constexpr (std::is_convertible_v<Raw, std::string_view>) {
+            str += std::string_view(arg);
+        } else if constexpr (std::integral<Raw>) {
+            char digit[Math::maxDigits<Raw>()];
+            auto [eDigit, ec] = std::to_chars(digit, digit + Math::maxDigits<Raw>(), std::forward<T>(arg));
+            str.append(digit, static_cast<std::size_t>(eDigit - digit));
+        } else if constexpr (std::floating_point<Raw>) {
+            char digit[Math::maxDigits<Raw>()];
+            auto [eDigit, ec] = std::to_chars(digit, digit + Math::maxDigits<Raw>(), std::forward<T>(arg));
+            str.append(digit, static_cast<std::size_t>(eDigit - digit));
+        } else {
+            __builtin_unreachable();
+        }
+    }
+
+    
+
+    constexpr std::string_view getColor(colors color) const {
+        switch (color) {
+            case Not_color:    return "\033[0m";
+            case Black:        return "\033[0;30m";
+            case Red:          return "\033[0;31m";
+            case Green:        return "\033[0;32m";
+            case Yellow:       return "\033[0;33m";
+            case Blue:         return "\033[0;34m";
+            case Purple:       return "\033[0;35m";
+            case Cyan:         return "\033[0;36m";
+            case White:        return "\033[0;37m";
+            case Bold_Black:   return "\033[1;30m";
+            case Bold_Red:     return "\033[1;31m";
+            case Bold_Green:   return "\033[1;32m";
+            case Bold_Yellow:  return "\033[1;33m";
+            case Bold_Blue:    return "\033[1;34m";
+            case Bold_Purple:  return "\033[1;35m";
+            case Bold_Cyan:    return "\033[1;36m";
+            case Bold_White:   return "\033[1;37m";
+            case High_Black:   return "\033[0;90m";
+            case High_Red:     return "\033[0;91m";
+            case High_Green:   return "\033[0;92m";
+            case High_Yellow:  return "\033[0;93m";
+            case High_Blue:    return "\033[0;94m";
+            case High_Purple:  return "\033[0;95m";
+            case High_Cyan:    return "\033[0;96m";
+            case High_White:   return "\033[0;97m";
+            default:           return "";
+        }
+    }
+};
+
+// constexpr std::string s (fmt("{}  hello",453).clean());
+constexpr fmt gs ("{ } hello {}",43,54);
+static_assert(std::string_view(gs) == "43 hello 54", "");
+// s.clean();
+// 
+// constexpr unsigned int a = 0b11010;
+// constexpr unsigned int b = 0b11010;
+// static_assert(pow10<20>[19] == 10000000000000000000ul, "");
+
+export
+template <size_t N>
+struct StaticString
+{
+    char data[N] {};
+
+    constexpr StaticString(const char (&input)[N + 1])
+    {
+        for(size_t i {0};input[i] != '\0';i++) {
+            data[i] = input[i];
+        }
+    }
+    constexpr bool operator ==(const char* other) {
+        return std::string_view(data) == other;
+    }
+    constexpr size_t getSize() const {return N;}
+    constexpr const char* getData () const {return data;}
+    constexpr operator const char*() const {return data;}
+};
+template <size_t N> StaticString(const char(&)[N]) -> StaticString<N - 1>;
+
+template <class Ty,int ID,StaticString S>
+struct var {
+    static constexpr std::string_view Name {S.getData(),S.getSize()};
+    static constexpr int32 id = ID; 
+    using type = Ty;
+};
+
+export
+struct RGBA {
+    uint8 col[4];
+    constexpr RGBA() {}
+    constexpr RGBA(uint8 r,uint8 g,uint8 b,uint8 a) : col(r,g,b,a) {}
+    operator const uint8*() const {return col;}
+    operator uint8*() {return col;}
+    
+};
+
+export
+class model {
+    std::vector<Vec3<f64>> verts = {};
+    std::vector<int32> faces = {};
+    public: 
+    model(const std::filesystem::path file) {
+        static const int8* vert = "v ";
+        static const int8* face = "f ";
+        static const std::filesystem::path path = std::filesystem::current_path();
+        std::ifstream in; in.open( path / file);
+        if (!in) {
+            // std::cerr << "failed " << path / file <<"\n"; 
+            return;}
+        std::string line;
+        while(!in.eof()) {
+            std::getline(in,line);
+            std::istringstream iss(line.c_str());
+            uint8 trash;
+            if (!line.compare(0,2,vert)) {
+                iss >> trash;
+                Vec3<f64> v;
+                for(int32 i :{0,1,2}) iss >> v[i];
+                verts.push_back(v);
+            } else if (!line.compare(0,2,face)) {
+                int32 f,t,n, cnt = 0;
+                iss >> trash;
+                while (iss >> f >> trash >> t >> trash >> n) {
+                    faces.push_back(--f);
+                    cnt++;
+                } 
+                if (3 != cnt) {
+                    // std::cerr <<  "Error: the obj file is supposed to be triangulated \n"; 
+                    return;
+                }
+            }
+        }
+        // std::cerr << "# v# " << nverts() << " f# "  << nfaces() << std::endl;
+    }
+    int32 nverts() const {return verts.size();}
+    int32 nfaces() const {return faces.size()/3;}
+    Vec3<f64> vert(const int32 i) const {return verts[i];}
+    Vec3<f64> vert(const int32 iface,const int32 nthvert) const {return verts[faces[iface*3+nthvert]];}
+};
+
+export
+class FastBoolGenerator {
+public:
+    FastBoolGenerator() : m_rand(0), m_counter(0) {}
+
+    bool next() {
+        if (m_counter == 0) {
+            // Fetch a new 64-bit random number
+            m_rand = std::uniform_int_distribution<uint64>{}(m_gen);
+            m_counter = 64;
+        }
+        // Extract the least significant bit
+        bool result = (m_rand & 1);
+        m_rand >>= 1; // Shift right for next call
+        --m_counter;
+        return result;
+    }
+
+private:
+    std::mt19937 m_gen{std::random_device{}()};
+    uint64_t m_rand;
+    int m_counter;
+};
+
+template <size_t N>
+struct bitBool {
+    // 32 bytes * 8 bits = 256 bits total capacity
+    uint8 bit[N] = {0};
+
+    // Helper proxy class to allow writing: myBits[10] = true;
+    struct BitReference {
+        uint8& byteRef;
+        uint8 mask;
+
+        // Automatically implicitly converts to bool when reading: bool value = myBits[10];
+        operator bool() const {
+            return (byteRef & mask) != 0;
+        }
+
+        // Handles writing: myBits[10] = true;
+        BitReference& operator=(bool value) {
+            if (value) byteRef |= mask;
+            else       byteRef &= ~mask;
+            return *this;
+        }
+    };
+
+    // Non-const operator[]: supports both reading and writing
+    BitReference operator[](size_t IDX) {
+        size_t bytePos = IDX / 8; // Find which of the 32 bytes holds the bit
+        size_t bitPos  = IDX % 8; // Find the bit offset inside that byte
+        
+        uint8 mask = static_cast<uint8>(1 << bitPos);
+        return BitReference{ bit[bytePos], mask };
+    }
+
+    // Const operator[]: for when the bitBool instance is read-only
+    bool operator[](size_t IDX) const {
+        size_t bytePos = IDX / 8;
+        size_t bitPos  = IDX % 8;
+        return (bit[bytePos] & (1 << bitPos)) != 0;
+    }
+};
+
+
+export
+class Clock {
+    using clock = std::chrono::high_resolution_clock;
+    
+    int32 frame_debt= 0; 
+    int32 dt_ms     = 16;
+    Clock() = default;
+    
+    public:
+    using ms = std::chrono::milliseconds;
+    clock::time_point m_start = clock::now();
+    clock::time_point m_end   = clock::now();
+    static Clock& get() {
+        static Clock instance;
+        return instance;
+    }
+    void start() { 
+        m_start = clock::now(); 
+    }
+    
+    int32 end(int32 target_ms) { 
+        m_end = clock::now(); 
+        auto duration = std::chrono::duration_cast<ms>(m_end - m_start);
+        int32 frame_time = static_cast<int32>(duration.count());
+
+        int32 sleep_time = (target_ms - frame_time) - frame_debt;
+
+        if (sleep_time > 0) {
+            frame_debt = 0;
+            dt_ms = frame_time + sleep_time;
+            return sleep_time;
+        } else {
+            frame_debt = static_cast<int32>((-sleep_time) * 0.25f);
+            if (frame_debt > target_ms * 2) {
+                frame_debt = target_ms * 2;
+            }
+            dt_ms = frame_time;
+            return 0;
+        }
+    }
+
+    ms end(ms target_ms) { 
+        m_end = clock::now(); 
+        auto duration = std::chrono::duration_cast<ms>(m_end - m_start);
+
+        ms sleep_time = (target_ms - duration) - ms(frame_debt);
+
+        if (sleep_time > ms(0)) {
+            frame_debt = 0;
+            dt_ms = duration.count() + sleep_time.count();
+            return sleep_time;
+        } else {
+            frame_debt = static_cast<int32>((-sleep_time.count()) * 0.25f);
+            if (frame_debt > target_ms.count() * 2) {
+                frame_debt = target_ms.count() * 2;
+            }
+            dt_ms = duration.count();
+            return ms(0);
+        }
+    }
+    
+    int32 delta_time() const {
+        return dt_ms;
+    }
+    
+};

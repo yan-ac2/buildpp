@@ -24,7 +24,6 @@
 #elif __APPLE__ 
 
 #endif
-
 #include "glHeader.hpp"
 
 #endif

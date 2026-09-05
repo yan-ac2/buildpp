@@ -3,10 +3,10 @@
 #define MATCH_H
 
 
-    // #include <type_traits>
-    // #include <tuple>
-    // #include <utility>
-    #include "mini_std.hpp"
+    #include <type_traits>
+    #include <tuple>
+    #include <utility>
+    // #include "mini_std.hpp"
 
 
 // ============================================================================
@@ -14,7 +14,7 @@
 // ============================================================================
 
 namespace used_std {
-    using namespace mini_std; 
+    using namespace std; 
 
     template <typename T, typename = void>
     struct is_tuple_like : used_std::false_type {};
@@ -37,13 +37,14 @@ namespace used_std {
     template <typename T, typename U>
     inline constexpr bool is_same_template_v = used_std::is_same_template<T, U>::value;
 
+    // Base helper for non-member argument traits
     template <typename Ret, typename... Args>
     struct function_traits_base {
-        using return_type = Ret;
-        using args_tuple  = used_std::tuple<Args...>;
-        using args_tuple_temp = used_std::tuple<used_std::decay_t<Args>&&...>;
-        using args_tuple_ptr = used_std::tuple<used_std::add_pointer_t<used_std::decay_t<Args>>...>;
-        using Idx_seq = used_std::make_index_sequence<sizeof...(Args)>;
+        using return_type     = Ret;
+        using args_tuple      = used_std::tuple<Args...>;
+        using args_tuple_temp = used_std::tuple<used_std::decay_t<Args>...>; // Value types to prevent dangling refs
+        using args_tuple_ptr  = used_std::tuple<used_std::add_pointer_t<used_std::decay_t<Args>>...>;
+        using Idx_seq         = used_std::make_index_sequence<sizeof...(Args)>;
 
         static constexpr used_std::size_t args = sizeof...(Args);
 
@@ -51,89 +52,88 @@ namespace used_std {
         using arg_type = used_std::tuple_element_t<N, args_tuple>;
     };
 
-    // 1. Primary template takes EXACTLY ONE type (the function signature or pointer)
-    template <typename Ret>
+    // 1. Correct Primary Template (Single parameter T)
+    template <typename T>
     struct function_traits;
 
-    // 3. Free function signature: Ret(Args...)
+    // 2. Plain function signature: Ret(Args...)
     template <typename Ret, typename... Args>
-    struct function_traits<Ret(Args...) &> : function_traits_base<Ret, Args...> {
+    struct function_traits<Ret(Args...)> : function_traits_base<Ret, Args...> {
         using fn_type = Ret(Args...);
-    };
-    template <typename Ret, typename... Args>
-    struct function_traits<Ret(Args...) &&> : function_traits_base<Ret, Args...> {
-        using fn_type = Ret(Args...);
+        static constexpr bool is_member   = false;
+        static constexpr bool is_noexcept = false;
     };
 
     template <typename Ret, typename... Args>
-    struct function_traits<Ret(Args...) const> : function_traits_base<Ret, Args...> {
-        using fn_type = Ret(Args...);
+    struct function_traits<Ret(Args...) noexcept> : function_traits_base<Ret, Args...> {
+        using fn_type = Ret(Args...) noexcept;
+        static constexpr bool is_member   = false;
+        static constexpr bool is_noexcept = true;
     };
 
-    // 4. Function pointer: Ret(*)(Args...)
+    // 3. Function Pointers
     template <typename Ret, typename... Args>
-    struct function_traits<Ret(*)(Args...)> : function_traits_base<Ret, Args...> {
+    struct function_traits<Ret(*)(Args...)> : function_traits<Ret(Args...)> {
         using fn_type = Ret(*)(Args...);
     };
-    // 5. Function reference: Ret(&)(Args...)
+
     template <typename Ret, typename... Args>
-    struct function_traits<Ret(&)(Args...)> : function_traits_base<Ret, Args...> {
+    struct function_traits<Ret(*)(Args...) noexcept> : function_traits<Ret(Args...) noexcept> {
+        using fn_type = Ret(*)(Args...) noexcept;
+    };
+
+    // 4. Function References
+    template <typename Ret, typename... Args>
+    struct function_traits<Ret(&)(Args...)> : function_traits<Ret(Args...)> {
         using fn_type = Ret(&)(Args...);
     };
-    // 6. Member function: Ret(Class::*)(Args...)
-    template <typename Ret, typename Class, typename... Args>
-    struct function_traits<Ret(Class::*)(Args...)> : function_traits_base<Ret, Args...> {
-        using class_type = Class;
-        using fn_type    = Ret(Class::*)(Args...);
-        using args_tuple_class_temp = used_std::tuple<used_std::add_pointer_t<used_std::decay_t<class_type>>,used_std::decay_t<Args>&&...>;
-        
-        static constexpr bool is_member   = true;
-        static constexpr bool is_noexcept = true;
-    };
-    // Non-const Member Function (noexcept)
-    template <typename Ret, typename Class, typename... Args>
-    struct function_traits<Ret(Class::*)(Args...) noexcept> 
-    : function_traits_base<Ret, Args...> {
-        using class_type = Class;
-        using fn_type    = Ret(Class::*)(Args...) noexcept;
-        using args_tuple_class_temp = used_std::tuple<Class*, used_std::decay_t<Args>...>;
-        static constexpr bool is_member   = true;
-        static constexpr bool is_noexcept = true;
+
+    template <typename Ret, typename... Args>
+    struct function_traits<Ret(&)(Args...) noexcept> : function_traits<Ret(Args...) noexcept> {
+        using fn_type = Ret(&)(Args...) noexcept;
     };
 
-    // 7. Const member function: Ret(Class::*)(Args...) const
-    template <typename Ret, typename Class, typename... Args>
-    struct function_traits<Ret(Class::*)(Args...) const> : function_traits_base<Ret, Args...> {
-        using class_type = const Class;
-        using fn_type    = Ret(Class::*)(Args...) const;
-        using args_tuple_class_temp = used_std::tuple<used_std::add_pointer_t<const used_std::decay_t<class_type>>,used_std::decay_t<Args>&&...>;
-        
-        static constexpr bool is_member   = true;
-        static constexpr bool is_noexcept = true;
+    // Macro helper to generate member function pointer specializations cleanly
+    #define DEFINE_MEMBER_FUNCTION_TRAITS(QUALIFIERS, NOEXCEPT_VAL)                       \
+    template <typename Ret, typename Class, typename... Args>                             \
+    struct function_traits<Ret (Class::*)(Args...) QUALIFIERS>                            \
+        : function_traits_base<Ret, Args...> {                                           \
+        using class_type = Class;                                                        \
+        using fn_type    = Ret (Class::*)(Args...) QUALIFIERS;                           \
+        using args_tuple_class_temp = used_std::tuple<Class*, used_std::decay_t<Args>...>;\
+        static constexpr bool is_member   = true;                                        \
+        static constexpr bool is_noexcept = NOEXCEPT_VAL;                                \
     };
 
+    // Generate for standard combinations of const / volatile / ref / noexcept
+    DEFINE_MEMBER_FUNCTION_TRAITS(, false)
+    DEFINE_MEMBER_FUNCTION_TRAITS(const, false)
+    DEFINE_MEMBER_FUNCTION_TRAITS(volatile, false)
+    DEFINE_MEMBER_FUNCTION_TRAITS(const volatile, false)
+    DEFINE_MEMBER_FUNCTION_TRAITS(&, false)
+    DEFINE_MEMBER_FUNCTION_TRAITS(const &, false)
+    DEFINE_MEMBER_FUNCTION_TRAITS(&&, false)
 
-    // Const Member Function (noexcept)
-    template <typename Ret, typename Class, typename... Args>
-    struct function_traits<Ret(Class::*)(Args...) const noexcept> 
-    : function_traits_base<Ret, Args...> {
-        using class_type = const Class;
-        using fn_type    = Ret(Class::*)(Args...) const noexcept;
-        using args_tuple_class_temp = used_std::tuple<const Class*, used_std::decay_t<Args>...>;
-        static constexpr bool is_member   = true;
-        static constexpr bool is_noexcept = true;
-    };
+    DEFINE_MEMBER_FUNCTION_TRAITS(noexcept, true)
+    DEFINE_MEMBER_FUNCTION_TRAITS(const noexcept, true)
+    DEFINE_MEMBER_FUNCTION_TRAITS(volatile noexcept, true)
+    DEFINE_MEMBER_FUNCTION_TRAITS(const volatile noexcept, true)
+    DEFINE_MEMBER_FUNCTION_TRAITS(& noexcept, true)
+    DEFINE_MEMBER_FUNCTION_TRAITS(const & noexcept, true)
+    DEFINE_MEMBER_FUNCTION_TRAITS(&& noexcept, true)
 
-    template <typename T>
+    #undef DEFINE_MEMBER_FUNCTION_TRAITS
+
+    // 5. Callable traits dispatcher
+    template <typename T, typename = void>
     struct callable_traits {
-        using type = typename used_std::function_traits<T>;
+        using type = function_traits<T>;
     };
 
-    // Handle Functors/Lambdas (whether they have a const or non-const operator())
+    // Specialization for Lambdas / Functors with operator()
     template <typename T>
-    requires requires { &T::operator(); }
-    struct callable_traits<T> {
-        using type = typename used_std::function_traits<decltype(&T::operator())>;
+    struct callable_traits<T, used_std::void_t<decltype(&T::operator())>> {
+        using type = typename callable_traits<decltype(&T::operator())>::type;
     };
 
     template <typename T>
@@ -398,10 +398,6 @@ struct StaticLabel {
         *this = StaticLabel(val);
         return *this;
     }
-    constexpr StaticLabel& operator=(const StaticLabel& other) noexcept {
-        this->hash = other.hash;
-        return *this;
-    }
 };
 
 // DSL range view builder for standard continuous iterators
@@ -432,10 +428,11 @@ enum class FlowKind : int {
 };
 
 
+struct DefaultState{};
 struct Wildcard {};
 [[maybe_unused]] inline constexpr Wildcard __{};
 
-enum class BranchHint { None, Likely, Unlikely };
+// enum class BranchHint { None, Likely, Unlikely };
 
 template <FlowKind Kind>
 struct SignalBase {
@@ -447,10 +444,10 @@ struct fallthrough_t : SignalBase<FlowKind::Fallthrough> {};
 
 // 2. Dynamic Hash Goto
 struct goto_hash_t : SignalBase<FlowKind::Goto> { 
-    unsigned int hash {0}; 
+    const StaticLabel label {0}; 
 
     constexpr goto_hash_t() = default;
-    constexpr explicit goto_hash_t(unsigned int h) noexcept : hash(h) {}
+    constexpr explicit goto_hash_t(StaticLabel h) noexcept : label(h) {}
 };
 
 // 3. Static Label Goto (adds compile-time label metadata directly)
@@ -462,7 +459,7 @@ struct goto_case_t : SignalBase<FlowKind::Goto> {
 
 
 inline constexpr fallthrough_t fallthrough = fallthrough_t{};
-template <StaticLabel LabelID> inline constexpr goto_hash_t Goto = goto_hash_t{LabelID.hash};
+template <StaticLabel LabelID> inline constexpr goto_hash_t Goto = goto_hash_t{LabelID};
 template <StaticLabel LabelID> inline constexpr goto_case_t<LabelID> Goto_v = goto_case_t<LabelID>{};
 
 namespace concepts {
@@ -471,16 +468,16 @@ namespace concepts {
     
     template <typename T>
     concept IsGotoSignal = used_std::derived_from<used_std::decay_t<T>, SignalBase<FlowKind::Goto>>;
-    template <typename T>
-    concept IsGotoValue = requires (T t) {
-        requires IsGotoSignal<T> and t.value;
-    };
+    // template <typename T>
+    // concept IsGotoValue = requires (T t) {
+    //     requires IsGotoSignal<T> and t.value;
+    // };
     template <typename T>
     concept IsFallthroughSignal = used_std::derived_from<used_std::decay_t<T>, SignalBase<FlowKind::Fallthrough>>;
-    template <typename T>
-    concept IsFallthroughValue = requires (T t) {
-        requires IsFallthroughSignal<T> and t.value;
-    };
+    // template <typename T>
+    // concept IsFallthroughValue = requires (T t) {
+    //     requires IsFallthroughSignal<T> and t.value;
+    // };
     
     // 2. Static vs Dynamic Goto Differentiation
     template <typename T>
@@ -520,6 +517,8 @@ template <IsCallableType Fn>
 struct FnPredicate {
     Fn fn;
     typename Free_Function_helper<Fn>::type* instance;
+    FnPredicate(Fn&& fin) : fn(used_std::forward<Fn>(fin)) {}
+    FnPredicate(Fn&& fin, decltype(instance) inst) : fn(used_std::forward<Fn>(fin)),instance(inst) {}
     template <typename Target>
     constexpr bool operator()(const Target& target) const {
         if constexpr (used_std::is_member_function_pointer_v<used_std::remove_pointer_t<Fn>>) {
@@ -534,40 +533,87 @@ struct FnPredicate {
     }
 };
 
+
+template <IsCallableType Fn>
+constexpr auto Predicate(Fn&& fn) {
+    return FnPredicate<Fn>(used_std::forward<Fn>(fn));
+}
+template <IsCallableType Fn,typename Class> 
+constexpr auto Predicate(Fn&& fn,Class* obj) {
+    return FnPredicate<Fn>(used_std::forward<Fn>(fn) ,obj);
+}
+
 template <IsCallableType T>
 struct Projection_Function_helper {
     using type = typename used_std::callable_traits_t<T>::args_tuple_temp;
 };
 
-// Only instantiate callable_traits_t if T is a member function pointer
-template <IsCallableType T>
-requires used_std::is_member_function_pointer_v<T>
-struct Projection_Function_helper<T> {
-    using type = typename used_std::callable_traits_t<T>::args_tuple_class_temp;
-};
 // --- Projection Case (Pattern + Member Function Extractor) ---
 template <IsCallableType Fn, typename ExpectedPattern>
 struct ProjectionCaseimpl {
-    using fnTraits = used_std::callable_traits_t<Fn>;
-    fnTraits::fn_type fn;
-    Projection_Function_helper<Fn>::type args;
+    using fnTraits = typename used_std::callable_traits_t<Fn>;
+    typename fnTraits::fn_type fn;
+    typename Projection_Function_helper<Fn>::type args;
     ExpectedPattern pattern;
-    template <typename Target>
-    constexpr bool operator()(const Target& target) const {
-        if constexpr (fnTraits::args > 0) {
-            decltype(auto) extracted_val = used_std::apply(fn,args);
-            return evaluate_match(extracted_val, pattern);
-        } else {
-            if constexpr (used_std::is_member_function_pointer_v<Fn>) {
-                decltype(auto) extracted_val = used_std::apply(fn,args);
-                return evaluate_match(extracted_val, pattern);
-            } else {
-                decltype(auto) extracted_val = used_std::invoke(fn);
-                return evaluate_match(extracted_val, pattern);
-            }
-        }
+
+    // Single-argument constructor (no projection args)
+    ProjectionCaseimpl(Fn&& f, ExpectedPattern&& p) 
+        : fn(used_std::forward<Fn>(f)), 
+          args{}, 
+          pattern(used_std::forward<ExpectedPattern>(p)) {}
+
+    // Constructor accepting fn, tuple of args, and pattern
+    template<typename TupleArgs>
+    ProjectionCaseimpl(Fn&& f, TupleArgs&& a, ExpectedPattern&& p) 
+        : fn(used_std::forward<Fn>(f)), 
+          args(used_std::forward<TupleArgs>(a)),
+          pattern(used_std::forward<ExpectedPattern>(p)) {}
+
+    template<typename T = void>
+    constexpr bool operator()() const {
+        // std::apply handles both regular functions and member function pointers 
+        // when arguments (including instance pointer/ref) are packed in a tuple.
+        decltype(auto) extracted_val = used_std::apply(fn, args);
+        return evaluate_match(extracted_val, pattern);
     }
 };
+
+// Case 1: No extra arguments
+template <typename ExpectedPattern, IsCallableType Fn>
+constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn&& fn) {
+    using fn_t = typename used_std::callable_traits_t<used_std::remove_cvref_t<Fn>>::fn_type;
+    return ProjectionCaseimpl<fn_t, used_std::decay_t<ExpectedPattern>>(
+        used_std::forward<Fn>(fn),
+        used_std::forward<ExpectedPattern>(pattern)
+    );
+}
+
+// Case 2: General arguments
+template <typename ExpectedPattern, IsCallableType Fn, typename... Args>
+constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn&& fn, Args&&... args) {
+    using fnTraits = used_std::callable_traits_t<used_std::remove_cvref_t<Fn>>;
+    static_assert(sizeof...(Args) <= fnTraits::args, "Too many arguments provided for projection function");
+
+    using fn_t = typename fnTraits::fn_type;
+    return ProjectionCaseimpl<fn_t, used_std::decay_t<ExpectedPattern>>(
+        used_std::forward<Fn>(fn), 
+        used_std::make_tuple(used_std::forward<Args>(args)...),
+        used_std::forward<ExpectedPattern>(pattern)
+    );
+}
+
+// Case 3: Explicit object instance + member arguments
+template <typename ExpectedPattern, IsCallableType Fn, typename Class, typename... Args>
+constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn&& fn, Class* instance, Args&&... args) {
+    using fnTraits = used_std::callable_traits_t<used_std::remove_cvref_t<Fn>>;
+    using fn_t = typename fnTraits::fn_type;
+
+    return ProjectionCaseimpl<fn_t, used_std::decay_t<ExpectedPattern>>(
+        used_std::forward<Fn>(fn), 
+        used_std::make_tuple(instance, used_std::forward<Args>(args)...),
+        used_std::forward<ExpectedPattern>(pattern)
+    );
+}
 
 template <typename T> struct is_fn_predicate : used_std::false_type {};
 template <typename Fn> struct is_fn_predicate<FnPredicate<Fn>> : used_std::true_type {};
@@ -581,47 +627,7 @@ template <typename MemFn, typename ExpectedPattern>
 concept is_projection_case = is_projection_caseimpl<ProjectionCaseimpl<MemFn,ExpectedPattern>>::value;
 
 
-template <IsCallableType Fn>
-constexpr auto Predicate(Fn&& fn) {
-    return FnPredicate<Fn>{ used_std::forward<Fn>(fn) };
-}
-template <IsCallableType Fn,typename Class> 
-constexpr auto Predicate(Fn&& fn,Class* obj) {
-    return FnPredicate<Fn>{ .fn=used_std::forward<Fn>(fn) ,.instance=obj};
-}
 
-// Helper builder function for Case(Pattern, &fn)
-template <typename ExpectedPattern, IsCallableType Fn,typename... Args>
-constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn fn,Args&&... args) {
-    using fnTraits = used_std::callable_traits_t<used_std::remove_cvref_t<Fn>>;
-    static_assert(sizeof...(Args) <= fnTraits::args, "Too many arguments provided for projection function");
-    // static_assert(sizeof...(Args) < fnTraits::args, "Not Enough Arguments");
-    return ProjectionCaseimpl<typename fnTraits::fn_type, used_std::decay_t<ExpectedPattern>>{
-        .fn = fn, 
-        .args = used_std::forward_as_tuple(used_std::forward<Args>(args)...),
-        .pattern = used_std::forward<ExpectedPattern>(pattern)
-    };
-}
-// Helper builder function for Case(Pattern, &Class::member_fn)
-template <typename ExpectedPattern, IsCallableType Fn,typename Class,typename... Args>
-constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn fn,Class* instance,Args&&... args) {
-    using fnTraits = used_std::callable_traits_t<used_std::remove_cvref_t<Fn>>;
-    if constexpr (sizeof...(Args) == 0) {
-        using classType = Class*;
-        return ProjectionCaseimpl<typename fnTraits::fn_type, used_std::decay_t<ExpectedPattern>>{
-            .fn = fn, 
-            .args = used_std::tuple<classType>(instance),
-            .pattern = used_std::forward<ExpectedPattern>(pattern)
-        };
-    } else {
-        return ProjectionCaseimpl<typename fnTraits::fn_type, used_std::decay_t<ExpectedPattern>>{
-            .fn = fn, 
-            .args = used_std::forward_as_tuple(instance,used_std::forward<Args>(args)...),
-            .pattern = used_std::forward<ExpectedPattern>(pattern)
-        };
-
-    }
-}
 
 // ============================================================================
 // MATH INTERVAL DEFINITIONS
@@ -1051,34 +1057,34 @@ template <typename TargetType, typename KeyType>
 // ============================================================================
 // CASE STORAGE WITH HINT PARAMETERS
 // ============================================================================
-template <BranchHint Hint>
-[[nodiscard]] inline constexpr bool apply_hardware_hint(bool condition) noexcept {
-    if constexpr (Hint == BranchHint::Likely) {
-#if defined(__GNUC__) || defined(__clang__)
-        return __builtin_expect(static_cast<bool>(condition), 1);
-#else
-        if (condition) [[likely]] {
-            return true;
-        } else [[unlikely]] {
-            return false;
-        }
-#endif
-    } 
-    else if constexpr (Hint == BranchHint::Unlikely) {
-#if defined(__GNUC__) || defined(__clang__)
-        return __builtin_expect(static_cast<bool>(condition), 0);
-#else
-        if (condition) [[unlikely]] {
-            return true;
-        } else [[likely]] {
-            return false;
-        }
-#endif
-    } 
-    else {
-        return condition;
-    }
-}
+// template <BranchHint Hint>
+// [[nodiscard]] inline constexpr bool apply_hardware_hint(bool condition) noexcept {
+//     if constexpr (Hint == BranchHint::Likely) {
+// #if defined(__GNUC__) || defined(__clang__)
+//         return __builtin_expect(static_cast<bool>(condition), 1);
+// #else
+//         if (condition) [[likely]] {
+//             return true;
+//         } else [[unlikely]] {
+//             return false;
+//         }
+// #endif
+//     } 
+//     else if constexpr (Hint == BranchHint::Unlikely) {
+// #if defined(__GNUC__) || defined(__clang__)
+//         return __builtin_expect(static_cast<bool>(condition), 0);
+// #else
+//         if (condition) [[unlikely]] {
+//             return true;
+//         } else [[likely]] {
+//             return false;
+//         }
+// #endif
+//     } 
+//     else {
+//         return condition;
+//     }
+// }
 
 template <typename ActionType, typename ContextType> 
 inline constexpr decltype(auto) execute_action(ActionType&& action, ContextType& ctx) {
@@ -1115,31 +1121,19 @@ inline constexpr decltype(auto) execute_action(ActionType&& action, ContextType&
     } 
 }
 
-struct SelfBase {};
-
-template <typename Derived>
-struct Self : public SelfBase {
-    using ConcreteType = Derived;
-    constexpr Derived& self() noexcept { 
-        return static_cast<Derived&>(*this); 
-    }
-    
-    constexpr const Derived& self() const noexcept { 
-        return static_cast<const Derived&>(*this); 
-    }
-};
-
-template <StaticLabel LabelID,BranchHint HintValue = BranchHint::None, typename KeyType = Wildcard, typename ActionType = Wildcard>
+template <StaticLabel LabelID, typename KeyType = DefaultState, typename ActionType = DefaultState>
 struct ImplCase {
     KeyType key;
     ActionType action;
     static constexpr auto label = LabelID;
-    static constexpr BranchHint hint = HintValue;
+    constexpr ImplCase(KeyType&& k) : key(used_std::forward<KeyType>(k)) {}
+    constexpr ImplCase(const KeyType& k) : key(k) {}
+    constexpr ImplCase(KeyType&& k,ActionType&& a) : key(used_std::forward<KeyType>(k)), action(used_std::forward<ActionType>(a)) {}
+    constexpr ImplCase(KeyType&& k,const ActionType& a) : key(used_std::forward<KeyType>(k)), action(a) {}
     template <typename NewAction>
     inline constexpr auto operator>>(NewAction&& action) && noexcept {
-        return ImplCase<LabelID,HintValue, KeyType, used_std::decay_t<NewAction>>{
-            .key=used_std::move(key), .action=used_std::forward<NewAction>(action)
-        };
+        return ImplCase<LabelID, KeyType, used_std::decay_t<NewAction>>
+        (used_std::move(key),used_std::forward<NewAction>(action));
     }
 
     template<used_std::size_t Is>
@@ -1150,17 +1144,16 @@ struct ImplCase {
         using PureStateType = used_std::remove_cvref_t<decltype(current_state)>;
         if constexpr (Is >= TotalCases) {
             __builtin_unreachable();
-            return PureStateType{Is, current_state.current_target, false, false};
+            return PureStateType{Is, current_state.current_target, false, false, {}};
         } else {
             auto& current_case = used_std::get<Is>(cases);
-            using RawCaseType = typename used_std::decay<decltype(current_case)>::type;
 
-            if (current_state.jump_signal or apply_hardware_hint<RawCaseType::hint>(evaluate_match(current_state.current_target, current_case.key))) {
-                using RawActionResult = decltype(execute_action(current_case.action, ctx));
+            if (current_state.jump_signal or evaluate_match(current_state.current_target, current_case.key)) {
+                using RawActionResult = decltype(execute_action(current_case.action,ctx));
 
                 if constexpr (used_std::is_same_v<RawActionResult, void> || used_std::is_same_v<RawActionResult, Wildcard>) {
                     execute_action(current_case.action, ctx);
-                    return PureStateType{Is, current_state.current_target, false, true};
+                    return PureStateType{Is, current_state.current_target, false, true, {}};
                 } else {
                     decltype(auto) action_result = execute_action(current_case.action, ctx);
                     using CaseActionDecay = used_std::decay_t<decltype(action_result)>;
@@ -1171,57 +1164,51 @@ struct ImplCase {
                         
                         if constexpr (comptime_index >= TotalCases) {
                             __builtin_unreachable();
-                            return PureStateType{Is, current_state.current_target, false, false};
+                            return PureStateType{Is, current_state.current_target, false, false, {}};
                         } else {
-                            if constexpr (concepts::IsGotoValue<CaseActionDecay>) {
-                                return PureStateType{comptime_index, used_std::move(action_result.value), true, false}; 
-                            } else {
-                                return PureStateType{comptime_index, current_state.current_target, true, false}; 
-                            }
+                            return PureStateType{comptime_index, current_state.current_target, true, false, {}}; 
                         }
                     } 
                     // Signal 2: Dynamic Goto
                     else if constexpr (concepts::IsDynamicGotoSignal<CaseActionDecay>) {
-                        used_std::size_t active_index = used_std::find_by_value<[]<typename T>{return T::label;}, unsigned int, RawCases>(
-                            action_result.hash, 
+                        used_std::size_t active_index = used_std::find_by_value<[]<typename T>{return T::label;}, StaticLabel, RawCases>(
+                            action_result.label, 
                             CasesIndex{}
                         );
-                        return PureStateType{active_index, current_state.current_target, true, false};
+                        if (active_index >= TotalCases) {
+                            __builtin_unreachable();
+                            return PureStateType{active_index, current_state.current_target, true, false, {}};
+                        }
+                        return PureStateType{active_index, current_state.current_target, true, false, {}};
                         
                     }
                     // Signal 3: Fallthrough
                     else if constexpr (concepts::IsFallthroughSignal<CaseActionDecay>) {
-                        if constexpr (concepts::IsFallthroughValue<CaseActionDecay>) {
-                            return PureStateType{Is + 1, used_std::move(action_result.value), true, false};
-                        } else {
-                            return PureStateType{Is + 1, current_state.current_target, true, false};
-                        }
+                        return PureStateType{Is + 1, current_state.current_target, true, false , {}};
                     }
                     // Terminal Return Value
                     else {
-                        if constexpr (!concepts::IsGotoSignal<CaseActionDecay> && 
-                                      !concepts::IsFallthroughSignal<CaseActionDecay> && 
-                                      !used_std::is_same_v<CaseActionDecay, void> && 
-                                      !used_std::is_same_v<CaseActionDecay, Wildcard>) {
+                        if constexpr (!concepts::IsGotoSignal<CaseActionDecay> && !concepts::IsFallthroughSignal<CaseActionDecay> && 
+                                      !used_std::is_same_v<CaseActionDecay, void> && !used_std::is_same_v<CaseActionDecay, Wildcard>) {
                             return PureStateType{Is, current_state.current_target, false, true,used_std::move(action_result)};
                         }
-                        return PureStateType{Is, current_state.current_target, false, true};
+                        return PureStateType{Is, current_state.current_target, false, true,{}};
                     }
                 }
             } else {
-                return PureStateType{Is + 1, current_state.current_target, false, false};
+                return PureStateType{Is + 1, current_state.current_target, false, false,{}};
             }
         }
     }
 };
 
 
-template <StaticLabel LabelID = 0,BranchHint Hint = BranchHint::None,typename T> 
-inline constexpr auto Case(T&& val) noexcept { return ImplCase<LabelID, Hint, used_std::decay_t<T>>{ .key=used_std::forward<T>(val) }; }
 template <StaticLabel LabelID = 0,typename T> 
-inline constexpr auto likely_Case(T&& val) noexcept { return ImplCase<LabelID, BranchHint::Likely, used_std::decay_t<T>>{ .key=used_std::forward<T>(val) }; }
+inline constexpr auto Case(T&& val) noexcept { return ImplCase<LabelID, used_std::decay_t<T>>(used_std::forward<T>(val)); }
 template <StaticLabel LabelID = 0,typename T> 
-inline constexpr auto unlikely_Case(T&& val) noexcept { return ImplCase<LabelID, BranchHint::Unlikely, used_std::decay_t<T>>{ .key=used_std::forward<T>(val) }; }
+inline constexpr auto likely_Case(T&& val) noexcept { return ImplCase<LabelID, used_std::decay_t<T>>(used_std::forward<T>(val)); }
+template <StaticLabel LabelID = 0,typename T> 
+inline constexpr auto unlikely_Case(T&& val) noexcept { return ImplCase<LabelID, used_std::decay_t<T>>(used_std::forward<T>(val)); }
 
 template <typename T>
 struct UnwrapReturnType { using type = used_std::remove_cvref_t<T>;};
@@ -1274,12 +1261,11 @@ noexcept(noexcept(used_std::forward<Fn>(fn)(used_std::integral_constant<used_std
 // ============================================================================
 //                               WRAPPERS 
 // ============================================================================
-struct empty{};
-template <typename TargetType, typename ContextTuple = empty, typename CasesTuple = used_std::tuple<empty>, typename Default = Wildcard>
+template <typename TargetType, typename ContextTuple = DefaultState, typename CasesTuple = used_std::tuple<DefaultState>, typename Default = Wildcard>
 struct match {
-    static constexpr bool defaultContext = used_std::is_same_v<ContextTuple, empty>; 
-    static constexpr bool defaultCases   = used_std::is_same_v<CasesTuple, used_std::tuple<empty>>;
-    static constexpr bool is_configured = !defaultContext && !defaultCases;
+    static constexpr bool defaultContext = used_std::is_same_v<ContextTuple, DefaultState>;
+    static constexpr bool defaultCases   = used_std::is_same_v<CasesTuple, used_std::tuple<DefaultState>>;
+    static constexpr bool is_configured  = !defaultContext && !defaultCases;
     
     using StoreTarget = used_std::remove_cvref_t<concepts::primitive_param_t<TargetType>>;
     using StoreContext = used_std::remove_cvref_t<ContextTuple>;
@@ -1297,16 +1283,14 @@ struct match {
     
     constexpr match() : target(__) {}
 
-    // 2. Accept universal references and forward/move into stored value members
     constexpr match(StoreTarget t) : target(t) {}
     constexpr match(StoreTarget t,StoreContext c) requires(!defaultContext) : target(used_std::move(t)),ctx(used_std::move(c)) {}
 
-    template <typename T, typename CT, typename CA, typename D>
-    constexpr match(T&& t, CT&& ct, CA&& ca, D&& d) requires (!defaultContext)
-        : target(used_std::forward<T>(t)), 
-          ctx(used_std::forward<CT>(ct)), 
-          cases(used_std::forward<CA>(ca)), 
-          default_action(used_std::forward<D>(d)) 
+    constexpr match(StoreTarget t, StoreContext ct, StoreCases ca, StoreDefault d) requires (!defaultContext)
+        : target(used_std::move(t)), 
+          ctx(used_std::move(ct)), 
+          cases(used_std::move(ca)), 
+          default_action(used_std::move(d)) 
     {}
 
     constexpr ReturnType operator()() && requires (is_configured) {
@@ -1330,11 +1314,14 @@ struct match {
             if constexpr (sizeof...(ContextArgs) == 0) {
                 auto ctx_tuple = used_std::make_tuple(__);
                 using TupleType = decltype(ctx_tuple);
-                return match<TargetType, TupleType, used_std::tuple<empty>>{ used_std::move(target), used_std::move(ctx_tuple) };
+                return match<TargetType, TupleType, used_std::tuple<DefaultState>>{ 
+                    used_std::move(target), 
+                    used_std::move(ctx_tuple) 
+                };
             } else {
                 auto ctx_tuple = used_std::make_tuple(used_std::forward<ContextArgs>(args)...);
                 using TupleType = decltype(ctx_tuple);
-                return match<TargetType, TupleType, used_std::tuple<empty>>(
+                return match<TargetType, TupleType, used_std::tuple<DefaultState>>(
                     used_std::move(target), 
                     used_std::move(ctx_tuple) 
                 );
@@ -1342,39 +1329,45 @@ struct match {
         } else {
             static_assert(sizeof...(ContextArgs) > 0, "operator() requires at least one argument (the default action).");
 
+            // std::forward_as_tuple preserves original lvalue/rvalue reference types of 'args'
             auto cases_tuple = used_std::forward_as_tuple(used_std::forward<ContextArgs>(args)...);
             
-            // std::get requires a compile-time constant size expression
             constexpr used_std::size_t num_cases = sizeof...(ContextArgs) - 1;
-            decltype(auto) def = used_std::get<num_cases>(cases_tuple);
             
+            // Pass cases_tuple and forwarding references directly to helper
             return helper(
                 used_std::move(target),
                 used_std::move(ctx), 
                 used_std::move(cases_tuple),
-                used_std::forward<decltype(def)>(def),
                 used_std::make_index_sequence<num_cases>{}
             );
         }
     }
 
-    
-    template <typename Cases, typename DefaultAction, used_std::size_t... Is> requires (!defaultContext)
-    inline constexpr auto helper(StoreTarget&& target, StoreContext&& ctx, Cases&& cases, DefaultAction&& default_action, used_std::index_sequence<Is...>) 
+    template <typename CasesTupleRef, used_std::size_t... Is> requires (!defaultContext)
+    inline constexpr auto helper(StoreTarget&& target, StoreContext&& ctx, CasesTupleRef&& cases_tuple, used_std::index_sequence<Is...>) 
     {
-        auto cases_tup = used_std::make_tuple(used_std::get<Is>(used_std::forward<Cases>(cases))...);
-    
-        using CleanTarget = used_std::remove_cvref_t<StoreTarget>;
-        using CleanContext = used_std::remove_cvref_t<StoreContext>;
-        using CleanCases = decltype(cases_tup);
-        using CleanDefault = used_std::remove_cvref_t<DefaultAction>;
+        constexpr used_std::size_t default_idx = used_std::tuple_size_v<used_std::remove_cvref_t<CasesTupleRef>> - 1;
 
-        // Construct the fully-formed evaluator and immediately call .run()
+        // Correctly forward elements extracted from the reference tuple
+        auto cases_tup = used_std::make_tuple(
+            used_std::get<Is>(used_std::forward<CasesTupleRef>(cases_tuple))...
+        );
+
+        // Extract default action preserving original value category (move if rvalue reference, copy if lvalue reference)
+        auto default_action = used_std::get<default_idx>(used_std::forward<CasesTupleRef>(cases_tuple));
+
+        using CleanTarget  = used_std::remove_cvref_t<StoreTarget>;
+        using CleanContext = used_std::remove_cvref_t<StoreContext>;
+        using CleanCases   = decltype(cases_tup);
+        using CleanDefault = used_std::remove_cvref_t<decltype(default_action)>;
+
+        // Construct fully-formed evaluator with moved values
         return match<CleanTarget, CleanContext, CleanCases, CleanDefault>(
-            used_std::forward<StoreTarget>(target),
-            used_std::forward<StoreContext>(ctx),
+            used_std::move(target),
+            used_std::move(ctx),
             used_std::move(cases_tup),
-            used_std::forward<DefaultAction>(default_action)
+            used_std::move(default_action)
         );
     }
 
@@ -1446,6 +1439,7 @@ struct match {
 };
 template <typename TargetType>
 match(TargetType) -> match<TargetType>;
+
 // ============================================================================
 //                                    END
 // ============================================================================

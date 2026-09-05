@@ -122,17 +122,17 @@ struct fmt {
         }
         std::string_view fmtStr(in);
         size_t preAlloc = fmtStr.size() + (getArgSize(args) + ... + 0);
-        formatHelper help;
+        // formatHelper help;
         size_t lastPos = 0;
 
         // Lambda executed once per parameter in fold expression
-        auto processArg = [this, &fmtStr, &lastPos,&help](auto&& arg) {
+        auto processArg = [this, &fmtStr, &lastPos](auto&& arg) {
             size_t pBegin = fmtStr.find('{',lastPos);
             if (pBegin != std::string_view::npos) {
                 size_t pEnd = fmtStr.find('}', pBegin + 1);
                 if (pEnd != std::string_view::npos) {
                     str.append(fmtStr.substr(lastPos, pBegin - lastPos));
-                    appendArg(std::forward<decltype(arg)>(arg), &help);
+                    appendArg(std::forward<decltype(arg)>(arg));
                     lastPos = pEnd + 1;
                 }
             }
@@ -188,11 +188,11 @@ struct fmt {
     }
 
 private:
-    struct formatHelper {
-        int attr = 0;
-        int attr2 = 0;
-        constexpr formatHelper() {}
-    };
+    // struct formatHelper {
+    //     int attr = 0;
+    //     int attr2 = 0;
+    //     constexpr formatHelper() {}
+    // };
 
     template<onlyStr T>
     constexpr size_t getArgSize(const T& arg) const {
@@ -208,7 +208,7 @@ private:
     }
 
     template<onlyStr T>
-    constexpr void appendArg(T&& arg,formatHelper* help = nullptr) {
+    constexpr void appendArg(T&& arg) {
         using Raw = std::remove_cvref_t<T>;
         if constexpr (std::is_convertible_v<Raw, std::string_view>) {
             str += std::string_view(arg);
@@ -221,7 +221,7 @@ private:
             auto [eDigit, ec] = std::to_chars(digit, digit + maxDigits<Raw>(), std::forward<T>(arg));
             str.append(digit, static_cast<std::size_t>(eDigit - digit));
         } else {
-            std::unreachable();
+            __builtin_unreachable();
         }
     }
 
@@ -673,12 +673,12 @@ class FileManager {
         err(true,fmt("Error: "_fmt.color(fmt::Red),"Name " ,id, " doesn't exists"));
         return nullptr;
     }
-    File* operator [](std::string_view id,std::source_location fn = std::source_location::current()) {
+    File* operator [](std::string_view id) {
         auto it = Files.find(id); 
         if (it != Files.end()) {
             return &it->second;
         }
-        err(true,fmt("Error: "_fmt.color(fmt::Red),"Key " ,id, " doesn't exists"),fn);
+        err(true,fmt("Error: "_fmt.color(fmt::Red),"Key " ,id, " doesn't exists"));
         return nullptr;
     }
     File& operator [](std::size_t id) {
@@ -1053,7 +1053,7 @@ class Project
         return *this;
     }
 
-    constexpr Project(const char* name,outputPath* path,projectType exe,bool recomp = false) {
+    Project(const char* name,outputPath* path,projectType exe,bool recomp = false) {
         ProjectName = name,
         OutPath = path,
         outFile = exe,
@@ -1463,7 +1463,7 @@ class Project
         
         const std::string fObjOutput = fmt((oPath / inFile.getName()).string(), file.objFile).str;
         
-        const auto l_rewrite = [&fModule] -> void {
+        const auto l_rewrite = [&fModule]() -> void {
                 const std::string old = fmt(fModule,".old").str; 
                 if(fs::exists(fModule)) {
                     if (fs::exists(old)){
