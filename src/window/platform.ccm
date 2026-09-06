@@ -2,6 +2,7 @@ module;
 #include "pch.hpp"
 #include <vector>
 #include <string>
+#include <iostream>
 export module lib.win:platform;
 
 import lib.types;
@@ -244,7 +245,6 @@ class Window {
     }
     private:
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-        HDC hdc;
         Window* pWindow = nullptr;
 
         if (uMsg == WM_NCCREATE) {
@@ -262,7 +262,7 @@ class Window {
         Desc.mHInstance = GetModuleHandleA(nullptr);
         mClassName = "Win32Class_" + std::to_string(reinterpret_cast<uintptr_t>(this));
 
-        auto [style, exStyle] = WindowFlags::WindowStyles(flags);
+        auto [style, exStyle] = WindowFlags::WindowStyles(flags).m_elem;
         
         mWCA.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
         mWCA.lpfnWndProc   = Window::WndProc;
@@ -283,8 +283,8 @@ class Window {
             style |= WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
             style &= ~WS_POPUP;
         }
-        int32 px = pos.x;
-        int32 py = pos.y;
+        auto [px , py] = pos.m_elem;
+ 
         if (flags & WindowFlags::WinCenter) {
             px = (GetSystemMetrics(SM_CXSCREEN) - width) / 2;
             py = (GetSystemMetrics(SM_CYSCREEN) - height) / 2;

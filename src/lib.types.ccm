@@ -10,8 +10,6 @@ export module lib.types;
 export
 {
     
-    using ptrdiff   = decltype(static_cast<int*>(0) - static_cast<int*>(0));
-    using size_t    = decltype(sizeof(0));
     using f32       = float;
     using f64       = double;
     using int8      = char;
@@ -22,6 +20,8 @@ export
     using uint32    = std::uint32_t;
     using int64     = std::int64_t;
     using uint64    = std::uint64_t;
+    using size_t    = decltype(sizeof(0));
+    using ptrdiff   = decltype(static_cast<int32*>(0) - static_cast<int32*>(0));
 };
         
 template <size_t Num>
@@ -134,12 +134,18 @@ struct Vec {
     [[nodiscard]] constexpr pointer end() {return m_elem + Len;}
     [[nodiscard]] constexpr const_pointer begin() const {return m_elem;}
     [[nodiscard]] constexpr const_pointer end() const {return m_elem + Len;}
+
+    template<size_t I>
+    [[nodiscard]] constexpr reference get() {static_assert(I < Len, "out of bound"); return m_elem[I];}
+    template<size_t I>
+    [[nodiscard]] constexpr const_reference get() const {static_assert(I < Len, "out of bound");return m_elem[I];}
     
     [[nodiscard]] constexpr bool operator==(const Vec&) const = default;
     [[nodiscard]] constexpr bool operator==(std::span<const value_type> other) const {
         return (other.size() > Len) ? false :
         std::equal(this->begin(),this->end(),other.begin());
     };
+    
     template<size_t offset,size_t Count = Len>
     [[nodiscard]] constexpr bool eq_from(std::span<const value_type> other) const {
         if constexpr (Count != Len) {return false;}
@@ -150,6 +156,15 @@ struct Vec {
         return (offset > other.size() || Len > (other.size() - offset)) ? false : 
         (*this == other.subspan(offset,Len));
     }
+};
+
+struct RGBA {
+    uint8 col[4];
+    constexpr RGBA() {}
+    constexpr RGBA(uint8 r,uint8 g,uint8 b,uint8 a) : col(r,g,b,a) {}
+    operator const uint8*() const {return col;}
+    operator uint8*() {return col;}
+    
 };
 
 template<typename T>

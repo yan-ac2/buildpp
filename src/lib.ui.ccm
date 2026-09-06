@@ -1,7 +1,8 @@
 module;
 #include "pch.hpp"
-#include <cstddef>
-
+#include <vector>
+#include <variant>
+#include <iostream>
 export module lib.ui;
 import lib.types;
 import lib.win;
@@ -12,8 +13,8 @@ struct Rect {
     Vec2<f32> size;
 
     constexpr bool contains(Vec2<f32> pt) const noexcept {
-        return pt.x >= pos.x && pt.x <= (pos.x + size.x) &&
-                pt.y >= pos.y && pt.y <= (pos.y + size.y);
+        return pt[0] >= pos[0] && pt[0] <= (pos[0] + size[0]) &&
+                pt[1] >= pos[1] && pt[1] <= (pos[1] + size[1]);
     }
 };
 
@@ -59,7 +60,7 @@ class GLUIRenderer {
     size_t vbo_capacity = 0;
     size_t ebo_capacity = 0;
 
-    const char* vert = R"(#version 430 core
+    const int8* vert = R"(#version 430 core
         layout (location = 0) in vec2 aPos;
         layout (location = 1) in vec2 aUV;
         layout (location = 2) in vec4 aColor;
@@ -78,7 +79,7 @@ class GLUIRenderer {
         vec2 ndcPos = (aPos / uScreenSize) * 2.0 - 1.0;
         gl_Position = vec4(ndcPos.x, -ndcPos.y, 0.0, 1.0); // Flip Y axis
     })";
-    const char* frag = R"(#version 430 core
+    const int8* frag = R"(#version 430 core
     in vec2 FragUV;
     in vec4 FragColor;
 
@@ -91,7 +92,7 @@ class GLUIRenderer {
     })";
 public:
     std::vector<ui_ctx> vertices;
-    std::vector<uint32_t> indices;
+    std::vector<uint32> indices;
     std::vector<GLDrawCmd> commands;
 
     void init() {
@@ -125,12 +126,12 @@ public:
         // 2. Create a dummy 1x1 white texture for flat rendering
         glGenTextures(1, &white_texture);
         glBindTexture(GL_TEXTURE_2D, white_texture);
-        uint32_t white_pixel = 0xFFFFFFFF;
+        uint32 white_pixel = 0xFFFFFFFF;
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, &white_pixel);
 
         
-        int success;
-        char infoLog[512];
+        int32 success;
+        int8 infoLog[512];
         GLuint sfrag = 0;
         GLuint svert = 0;
         sfrag = glCreateShader(GL_FRAGMENT_SHADER);
@@ -199,7 +200,7 @@ public:
         glBufferSubData(GL_ARRAY_BUFFER, 0, needed_vbo_size, vertices.data());
 
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-        size_t needed_ebo_size = indices.size() * sizeof(uint32_t);
+        size_t needed_ebo_size = indices.size() * sizeof(uint32);
         if (needed_ebo_size > ebo_capacity) {
             ebo_capacity = needed_ebo_size * 2;
             glBufferData(GL_ELEMENT_ARRAY_BUFFER, ebo_capacity, nullptr, GL_DYNAMIC_DRAW);
@@ -217,7 +218,7 @@ public:
                 GL_TRIANGLES,
                 cmd.element_count,
                 GL_UNSIGNED_INT,
-                reinterpret_cast<void*>(cmd.index_offset * sizeof(uint32_t)),
+                reinterpret_cast<void*>(cmd.index_offset * sizeof(uint32)),
                 cmd.vertex_offset
             );
         }
@@ -226,24 +227,24 @@ public:
     }
 
     // Add a flat-colored rectangle
-    void push_rect(Vec2<float> pos, Vec2<float> size,Vec4<uint8_t> color, uint64_t texture_id = 0) {
+    void push_rect(Vec2<f32> pos, Vec2<f32> size,Vec4<uint8> color, uint64 texture_id = 0) {
         // Check if we can batch into the previous draw command
         if (commands.empty() || commands.back().texture_id != texture_id) {
             GLDrawCmd cmd{};
             cmd.element_count = 0;
-            cmd.index_offset = static_cast<uint32_t>(indices.size());
-            cmd.vertex_offset = static_cast<uint32_t>(vertices.size());
+            cmd.index_offset = static_cast<uint32>(indices.size());
+            cmd.vertex_offset = static_cast<uint32>(vertices.size());
             cmd.texture_id = texture_id;
             commands.push_back(cmd);
         }
 
-        const uint32_t base_index = static_cast<uint32_t>(vertices.size());
+        const uint32 base_index = static_cast<uint32>(vertices.size());
 
         // 4 Corner Vertices
-        vertices.push_back({{pos.x,            pos.y},     {0.0f, 0.0f}, color}); // Top-Left
-        vertices.push_back({{pos.x + size.x,   pos.y},     {1.0f, 0.0f}, color }); // Top-Right
-        vertices.push_back({{pos.x + size.x,   pos.y + size.y},{1.0f, 1.0f}, color }); // Bottom-Right
-        vertices.push_back({{pos.x,            pos.y + size.y},{0.0f, 1.0f}, color }); // Bottom-Left
+        vertices.push_back({{pos[0],            pos[1]},     {0.0f, 0.0f}, color}); // Top-Left
+        vertices.push_back({{pos[0] + size[0],  pos[1]},     {1.0f, 0.0f}, color }); // Top-Right
+        vertices.push_back({{pos[0] + size[0],  pos[1] + size[1]},{1.0f, 1.0f}, color }); // Bottom-Right
+        vertices.push_back({{pos[0],            pos[1] + size[1]},{0.0f, 1.0f}, color }); // Bottom-Left
 
         // 6 Indices (2 Triangles forming 1 Quad)
         indices.push_back(base_index + 0);
@@ -269,8 +270,8 @@ public:
     InputState input;
     // Style default_style;
     std::vector<DrawCommand> draw_list;
-    u64 hovered_id = 0;
-    u64 active_id  = 0;
+    uint64 hovered_id = 0;
+    uint64 active_id  = 0;
     uiContext(std::variant<GLUIRenderer*> back) : backend(back) {}
     void begin_frame(InputState current_input) {
         input = current_input;
