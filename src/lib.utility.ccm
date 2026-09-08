@@ -626,45 +626,6 @@ private:
     int m_counter;
 };
 
-template <size_t N>
-struct bitBool {
-    // 32 bytes * 8 bits = 256 bits total capacity
-    uint8 bit[N] = {0};
-
-    // Helper proxy class to allow writing: myBits[10] = true;
-    struct BitReference {
-        uint8& byteRef;
-        uint8 mask;
-
-        // Automatically implicitly converts to bool when reading: bool value = myBits[10];
-        operator bool() const {
-            return (byteRef & mask) != 0;
-        }
-
-        // Handles writing: myBits[10] = true;
-        BitReference& operator=(bool value) {
-            if (value) byteRef |= mask;
-            else       byteRef &= ~mask;
-            return *this;
-        }
-    };
-
-    // Non-const operator[]: supports both reading and writing
-    BitReference operator[](size_t IDX) {
-        size_t bytePos = IDX / 8; // Find which of the 32 bytes holds the bit
-        size_t bitPos  = IDX % 8; // Find the bit offset inside that byte
-        
-        uint8 mask = static_cast<uint8>(1 << bitPos);
-        return BitReference{ bit[bytePos], mask };
-    }
-
-    // Const operator[]: for when the bitBool instance is read-only
-    bool operator[](size_t IDX) const {
-        size_t bytePos = IDX / 8;
-        size_t bitPos  = IDX % 8;
-        return (bit[bytePos] & (1 << bitPos)) != 0;
-    }
-};
 
 
 export
