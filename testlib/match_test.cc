@@ -9,10 +9,10 @@ void showcase_numeric_and_ranges(int score) {
     char test = 't';
     // std::size_t score2 = 2;
     std::string_view result = match(score)(score,test)  (
-        Case(100)                      >> [] { return "Perfect Score!"; },
-        Case(Range{90,99})        >> [] { return "Grade: A"; },
-        Case(Range{80, 89})       >> [] { return "Grade: B"; },
-        Case(Range{70, 79})       >> [] { return "Grade: C"; },
+        Case(100)                      >> "Perfect Score!",
+        Case(Range{90,99})        >> "Grade: A",
+        Case(Range{80, 89})       >> "Grade: B",
+        Case(Range{70, 79})       >> "Grade: C",
         [](int& s) { 
             return (s < 70 ? "Grade: Fail" : "Grade: Invalid"); 
 
@@ -31,13 +31,14 @@ void showcase_hash_labels(std::string_view command) {
     std::string_view response = match(command)(command,&cmd_hash,&test) (
         Case<"start">("start")   >> [] { return "System Starting..."; },
         Case<"stop">
-        ("stop")        >> [](int* i) { 
-            if (*i == 1) {
-                return Goto<"start">; 
-            } else {
-                return Goto<"err">; 
-            }
-        },
+        ("stop")        >>  [&](){ return test == 1 ? Goto<"start"> : Goto<"err">;},
+        // [](int* i) { 
+        //     if (*i == 1) {
+        //         return Goto<"start">; 
+        //     } else {
+        //         return Goto<"err">; 
+        //     }
+        // },
         Case("pause")           >> [] { return "System Paused."; },
         Case<"err">(__)   >> []() { return "err"; },
         []{return "UNDEFINED!";}
@@ -46,22 +47,6 @@ void showcase_hash_labels(std::string_view command) {
     std::cout << "Command [\"" << command << "\"] (Hash: " << cmd_hash << ") -> " << response << std::endl;
 }
 
-// --- C. Branch Prediction Hints ---
-void showcase_branch_hints(int http_code) {
-    std::cout << "\n=== 3. Branch Hint Guided Dispatch ===" << std::endl;
-
-    std::string_view status = match(http_code)() (
-        // Common paths marked as likely
-        likely_Case(200)   >> []() { return "200 OK (Fast Path)"; },
-        likely_Case(404)   >> []() { return "404 Not Found"; },
-        
-        // Exceptional paths marked as unlikely
-        unlikely_Case(500) >> []() { return "500 Internal Server Error"; },
-        []() { return "Other HTTP Status"; }
-    );
-
-    std::cout << "HTTP [" << http_code << "] -> " << status << std::endl;
-}
 
 constexpr bool is_even(int val) { return val % 2 == 0; }
 constexpr int add(int val,int val2) { return val + val2; }
@@ -142,10 +127,6 @@ int main () {
     showcase_hash_labels("reboot");
     showcase_hash_labels("rebootss");
 
-    // 4. Branch Prediction Showcase
-    showcase_branch_hints(200);
-    showcase_branch_hints(500);
-    // std::printf("%d %d" , ret , num);
 
     struct s {
         int i;
@@ -160,8 +141,8 @@ int main () {
     constexpr s test = 20;
     constexpr int num = 15;
     static_assert(match(num)() (
-        Case<"id">(make_compound_range(Range{0,15},Range{20,30})) >> []{return true;},
-        []{return false;}), "" );
+        Case<"id">(make_compound_range(Range{0,15},Range{20,30})) >> true,
+        false), "" );
     static_assert(match(num)() (
         Case(make_compound_range(Range<RangeType::Or>{0,10},Range<RangeType::Or>{20,40})) >> []{return true;},
         []{return false;}), "" );
