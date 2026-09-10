@@ -25,9 +25,7 @@ private:
         char str[24] = {}; // 23 usable chars + 1 null terminator
     };
 
-    enum {
-        sMaxStr = sizeof(smallStr::str) - 1 // 23 bytes
-    };
+    static constexpr size_t sMaxStr = sizeof(smallStr::str) - 1; // 23 bytes
 
     struct store {
         unsigned int mode = Mode::Small; // 4 bytes (Flags)
@@ -78,27 +76,22 @@ public:
     }
 
     // 2. C-String constructor: Literals/Large strings default to View mode for constexpr safety
-    constexpr string(const char* inStr) {
-        size_t len = getLen(inStr);
-        if (len > sMaxStr) {
-            // View / Literal mode: Zero allocations, borrowed pointer
-            storage.mode = Mode::View | Mode::noHeap;
-            storage.type.cExpr = inStr;
-            storage.len = static_cast<unsigned int>(len);
-        } else {
-            assign(inStr);
-        }
+    template<size_t N>
+    constexpr string(const char (&inStr)[N]) {
+        storage.mode = Mode::View | Mode::noHeap;
+        storage.type.cExpr = inStr;
+        storage.len = static_cast<unsigned int>(N);
+        assign(inStr);
     }
-
-    // 3. String View Constructor
-    constexpr string(const char* inStr, size_t len, bool isView) noexcept {
-        if (isView) {
-            storage.mode = Mode::View | Mode::noHeap;
-            storage.type.cExpr = inStr;
-            storage.len = static_cast<unsigned int>(len);
-        } else {
-            assign(inStr);
-        }
+    constexpr string(const char* inStr) {
+        storage.mode = Mode::View | Mode::noHeap;
+        storage.type.cExpr = inStr;
+        storage.len = static_cast<unsigned int>(getLen(inStr));
+    }
+    constexpr string(const char* inStr,size_t Len) {
+        storage.mode = Mode::View | Mode::noHeap;
+        storage.type.cExpr = inStr;
+        storage.len = static_cast<unsigned int>(Len);
     }
 
     // Flag Management Setters / Getters
@@ -106,97 +99,109 @@ public:
         if (enable) storage.mode |= Mode::autoResize;
         else        storage.mode &= ~Mode::autoResize;
     }
-
     constexpr void setNoHeap(bool enable) noexcept {
         if (enable) storage.mode |= Mode::noHeap;
         else        storage.mode &= ~Mode::noHeap;
     }
-
     constexpr bool isAutoResizeEnabled() const noexcept { return (storage.mode & Mode::autoResize) != 0; }
     constexpr bool isNoHeapEnabled()     const noexcept { return (storage.mode & Mode::noHeap) != 0; }
-    constexpr bool isView()             const noexcept { return (storage.mode & Mode::View) != 0; }
+    constexpr bool isView()              const noexcept { return (storage.mode & Mode::View) != 0; }
 
-    // Safe Assignment Logic
-    constexpr string& assign(const char* inStr) {
-        size_t newLen = getLen(inStr);
+    inline constexpr string& reuseBuffer(const char* inStr,size_t writeLen) {
+        auto& ptr = storage.type.Large;
 
-        // CASE 1: Currently on Heap & autoResize is DISABLED -> Reuse existing heap buffer
-        if ((storage.mode & Mode::onHeap) && !isAutoResizeEnabled()) {
-            size_t writeLen = newLen;
-            if (writeLen > storage.type.Large.cap) {
-                if (isNoHeapEnabled()) writeLen = storage.type.Large.cap; // Safely truncate
-            }
+        copy(ptr.str, inStr, writeLen);
+        ptr.str[writeLen] = '\0';
+        ptr.end = storage.type.Large.str + writeLen;
+        storage.len = static_cast<unsigned int>(writeLen);
+        
+        return *this;
+    }
+    inline constexpr string& allocateBuffer(const char* inStr,size_t writeLen) {
+        auto& ptr = storage.type.Large;
 
-            if (writeLen <= storage.type.Large.cap) {
-                copy(storage.type.Large.str, inStr, writeLen);
-                storage.type.Large.str[writeLen] = '\0';
-                storage.type.Large.end = storage.type.Large.str + writeLen;
-                storage.len = static_cast<unsigned int>(writeLen);
-                return *this;
-            }
-        }
+        bool allocateBuffer = (storage.mode & Mode::onHeap) && (writeLen <= storage.type.Large.cap);
 
-        // CASE 2: Fits in Small SSO buffer
-        if (newLen <= sMaxStr) {
+        char* targetBuf = nullptr;
+        size_t newCap = storage.type.Large.cap;
+
+        if (allocateBuffer) {
+            return reuseBuffer(inStr,writeLen);
+        } else {
             if (storage.mode & Mode::onHeap) {
                 delete[] storage.type.Large.str;
             }
-
-            unsigned int keepFlags = storage.mode & (Mode::autoResize | Mode::noHeap);
-            storage.mode = Mode::Small | keepFlags;
-            
-            storage.type.Small = smallStr{};
-            copy(storage.type.Small.str, inStr);
-            storage.type.Small.str[newLen] = '\0';
-            storage.len = static_cast<unsigned int>(newLen);
-        } 
-        // CASE 3: Needs larger allocation
-        else {
-            // Check if heap allocation is prohibited by noHeap flag
-            if (isNoHeapEnabled() && !(storage.mode & Mode::onHeap)) {
-                // Truncate into SSO inline buffer if heap allocation is disabled
-                storage.type.Small = smallStr{};
-                copy(storage.type.Small.str, inStr, sMaxStr);
-                storage.type.Small.str[sMaxStr] = '\0';
-                storage.len = sMaxStr;
-                unsigned int keepFlags = storage.mode & (Mode::autoResize | Mode::noHeap);
-                storage.mode = Mode::Small | keepFlags;
-                return *this;
-            }
-
-            bool reuseBuffer = (storage.mode & Mode::onHeap) && (newLen <= storage.type.Large.cap);
-
-            char* targetBuf = nullptr;
-            size_t newCap = storage.type.Large.cap;
-
-            if (reuseBuffer) {
-                targetBuf = storage.type.Large.str;
-            } else {
-                if (storage.mode & Mode::onHeap) {
-                    delete[] storage.type.Large.str;
-                }
-                newCap = newLen;
-                targetBuf = new char[newCap + 1]();
-            }
-
-            copy(targetBuf, inStr);
-            targetBuf[newLen] = '\0';
-
-            unsigned int keepFlags = storage.mode & (Mode::autoResize | Mode::noHeap);
-            storage.mode = Mode::onHeap | Mode::Large | keepFlags;
-            
-            storage.type.Large = largeStr{
-                .str = targetBuf,
-                .end = targetBuf + newLen,
-                .cap = newCap
-            };
-            storage.len = static_cast<unsigned int>(newLen);
+            newCap = writeLen;
+            targetBuf = new char[newCap + 1]();
         }
+        copy(targetBuf, inStr,writeLen);
+        targetBuf[writeLen] = '\0';
 
+        unsigned int keepFlags = storage.mode & (Mode::autoResize | Mode::noHeap);
+        storage.mode = Mode::onHeap | Mode::Large | keepFlags;
+        storage.type.Large = largeStr{
+            .str = targetBuf,
+            .end = targetBuf + writeLen,
+            .cap = newCap
+        };
+        storage.len = static_cast<unsigned int>(writeLen);
         return *this;
     }
+    inline constexpr string& useSBO(const char* inStr,size_t writeLen) {
+        auto& ptr = storage.type.Small;
+        if (storage.mode & Mode::onHeap) {
+            delete[] storage.type.Large.str;
+        }
 
-    constexpr string& append(const char* in) {
+        unsigned int keepFlags = storage.mode & (Mode::autoResize | Mode::noHeap);
+        storage.mode = Mode::Small | keepFlags;
+        
+        ptr = smallStr{};
+        ptr.str[copy(storage.type.Small.str, inStr,writeLen)] = '\0';
+        storage.len = static_cast<unsigned int>(writeLen);
+        return *this;
+    }
+    inline constexpr string& reserve(size_t newLen) {
+        const char* oldData = data();
+        bool reuseHeap = (storage.mode & Mode::onHeap) && (newLen <= storage.type.Large.cap);
+
+        char* newBuffer = nullptr;
+        size_t newCap = storage.type.Large.cap;
+
+        if (reuseHeap) {
+            newBuffer = storage.type.Large.str;
+        } else {
+            newCap = newLen;
+            newBuffer = new char[newCap + 1]();
+            copy(newBuffer, oldData);
+            if (storage.mode & Mode::onHeap) {
+                delete[] storage.type.Large.str;
+            }
+        }
+        
+        storage.type.Large = largeStr{
+            .str = newBuffer,
+            .end = newBuffer + storage.len,
+            .cap = newCap
+        };
+        newBuffer[storage.len] = '\0';
+        return *this;
+    }
+    inline constexpr string& assign(const char* inStr) {
+        size_t newLen = getLen(inStr);
+        // CASE 1: Currently on Heap & autoResize is DISABLED -> Reuse existing heap buffer
+        if ((storage.mode & Mode::onHeap) && !isAutoResizeEnabled()) {
+            return reuseBuffer(inStr,newLen);
+        }
+        // CASE 2: Fits in Small SSO buffer
+        if (newLen <= sMaxStr) {
+            return useSBO(inStr,newLen);
+        } 
+        // CASE 3: Needs larger allocation
+        return allocateBuffer(inStr,newLen);
+    }
+
+    inline constexpr string& append(const char* in) {
         size_t inlen = getLen(in);
         if (inlen == 0) return *this;
 
@@ -204,46 +209,12 @@ public:
         size_t totalLen = currentLen + inlen;
 
         if (totalLen > sMaxStr) {
-            // Truncate append if noHeap is active and capacity is constrained
-            if (isNoHeapEnabled()) {
-                size_t maxCap = capacity();
-                if (currentLen >= maxCap) return *this; // Fully filled
-
-                size_t appendLen = maxCap - currentLen;
-                char* dest = (storage.mode & Mode::onHeap) ? storage.type.Large.str : storage.type.Small.str;
-                copy(dest + currentLen, in, appendLen);
-                dest[currentLen + appendLen] = '\0';
-                storage.len = static_cast<unsigned int>(currentLen + appendLen);
-                return *this;
-            }
-
-            const char* oldData = data();
-            bool reuseHeap = (storage.mode & Mode::onHeap) && (totalLen <= storage.type.Large.cap);
-
-            char* newBuffer = nullptr;
-            size_t newCap = storage.type.Large.cap;
-
-            if (reuseHeap) {
-                newBuffer = storage.type.Large.str;
-            } else {
-                newCap = totalLen;
-                newBuffer = new char[newCap + 1]();
-                copy(newBuffer, oldData);
-                if (storage.mode & Mode::onHeap) {
-                    delete[] storage.type.Large.str;
-                }
-            }
-
-            copy(newBuffer + currentLen, in);
-            newBuffer[totalLen] = '\0';
+            auto& ptr = storage.type.Large;
+            reserve(totalLen);
+            copy(ptr.str + len(), in,inlen);
 
             unsigned int keepFlags = storage.mode & (Mode::autoResize | Mode::noHeap);
             storage.mode = Mode::onHeap | Mode::Large | keepFlags;
-            storage.type.Large = largeStr{
-                .str = newBuffer,
-                .end = newBuffer + totalLen,
-                .cap = newCap
-            };
         } else {
             if (storage.mode & Mode::View) {
                 const char* oldLiteral = storage.type.cExpr;
@@ -290,6 +261,47 @@ public:
     }
 };
 
+int main()
+{
+        string s ("hello world before");
+        s.reserve(35);
+        // printf("%s %zu \n",s.data() , s.size());
+        s.append(" new char");
+        // s.front() = 'f';
+        // s.back() = 's';
+        // // printf("%s %zu \n",s.data() , s.size());
+        s.reserve(50);
+        s.append(" after append ");
+        // printf("%s %zu \n",s.data() , s.size());
+        // string c (s);
+        // c.append(" copy");
+        // printf("%s %zu \n",c.data() , c.size());
+        s.append ("hello world from world number");
+        printf("%s %zu \n", s.data(), s.size());
+        // printf("%s %zu \n",s.data() , s.size());
+        s = "hello world numbers 3200";
+        // printf("%s %zu \n",s.data() , s.size());
+        s = "hello again from world number 3200";
+        // printf("%s %zu \n",s.data() , s.size());
+        s = "small";
+        // printf("%s %zu \n",s.data() , s.size());
+        s.append(" append");
+        // printf("%s %zu \n",s.data() , s.size());
+        s = "again";
+        // printf("%s %zu \n",s.data() , s.size());
+        s = "hello again from world number 4200";
+        // printf("%s %zu \n",s.data() , s.size());
+        s = "sssssssssssssssssssssssssssssssss";
+        // printf("%s %zu \n",s.data() , s.size());
+        s = "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww";
+        // printf("%s %zu \n",s.data() , s.size());
+        s = "wwwwwwwwwwwwwwwwwwwwww";
+        // printf("%s %zu \n",s.data() , s.size());
+        s = "aaa";
+        printf("%s %zu \n", s.data(), s.size());
+    
+    return 0; 
+}
 
 // constexpr string sss("hello wssssssss large nee");
 constexpr string ss ("hello wssssssss large nee");
