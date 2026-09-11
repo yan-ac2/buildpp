@@ -1,6 +1,81 @@
 
 #include <cstddef>
 #include <string_view>
+
+struct stringView {
+    using value_type = char;
+    using reference = value_type&;
+    using const_reference = const value_type&;
+    using pointer = value_type*;
+    using const_pointer = const value_type*;
+    using const_iterator = const_pointer;
+    using iterator = const_iterator;
+    using size_type = std::size_t;
+    using difference_t = std::ptrdiff_t;
+    
+    const_pointer data_;
+    size_type len{};
+
+    constexpr stringView() : data_(nullptr),len(0) {}
+    constexpr stringView(const stringView& other) noexcept = default;
+
+    template<size_type N>
+    constexpr stringView(const value_type (&str)[N]) noexcept : data_(str),len(N) {}
+
+    template<typename T> requires (requires(T t) { t.data(),t.size();})
+    constexpr stringView(const T& str) noexcept : data_(str.data()),len(str.size()) {}
+    constexpr stringView(const_pointer str,size_type count) : data_(str),len(count) {}
+    constexpr stringView(const_pointer str) : data_(str),len([&str] constexpr {size_type i = 0; while(str[++i] != '\0'){}; return i;}()) {}
+
+    constexpr stringView& operator =(const stringView& other) noexcept = default; 
+
+    constexpr iterator begin  () const noexcept {return data_;} 
+    constexpr iterator cbegin () const noexcept {return data_;} 
+    constexpr iterator end    () const noexcept {return data_ + len;} 
+    constexpr iterator cend   () const noexcept {return data_ + len;} 
+
+    constexpr const_reference operator[](size_type idx) const { return data_[idx];}
+    constexpr const_reference at        (size_type idx) const { return data_[idx];}
+
+    constexpr const_reference front     () const { return data_[0];}
+    constexpr const_reference back      () const { return data_[len];}
+    constexpr const_pointer   data      () const { return data_;}
+    
+    constexpr size_type size  ()const { return len;}
+    constexpr size_type length()const { return len;}
+
+    constexpr size_type empty()const { return size() == 0;}
+
+    constexpr void remove_prefix(size_type n) { const_pointer temp = data_; data_ = temp + n; len -= n;}
+    constexpr void remove_suffix(size_type n) { len -= n;}
+    constexpr void swap(stringView& other) { stringView temp {*this}; *this = other; other = temp;}
+
+    constexpr bool operator==(stringView& rhs) {
+        return len != rhs.size() ? false : [this,&rhs] {
+            for (const char& c : rhs) {
+                if (data_[&c - rhs.begin()] != c) return false;
+            }
+            return true;
+        }();
+    }
+    constexpr bool operator==(const_pointer rhs) {
+        stringView temp(rhs);
+        return len != temp.size() ? false : [this,&temp] {
+            for (const char& c : temp) {
+                if (data_[&c - temp.begin()] != c) return false;
+            }
+            return true;
+        }();
+    }
+};
+
+static_assert([]{
+    stringView a  {"hello"};
+    stringView b  {a};
+    a.remove_prefix(2);
+    b.remove_suffix(2);
+    return (a == "llo") && b == "hel";
+}());
 class string {
 public:
     enum Mode : unsigned int {
@@ -10,7 +85,7 @@ public:
         View       = Literal,// Alias for clarity when using external buffers/views
         autoResize = 1 << 3, // Bit 3 (8)  -> 0 = Preserve heap cap (Default), 1 = Shrink back to SSO
         noHeap     = 1 << 4, // Bit 4 (16) -> Prevent heap allocations (Truncates on overflow)
-        lenExt1     = 1 << 5, 
+        lenExt1    = 1 << 5, 
         Small      = 0       // Value 0    -> Default inline SSO buffer
     };
 
@@ -41,29 +116,16 @@ private:
         } type; // 24 bytes -> Total sizeof(store) == 32 bytes
     } storage;
 
-    static constexpr size_t getLen(const char* str) noexcept {
-        if (!str) return 0;
-        size_t len = 0;
-        while (str[len] != '\0') { len++; }
-        return len;
+    static constexpr size_t getLen(std::string_view str) noexcept {
+        if (!str.data()) return 0;
+        return str.size();
     }
 
-    static constexpr size_t copy(char* to, const char* from, size_t count) noexcept {
-        size_t i = 0;
-        while (i < count && from[i] != '\0') {
-            to[i] = from[i];
-            i++;
+    static constexpr size_t copy(char* to, std::string_view from) noexcept {
+        for (auto& c : from) {
+            to[&c - from.begin()] = c;
         }
-        return i;
-    }
-
-    static constexpr size_t copy(char* to, const char* from) noexcept {
-        size_t i = 0;
-        while (from[i] != '\0') {
-            to[i] = from[i];
-            i++;
-        }
-        return i;
+        return from.size();
     }
 
 public:
@@ -75,23 +137,17 @@ public:
         storage.type.Small.str[0] = '\0';
     }
 
-    // 2. C-String constructor: Literals/Large strings default to View mode for constexpr safety
     template<size_t N>
     constexpr string(const char (&inStr)[N]) {
         storage.mode = Mode::View | Mode::noHeap;
         storage.type.cExpr = inStr;
         storage.len = static_cast<unsigned int>(N);
-        assign(inStr);
+        // assign(inStr);
     }
-    constexpr string(const char* inStr) {
+    constexpr string(std::string_view inStr) {
         storage.mode = Mode::View | Mode::noHeap;
-        storage.type.cExpr = inStr;
+        storage.type.cExpr = inStr.data();
         storage.len = static_cast<unsigned int>(getLen(inStr));
-    }
-    constexpr string(const char* inStr,size_t Len) {
-        storage.mode = Mode::View | Mode::noHeap;
-        storage.type.cExpr = inStr;
-        storage.len = static_cast<unsigned int>(Len);
     }
 
     // Flag Management Setters / Getters
@@ -107,47 +163,47 @@ public:
     constexpr bool isNoHeapEnabled()     const noexcept { return (storage.mode & Mode::noHeap) != 0; }
     constexpr bool isView()              const noexcept { return (storage.mode & Mode::View) != 0; }
 
-    inline constexpr string& reuseBuffer(const char* inStr,size_t writeLen) {
+    inline constexpr string& reuseBuffer(std::string_view inStr) {
         auto& ptr = storage.type.Large;
 
-        copy(ptr.str, inStr, writeLen);
-        ptr.str[writeLen] = '\0';
-        ptr.end = storage.type.Large.str + writeLen;
-        storage.len = static_cast<unsigned int>(writeLen);
+        copy(ptr.str, inStr);
+        ptr.str[inStr.size()] = '\0';
+        ptr.end = storage.type.Large.str + inStr.size();
+        storage.len = static_cast<unsigned int>(ptr.end - ptr.str);
         
         return *this;
     }
-    inline constexpr string& allocateBuffer(const char* inStr,size_t writeLen) {
+    inline constexpr string& allocateBuffer(std::string_view inStr) {
         auto& ptr = storage.type.Large;
 
-        bool allocateBuffer = (storage.mode & Mode::onHeap) && (writeLen <= storage.type.Large.cap);
+        bool allocateBuffer = (storage.mode & Mode::onHeap) && (inStr.size() <= storage.type.Large.cap);
 
         char* targetBuf = nullptr;
         size_t newCap = storage.type.Large.cap;
 
         if (allocateBuffer) {
-            return reuseBuffer(inStr,writeLen);
+            return reuseBuffer(inStr);
         } else {
             if (storage.mode & Mode::onHeap) {
                 delete[] storage.type.Large.str;
             }
-            newCap = writeLen;
+            newCap = inStr.size();
             targetBuf = new char[newCap + 1]();
         }
-        copy(targetBuf, inStr,writeLen);
-        targetBuf[writeLen] = '\0';
+        copy(targetBuf, inStr);
+        targetBuf[inStr.size()] = '\0';
 
         unsigned int keepFlags = storage.mode & (Mode::autoResize | Mode::noHeap);
         storage.mode = Mode::onHeap | Mode::Large | keepFlags;
         storage.type.Large = largeStr{
             .str = targetBuf,
-            .end = targetBuf + writeLen,
+            .end = targetBuf + inStr.size(),
             .cap = newCap
         };
-        storage.len = static_cast<unsigned int>(writeLen);
+        storage.len = static_cast<unsigned int>(ptr.end - ptr.str);
         return *this;
     }
-    inline constexpr string& useSBO(const char* inStr,size_t writeLen) {
+    inline constexpr string& useSBO(std::string_view inStr) {
         auto& ptr = storage.type.Small;
         if (storage.mode & Mode::onHeap) {
             delete[] storage.type.Large.str;
@@ -157,8 +213,8 @@ public:
         storage.mode = Mode::Small | keepFlags;
         
         ptr = smallStr{};
-        ptr.str[copy(storage.type.Small.str, inStr,writeLen)] = '\0';
-        storage.len = static_cast<unsigned int>(writeLen);
+        ptr.str[copy(storage.type.Small.str, inStr)] = '\0';
+        storage.len = static_cast<unsigned int>(inStr.size());
         return *this;
     }
     inline constexpr string& reserve(size_t newLen) {
@@ -187,22 +243,22 @@ public:
         newBuffer[storage.len] = '\0';
         return *this;
     }
-    inline constexpr string& assign(const char* inStr) {
-        size_t newLen = getLen(inStr);
+    inline constexpr string& assign(std::string_view inStr) {
+        // size_t newLen = getLen(inStr);
         // CASE 1: Currently on Heap & autoResize is DISABLED -> Reuse existing heap buffer
         if ((storage.mode & Mode::onHeap) && !isAutoResizeEnabled()) {
-            return reuseBuffer(inStr,newLen);
+            return reuseBuffer(inStr);
         }
         // CASE 2: Fits in Small SSO buffer
-        if (newLen <= sMaxStr) {
-            return useSBO(inStr,newLen);
+        if (inStr.size() <= sMaxStr) {
+            return useSBO(inStr);
         } 
         // CASE 3: Needs larger allocation
-        return allocateBuffer(inStr,newLen);
+        return allocateBuffer(inStr);
     }
 
-    inline constexpr string& append(const char* in) {
-        size_t inlen = getLen(in);
+    inline constexpr string& append(std::string_view in) {
+        size_t inlen = in.size();
         if (inlen == 0) return *this;
 
         size_t currentLen = storage.len;
@@ -211,13 +267,13 @@ public:
         if (totalLen > sMaxStr) {
             auto& ptr = storage.type.Large;
             reserve(totalLen);
-            copy(ptr.str + len(), in,inlen);
+            copy(ptr.str + len(), in);
 
             unsigned int keepFlags = storage.mode & (Mode::autoResize | Mode::noHeap);
             storage.mode = Mode::onHeap | Mode::Large | keepFlags;
         } else {
             if (storage.mode & Mode::View) {
-                const char* oldLiteral = storage.type.cExpr;
+                std::string_view oldLiteral = storage.type.cExpr;
                 unsigned int keepFlags = storage.mode & (Mode::autoResize | Mode::noHeap);
                 storage.mode = Mode::Small | keepFlags;
                 storage.type.Small = smallStr{};
@@ -307,3 +363,11 @@ int main()
 constexpr string ss ("hello wssssssss large nee");
 
 static_assert((ss.mode() & string::View) != 0, "yes");
+
+static_assert((1 << 0) == 1);
+static_assert((1 << 1) == 2);
+static_assert((1 << 2) == 4);
+static_assert((1 << 4) == 16);
+static_assert((1 << 5) == 32);
+static_assert((1 << 6) == 64);
+static_assert((1 << 7) == 128);
