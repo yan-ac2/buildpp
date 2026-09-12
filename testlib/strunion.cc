@@ -1,6 +1,7 @@
 
 #include <cstddef>
 #include <string_view>
+#include <__iterator/reverse_iterator.h>
 
 struct stringView {
     using value_type = char;
@@ -16,16 +17,18 @@ struct stringView {
     const_pointer data_;
     size_type len{};
 
+    static constexpr size_type npos {size_type(-1)};
+
     constexpr stringView() : data_(nullptr),len(0) {}
     constexpr stringView(const stringView& other) noexcept = default;
 
     template<size_type N>
-    constexpr stringView(const value_type (&str)[N]) noexcept : data_(str),len(N) {}
+    constexpr stringView(const value_type (&str)[N]) noexcept : data_(str),len(N - 1) {}
 
     template<typename T> requires (requires(T t) { t.data(),t.size();})
     constexpr stringView(const T& str) noexcept : data_(str.data()),len(str.size()) {}
     constexpr stringView(const_pointer str,size_type count) : data_(str),len(count) {}
-    constexpr stringView(const_pointer str) : data_(str),len([&str] constexpr {size_type i = 0; while(str[++i] != '\0'){}; return i;}()) {}
+    constexpr stringView(const_pointer str) : data_(str),len([&str]() constexpr {size_type i = 0; while(str[++i] != '\0'){}; return i;}()) {}
 
     constexpr stringView& operator =(const stringView& other) noexcept = default; 
 
@@ -46,35 +49,62 @@ struct stringView {
 
     constexpr size_type empty()const { return size() == 0;}
 
-    constexpr void remove_prefix(size_type n) { const_pointer temp = data_; data_ = temp + n; len -= n;}
+    constexpr stringView substr(size_type pos,size_type count = npos) {
+        return {this->data() + pos,count};
+    }
+
+    constexpr void remove_prefix(size_type n) { data_ = data_ + n; len -= n;}
     constexpr void remove_suffix(size_type n) { len -= n;}
     constexpr void swap(stringView& other) { stringView temp {*this}; *this = other; other = temp;}
 
-    constexpr bool operator==(stringView& rhs) {
-        return len != rhs.size() ? false : [this,&rhs] {
-            for (const char& c : rhs) {
-                if (data_[&c - rhs.begin()] != c) return false;
-            }
-            return true;
-        }();
+    constexpr size_type find(stringView v,size_type pos = 0) {
+        stringView temp (*this);
+        temp.remove_prefix(pos);
+        for (const char& c : temp) {
+            if (c == v.front() && (*((&c + v.size()) > end() ? end() : (&c + v.size())) == v.back())) { return (&c - temp.begin()) + pos;}
+        }
+        return npos;
+    }
+
+    constexpr size_type copy(pointer dest, size_type count, size_type pos = 0) const noexcept {
+        size_type idx{0};
+        for (;idx < (count > len ? len : count); idx++) {
+            dest[idx] = data_[idx + pos];
+        }
+        return idx;
+    };
+    constexpr bool strcmp(const stringView& str) const {
+        for (const char& c : str) {
+            difference_t idx {&c - str.begin()}; 
+            if (data_[idx] != c) return false;
+        }
+        return true;
+    };
+    constexpr bool operator==(const stringView& rhs) const {
+        return len != rhs.size() ? false : strcmp(rhs);
+    }
+    template<size_type N>
+    constexpr bool operator==(const value_type (&rhs)[N]) {
+        stringView temp(rhs);
+        return len != temp.size() ? false : strcmp(rhs);
     }
     constexpr bool operator==(const_pointer rhs) {
         stringView temp(rhs);
-        return len != temp.size() ? false : [this,&temp] {
-            for (const char& c : temp) {
-                if (data_[&c - temp.begin()] != c) return false;
-            }
-            return true;
-        }();
+        return len != temp.size() ? false : strcmp(rhs);
     }
 };
 
 static_assert([]{
     stringView a  {"hello"};
     stringView b  {a};
+    stringView c  {"hello"};
+    char s[8];
+    c.copy(s, 10,0);
     a.remove_prefix(2);
+    a.remove_suffix(1);
     b.remove_suffix(2);
-    return (a == "llo") && b == "hel";
+    std::size_t idx = c.find("ll",3);
+    return (a == "ll") && b == "hel" && stringView(s).strcmp("hell") && idx == 3;
 }());
 class string {
 public:
