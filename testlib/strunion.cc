@@ -1,7 +1,12 @@
 
 #include <cstddef>
+#include <cstdio>
 #include <string_view>
 #include <__iterator/reverse_iterator.h>
+#include <__iterator/iterator_traits.h>
+#include <__ranges/reverse_view.h>
+
+
 
 struct stringView {
     using value_type = char;
@@ -13,35 +18,71 @@ struct stringView {
     using iterator = const_iterator;
     using size_type = std::size_t;
     using difference_t = std::ptrdiff_t;
+    // using ite
+    struct reverse_iterator {
+        const_pointer current;
+        
+        constexpr explicit reverse_iterator(const_pointer ptr) noexcept : current(ptr) {}
+        
+        constexpr const_reference operator*() const noexcept { return *(current - 1); }
+        constexpr const_pointer operator->() const noexcept { return current - 1; }
+        
+        // Increment moves BACKWARD
+        constexpr reverse_iterator& operator++() noexcept {
+            --current;
+            return *this;
+        }
+        constexpr reverse_iterator operator++(int) noexcept {
+            reverse_iterator temp = *this;
+            --current;
+            return temp;
+        }
+        
+        constexpr reverse_iterator& operator--() noexcept {
+            ++current;
+            return *this;
+        }
+        constexpr reverse_iterator operator--(int) noexcept {
+            reverse_iterator temp = *this;
+            ++current;
+            return temp;
+        }
+        
+        constexpr bool operator==(const reverse_iterator& rhs) const noexcept = default;
+    };
     
     const_pointer data_;
     size_type len{};
 
     static constexpr size_type npos {size_type(-1)};
 
-    constexpr stringView() : data_(nullptr),len(0) {}
+    constexpr stringView() noexcept : data_(nullptr),len(0)  {}
     constexpr stringView(const stringView& other) noexcept = default;
 
+    constexpr size_type strlen(const char* str) const noexcept {size_type i = 0; while(str[i++] != '\0'){}; return i;}
     template<size_type N>
-    constexpr stringView(const value_type (&str)[N]) noexcept : data_(str),len(N - 1) {}
+    constexpr size_type strlen(const value_type (&str)[N]) const noexcept {size_type i = 0; while((str[i++]) != '\0' || i != N){}; return i;}
+
+    template<size_type N>
+    constexpr stringView(const value_type (&str)[N]) noexcept : data_(str),len(strlen<N>(str)) {}
 
     template<typename T> requires (requires(T t) { t.data(),t.size();})
     constexpr stringView(const T& str) noexcept : data_(str.data()),len(str.size()) {}
-    constexpr stringView(const_pointer str,size_type count) : data_(str),len(count) {}
-    constexpr stringView(const_pointer str) : data_(str),len([&str]() constexpr {size_type i = 0; while(str[++i] != '\0'){}; return i;}()) {}
+    constexpr stringView(const_pointer str,size_type count) noexcept : data_(str),len(count) {}
+    constexpr stringView(const_pointer str) noexcept : data_(str),len(strlen(str)) {}
 
     constexpr stringView& operator =(const stringView& other) noexcept = default; 
 
-    constexpr iterator begin  () const noexcept {return data_;} 
-    constexpr iterator cbegin () const noexcept {return data_;} 
-    constexpr iterator end    () const noexcept {return data_ + len;} 
-    constexpr iterator cend   () const noexcept {return data_ + len;} 
+    constexpr iterator begin  () const noexcept {return iterator{&data_[0]};} 
+    constexpr iterator end    () const noexcept {return iterator{&data_[len] - 1};} 
+    constexpr reverse_iterator rbegin () const noexcept {return reverse_iterator{end()};}  
+    constexpr reverse_iterator rend () const noexcept {return reverse_iterator{begin()};}  
 
     constexpr const_reference operator[](size_type idx) const { return data_[idx];}
     constexpr const_reference at        (size_type idx) const { return data_[idx];}
 
     constexpr const_reference front     () const { return data_[0];}
-    constexpr const_reference back      () const { return data_[len];}
+    constexpr const_reference back      () const { return data_[len - 1];}
     constexpr const_pointer   data      () const { return data_;}
     
     constexpr size_type size  ()const { return len;}
@@ -50,7 +91,7 @@ struct stringView {
     constexpr size_type empty()const { return size() == 0;}
 
     constexpr stringView substr(size_type pos,size_type count = npos) {
-        return {this->data() + pos,count};
+        return {data_ + pos,count > len ? len : count};
     }
 
     constexpr void remove_prefix(size_type n) { data_ = data_ + n; len -= n;}
@@ -58,18 +99,19 @@ struct stringView {
     constexpr void swap(stringView& other) { stringView temp {*this}; *this = other; other = temp;}
 
     constexpr size_type find(stringView v,size_type pos = 0) {
-        stringView temp (*this);
-        temp.remove_prefix(pos);
+        auto temp = this->substr(pos);
         for (const char& c : temp) {
-            if (c == v.front() && (*((&c + v.size()) > end() ? end() : (&c + v.size())) == v.back())) { return (&c - temp.begin()) + pos;}
+            size_type idx = (&c - data_);
+            if (data_[idx] == v.front() && temp.substr(idx,v.size()) == v)  { return idx;}
         }
         return npos;
     }
 
     constexpr size_type copy(pointer dest, size_type count, size_type pos = 0) const noexcept {
-        size_type idx{0};
-        for (;idx < (count > len ? len : count); idx++) {
-            dest[idx] = data_[idx + pos];
+        const std::size_t maxCount{(count > this->size() ? this->size() : count)};
+        std::size_t idx{0};
+        for (;idx < maxCount; idx++) {
+            dest[idx] = this->data()[idx + pos];
         }
         return idx;
     };
@@ -97,15 +139,19 @@ struct stringView {
 static_assert([]{
     stringView a  {"hello"};
     stringView b  {a};
-    stringView c  {"hello"};
+    stringView c  {"hello again from world number 3200"};
     char s[8];
-    c.copy(s, 10,0);
+    c.copy(s,4,0);
+    [[maybe_unused]] char cc = c.back();
     a.remove_prefix(2);
     a.remove_suffix(1);
     b.remove_suffix(2);
-    std::size_t idx = c.find("ll",3);
-    return (a == "ll") && b == "hel" && stringView(s).strcmp("hell") && idx == 3;
-}());
+    std::size_t idx = c.find("wo",0);
+    // return (a == "ll") && b == "hel" && stringView(s).strcmp("hell") && 
+    return idx;
+}() == 17);
+
+
 class string {
 public:
     enum Mode : unsigned int {
@@ -122,7 +168,6 @@ public:
 private:
     struct largeStr {
         char* str = nullptr;
-        char* end = nullptr;
         size_t cap = 0;
     };
     
@@ -146,19 +191,15 @@ private:
         } type; // 24 bytes -> Total sizeof(store) == 32 bytes
     } storage;
 
-    static constexpr size_t getLen(std::string_view str) noexcept {
-        if (!str.data()) return 0;
-        return str.size();
-    }
-
-    static constexpr size_t copy(char* to, std::string_view from) noexcept {
-        for (auto& c : from) {
-            to[&c - from.begin()] = c;
-        }
-        return from.size();
-    }
-
 public:
+    constexpr std::size_t copy(char* dest, std::size_t count, std::size_t pos = 0) const noexcept {
+        const std::size_t maxCount{(count > this->size() ? this->size() : count)};
+        std::size_t idx{0};
+        for (;idx < maxCount; idx++) {
+            dest[idx] = this->data()[idx + pos];
+        }
+        return idx;
+    };
     // 1. Default constructor
     explicit constexpr string() noexcept {
         storage.mode = Mode::Small;
@@ -172,12 +213,11 @@ public:
         storage.mode = Mode::View | Mode::noHeap;
         storage.type.cExpr = inStr;
         storage.len = static_cast<unsigned int>(N);
-        // assign(inStr);
     }
-    constexpr string(std::string_view inStr) {
+    constexpr string(stringView inStr) {
         storage.mode = Mode::View | Mode::noHeap;
         storage.type.cExpr = inStr.data();
-        storage.len = static_cast<unsigned int>(getLen(inStr));
+        storage.len = static_cast<unsigned int>(inStr.size());
     }
 
     // Flag Management Setters / Getters
@@ -193,90 +233,61 @@ public:
     constexpr bool isNoHeapEnabled()     const noexcept { return (storage.mode & Mode::noHeap) != 0; }
     constexpr bool isView()              const noexcept { return (storage.mode & Mode::View) != 0; }
 
-    inline constexpr string& reuseBuffer(std::string_view inStr) {
+    constexpr string& reuseBuffer(stringView inStr) {
         auto& ptr = storage.type.Large;
 
-        copy(ptr.str, inStr);
-        ptr.str[inStr.size()] = '\0';
-        ptr.end = storage.type.Large.str + inStr.size();
-        storage.len = static_cast<unsigned int>(ptr.end - ptr.str);
+        std::size_t end = inStr.copy(ptr.str, inStr.size());
+        ptr.str[end] = '\0';
+        storage.len = static_cast<unsigned int>(end);
         
         return *this;
     }
-    inline constexpr string& allocateBuffer(std::string_view inStr) {
+
+    constexpr string& allocateBuffer(stringView inStr) {
         auto& ptr = storage.type.Large;
-
-        bool allocateBuffer = (storage.mode & Mode::onHeap) && (inStr.size() <= storage.type.Large.cap);
-
-        char* targetBuf = nullptr;
-        size_t newCap = storage.type.Large.cap;
-
-        if (allocateBuffer) {
-            return reuseBuffer(inStr);
-        } else {
-            if (storage.mode & Mode::onHeap) {
-                delete[] storage.type.Large.str;
-            }
-            newCap = inStr.size();
-            targetBuf = new char[newCap + 1]();
-        }
-        copy(targetBuf, inStr);
-        targetBuf[inStr.size()] = '\0';
-
-        unsigned int keepFlags = storage.mode & (Mode::autoResize | Mode::noHeap);
-        storage.mode = Mode::onHeap | Mode::Large | keepFlags;
-        storage.type.Large = largeStr{
-            .str = targetBuf,
-            .end = targetBuf + inStr.size(),
-            .cap = newCap
-        };
-        storage.len = static_cast<unsigned int>(ptr.end - ptr.str);
+        reserve(inStr.size());
+        copy(*(&ptr.str + size()), inStr.size());
         return *this;
     }
-    inline constexpr string& useSBO(std::string_view inStr) {
-        auto& ptr = storage.type.Small;
+
+    constexpr string& useSBO(stringView inStr) {
         if (storage.mode & Mode::onHeap) {
             delete[] storage.type.Large.str;
         }
-
+        auto& ptr = storage.type.Small;
         unsigned int keepFlags = storage.mode & (Mode::autoResize | Mode::noHeap);
         storage.mode = Mode::Small | keepFlags;
-        
+
         ptr = smallStr{};
-        ptr.str[copy(storage.type.Small.str, inStr)] = '\0';
+        ptr.str[inStr.copy(storage.type.Small.str, inStr.size())] = '\0';
         storage.len = static_cast<unsigned int>(inStr.size());
         return *this;
     }
-    inline constexpr string& reserve(size_t newLen) {
-        const char* oldData = data();
-        bool reuseHeap = (storage.mode & Mode::onHeap) && (newLen <= storage.type.Large.cap);
+
+    
+    constexpr string& reserve(size_t newLen) {
+        if (newLen < capacity()) return *this;
+        // bool reuseHeap = (storage.mode & Mode::onHeap) && (newLen <= storage.type.Large.cap);
 
         char* newBuffer = nullptr;
-        size_t newCap = storage.type.Large.cap;
-
-        if (reuseHeap) {
-            newBuffer = storage.type.Large.str;
-        } else {
-            newCap = newLen;
-            newBuffer = new char[newCap + 1]();
-            copy(newBuffer, oldData);
-            if (storage.mode & Mode::onHeap) {
-                delete[] storage.type.Large.str;
-            }
+        size_t newCap = newLen;
+        
+        newBuffer = new char[newCap + 1];
+        newBuffer[copy(newBuffer, size())] = '\0';
+        if (storage.mode & Mode::onHeap) {
+            delete[] storage.type.Large.str;
         }
+    
         
         storage.type.Large = largeStr{
             .str = newBuffer,
-            .end = newBuffer + storage.len,
             .cap = newCap
         };
-        newBuffer[storage.len] = '\0';
         return *this;
     }
-    inline constexpr string& assign(std::string_view inStr) {
-        // size_t newLen = getLen(inStr);
-        // CASE 1: Currently on Heap & autoResize is DISABLED -> Reuse existing heap buffer
-        if ((storage.mode & Mode::onHeap) && !isAutoResizeEnabled()) {
+
+    constexpr string& assign(stringView inStr) {
+        if ((storage.mode & Mode::onHeap)) {
             return reuseBuffer(inStr);
         }
         // CASE 2: Fits in Small SSO buffer
@@ -287,7 +298,7 @@ public:
         return allocateBuffer(inStr);
     }
 
-    inline constexpr string& append(std::string_view in) {
+    constexpr string& append(stringView in) {
         size_t inlen = in.size();
         if (inlen == 0) return *this;
 
@@ -297,20 +308,20 @@ public:
         if (totalLen > sMaxStr) {
             auto& ptr = storage.type.Large;
             reserve(totalLen);
-            copy(ptr.str + len(), in);
+            in.copy(ptr.str + len(), inlen);
 
             unsigned int keepFlags = storage.mode & (Mode::autoResize | Mode::noHeap);
             storage.mode = Mode::onHeap | Mode::Large | keepFlags;
         } else {
             if (storage.mode & Mode::View) {
-                std::string_view oldLiteral = storage.type.cExpr;
+                stringView oldLiteral = storage.type.cExpr;
                 unsigned int keepFlags = storage.mode & (Mode::autoResize | Mode::noHeap);
                 storage.mode = Mode::Small | keepFlags;
                 storage.type.Small = smallStr{};
-                copy(storage.type.Small.str, oldLiteral);
+                oldLiteral.copy(storage.type.Small.str, oldLiteral.len);
             }
             char* dest = (storage.mode & Mode::onHeap) ? storage.type.Large.str : storage.type.Small.str;
-            copy(dest + currentLen, in);
+            in.copy(dest + currentLen, inlen);
             dest[totalLen] = '\0';
         }
 
@@ -323,15 +334,23 @@ public:
         if (storage.mode & Mode::Large) return storage.type.Large.str;
         return storage.type.Small.str;
     }
+    constexpr char& operator[](std::size_t idx) {
+        if (storage.mode & Mode::Large) return storage.type.Large.str[idx];
+        return storage.type.Small.str[idx];
+    }
+    
+    constexpr const char* begin() {return data();} 
+    constexpr const char* cbegin() const {return stringView{data(),size()}.begin();} 
+    constexpr const char* end() {return data() + storage.len;} 
+    constexpr const char* cend() const {return stringView{data(),size()}.end();} 
 
     constexpr size_t capacity() const noexcept {
         if (storage.mode & Mode::Large) return storage.type.Large.cap;
         return sMaxStr;
     }
 
-    constexpr string& operator=(const char* in) {
-        assign(in);
-        return *this;
+    constexpr string& operator=(const char* in)  {
+        return assign(stringView(in));
     }
 
     constexpr size_t size() const noexcept { return storage.len; }
@@ -346,6 +365,7 @@ public:
         }
     }
 };
+
 
 int main()
 {
@@ -385,6 +405,12 @@ int main()
         // printf("%s %zu \n",s.data() , s.size());
         s = "aaa";
         printf("%s %zu \n", s.data(), s.size());
+
+        stringView r {"hello world"};
+        for (auto i = r.rbegin();i != r.rend();i++) {
+            printf("%c", *i);
+        }
+        printf("\n");
     
     return 0; 
 }
