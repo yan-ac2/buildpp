@@ -3,6 +3,10 @@
 // #include <tuple>
 // import lib;
 #include "pch.hpp"
+#include <string>
+#include <iostream>
+#include <thread>
+#include <filesystem>
 
 import lib.types;
 import lib.win;
@@ -19,10 +23,6 @@ GLuint loadTGATexture(const std::string& filename) {
     GLuint textureID;
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
-
-    // CRITICAL: TGA 3-byte RGB data is NOT 4-byte aligned! 
-    // Default OpenGL alignment assumption is 4, which causes skewed textures.
-    // glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
     // Upload texture data
     glTexImage2D(
@@ -50,6 +50,7 @@ GLuint loadTGATexture(const std::string& filename) {
 
 int main() {
     using et = EventType;
+    namespace fs = std::filesystem;
     Window child;
     Window app("MainWindow",800,600,WindowFlags::WinOGL | WindowFlags::WinCenter ,{100,100});
     // child.InitChild(&app,"ChildWindow",800,600,WindowFlags::NoBorder);
@@ -82,7 +83,7 @@ int main() {
     };
 
 
-    float box[] {
+    [[maybe_unused]]float box[] {
         0.5f, 0.5f,0.0f,0.0f,1.0f,0.0f,0.0f,1.0f,
         0.5f, -0.5f,0.0f,0.0f,0.0f,1.0f,-0.5f,1.0f,
         -0.5f,-0.5f,0.0f,0.0f,1.0f,0.0f,0.5f,1.0f,
@@ -109,15 +110,14 @@ int main() {
 
     Framebuffer fmain(app.Desc);
     
-    auto start = std::chrono::high_resolution_clock::now();
-    auto& times = Clock::get();
+    // auto start = std::chrono::high_resolution_clock::now();
+    auto times = Clock::get();
     while (app.IsRunning()) {
         times.start();
         app.ProcessEvents();
         if(app.GetEvent().scrollDirection > 0) {
             auto monitor = disp.GetPrimaryMonitor();
-            std::cout << fmt( "Monitor\n X: {} Y: {} {}x{} isPrimary: {}\n",monitor->x,monitor->y,monitor->width,monitor->height,monitor->isPrimary ? "true" : "false");   
-            // std::cout << "\nMonitor \n"<< "X: "<< monitor->x << " Y: " << monitor->y << " Res: " << monitor->width  << "x" << monitor->height << " Is Primary: " << monitor->isPrimary << "\n";   
+            std::cout << fmt( "Monitor\n X: {} Y: {} {}x{} isPrimary: {}\n",monitor->x,monitor->y,monitor->width,monitor->height,monitor->isPrimary ? "true" : "false"); 
         }
         if (KeyMap.poll(16,times.delta_time())) {
             if (KeyMap[et::escape]) { 
@@ -175,7 +175,6 @@ int main() {
         glCtx.Swapbuffer();
 
         auto timeSleep = times.end(Clock::ms(16));
-        // std::cout << fmt("time: {}ms dt: {}ms\n",timeSleep.count(),times.delta_time());
         std::this_thread::sleep_for(timeSleep);
     }
     return 0;

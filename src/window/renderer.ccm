@@ -641,14 +641,10 @@ class Renderer<"software"> {
         }
     }
 
-    inline void set(size_t ix,size_t iy,const uint8* colors) {
+    inline void set(size_t ix,size_t iy,RGBA colors) {
         uint8* index = buffer + ((iy * (channel*width))  +  ix *channel);
         if (index >= buffer + bufferSize || index <= buffer) return;
-        for (int i = 0;;++i)
-        {
-            *(index + i) = *(colors + i);
-            if(i >= channel) break;
-        }
+        colors.copy<4>(index);
     }
 
     void line(int32 aix,int32 aiy,int32 bix,int32 biy,RGBA col) {

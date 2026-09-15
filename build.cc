@@ -212,6 +212,7 @@ int compileProject(bool recompile)
         // .getLib(&libGLAD)
         // .addIncludefile((mainProj.Path / mainProj.getMainPath() / "lib" / "RGFW").string())
         .addIncludePath((mainProj.Path / mainProj.getMainPath()).string())
+        .addIncludePath((mainProj.Path / mainProj.getMainPath() / "window").string())
         .setResourcePath("res")
         .getCppFile();
     

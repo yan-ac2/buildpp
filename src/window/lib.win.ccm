@@ -1,7 +1,10 @@
+module;
+
 export module lib.win;
+export import "keyboard.hpp";
 
 export import :platform;
 export import :renderer;
-export import :keyboard;
 export import :common;
 
+// export using namespace keyboard;
