@@ -112,7 +112,7 @@ int selfCompile(bool recompile)
 
     #ifdef _WIN32
     rebuild.setCompiler("clang++")
-    .setOptions("-Os -Wall -Wextra -Wpedantic -Werror -fno-rtti -fuse-ld=lld -std=c++20")
+    .setOptions("-Os -Wall -Wextra -Wpedantic -Werror -fno-rtti -fuse-ld=lld -std=c++23")
     .setLdOptions("-fuse-ld=lld")
     #elif __unix__
     rebuild.setCompiler("clang++")

@@ -17,6 +17,7 @@
 #include <utility>
 #include <functional>
 #include <mutex>
+#include <ranges>
 
 #include "json.hpp"
 
@@ -539,6 +540,7 @@ struct File {
     fStr Flags       {};
     fStr ldFlags     {};
     fStr objectPath  {};
+    std::vector<fStrView> headerDeps {};
     std::vector<IDx> dependencies {};
     [[nodiscard]] fStr getModuleOutput(const fs::path* mPath) {
         err(Name.empty(), "File Name Empty");
@@ -558,6 +560,15 @@ struct File {
         }
         return Name;
     }
+};
+struct HeaderFile {
+    using fStr = std::string;
+    using fStrView = std::string_view;
+    using IDx = std::size_t;
+
+    fStr Name        {};
+    fStrView Path    {};
+    std::vector<fStrView> dependencies {};
 };
 
 class FileManager {
@@ -592,7 +603,7 @@ class FileManager {
     };
     using MapPair = std::pair<const std::string, File>;
 
-    std::unordered_map<std::string, std::vector<std::string>,StringHash,std::equal_to<>> Header {};
+    std::unordered_map<std::string, std::vector<HeaderFile>,StringHash,std::equal_to<>> Header {};
     std::unordered_map<std::string, File,StringHash,std::equal_to<>> Files {};
     std::vector<File*> IDMap {};
     std::size_t NextID = 0;
@@ -611,15 +622,33 @@ class FileManager {
         return *ref;
     }
     
-    std::vector<std::string>& setHeaderPath(std::string_view name) {
-        return Header.try_emplace(name.data(),std::vector<std::string>{}).first->second;
+    auto setHeaderPath(std::string_view path) -> std::vector<HeaderFile>& {
+        return Header.try_emplace(path.data(),std::vector<HeaderFile>{}).first->second;
     }
 
-    void addHeader(std::string_view name,std::string_view H) {
-        auto it = Header.find(name);
-        std::string n = fs::path(H).lexically_relative(name).generic_string();
+    void addHeader(std::string_view path,std::string_view name) {
+        auto it = Header.find(path);
+        std::string n = fs::path(name).lexically_relative(path).generic_string();
         if (it != Header.end()) {
-            it->second.push_back(n);
+            it->second.push_back(HeaderFile{.Name = {std::move(n)},.Path=path});
+        }
+        return;
+    }
+    void addHeader(HeaderFile H) {
+        auto it = Header.find(H.Path);
+        if (it == Header.end()) {
+            auto ref = &Header.try_emplace(H.Path.data()).first->second;
+            ref->push_back(HeaderFile{
+                .Name = {std::move(H.Name)},
+                .Path=std::move(H.Path),
+                .dependencies=std::move(H.dependencies)
+            });
+        } else if (it != Header.end()) {
+            it->second.push_back(HeaderFile{
+                .Name = {std::move(H.Name)},
+                .Path=std::move(H.Path),
+                .dependencies=std::move(H.dependencies)
+            });
         }
         return;
     }
@@ -627,7 +656,7 @@ class FileManager {
     std::string_view getHeaderPath(std::string_view name,std::source_location loc = std::source_location::current()) {
         for (auto& [I , IN] : Header) {
             for(const auto& N : IN)
-            if (N == name) {
+            if (N.Name == name) {
                 // std::string temp = (fs::path(I.first) / name).string();
                 return I;
             }
@@ -880,7 +909,7 @@ class cProject{
 
                     for(const auto& [KI,VI] : ProjectFile.hIter()) {
                         for(const auto& I : VI) {
-                            if (includeFound == I) {
+                            if (includeFound == I.Name) {
                                 // print << fmt("Include dependency Found: "_fmt.color(fmt::Blue), includeFound, " " , I , " in " , K).endl();
                                 modFile.Flags.append(fmt(" -I",KI));
                                 break;
@@ -953,7 +982,7 @@ class cProject{
         for (const auto& [K,V]: ProjectFile.hIter()) {
             print << "Include Dir: " << K << " Header File: ";
             for (const auto& N : V) {
-                print << N << " ";
+                print << N.Name << " ";
             }
             print << "\n";
         }
@@ -1074,11 +1103,11 @@ class Project
         if (cProj->outFile == cProject::staticLib) {
              for (const auto& [K,V] : cProj->ProjectFile.hIter()) {
                 for (const auto& I : V) {
-                    ProjectFile.addHeader(K, I);
+                    ProjectFile.addHeader(I);
                 }
             }
             if(!cProj->outputName.empty()) {
-                    LdOptions.append(fmt(" -L",cProj->projectOutPath->objPath.string()," -l",cProj->ProjectFile.getMain().Name));
+                LdOptions.append(fmt(" -L",cProj->projectOutPath->objPath.string()," -l",cProj->ProjectFile.getMain().Name));
             }
         }
         return *this;
@@ -1092,7 +1121,7 @@ class Project
             // }
             for (const auto& [K,V] : other->ProjectFile.hIter()) {
                 for (const auto& I : V) {
-                    ProjectFile.addHeader(K, I);
+                    ProjectFile.addHeader(I);
                 }
             }
             if(!other->outputName.empty()) {
@@ -1209,6 +1238,53 @@ class Project
         return false;
     };
 
+    
+    void solveHeaderDependencies() {
+        for (auto& [P,H] : ProjectFile.hIter() ) {
+            for (auto& Header : H) {
+                err(Header.Path.empty() ,"Error: Empty project path"_fmt.color(fmt::Bold_Red)); 
+                const std::string HeaderPath = (fs::path{P} / Header.Name).generic_string(); 
+                std::ifstream files(HeaderPath);
+                err(!files.is_open(),fmt("Error: Unable to open file "_fmt.color(fmt::Bold_Red)," File: ",HeaderPath));
+                std::string line;
+                bool inBlockComment = false; 
+                while (std::getline(files, line)) {
+                    if(blockedComment(&inBlockComment, &line)) {continue;}
+                    const size_t ipos = line.find(fileUtil::includeToken);
+                    
+                    if(singleLineComment(line, &ipos)) {continue;}
+                    if (ipos != std::string::npos) { 
+                        const size_t searchStart = ipos + fileUtil::includeToken.length();
+                        std::string_view headerName = std::string_view{line}.substr(searchStart);
+                        const auto startPos = headerName.find_first_of("\"<");
+                        if (startPos == std::string_view::npos) { continue; }
+
+                        // Determine the required closing delimiter based on the opening one
+                        const char openChar = headerName[startPos];
+                        const char closeChar = (openChar == '<') ? '>' : '"';
+
+                        // Search forward from the opening delimiter for its matching pair
+                        const auto endPos = headerName.find(closeChar, startPos + 1);
+                        if (endPos == std::string_view::npos) { continue; }
+
+                        // Extract the substring directly using start and end indices
+                        headerName = headerName.substr(startPos + 1, endPos - (startPos + 1));
+                        
+                        for (const auto& [K,V] : ProjectFile.hIter()) {
+                            for (const auto& N : V) {
+                                print << fmt("include header "_fmt.color(fmt::Bold_Blue) , headerName , " compare " , N.Name ).endl();
+                                if (headerName == N.Name) {
+                                    Header.dependencies.push_back(K); break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+
     void getCppFile() {
         for (const auto& K : ProjectFile.hIter()) {
             const fs::directory_iterator it(K.first);
@@ -1220,6 +1296,7 @@ class Project
                 }
             }
         }
+        solveHeaderDependencies();
         for (const auto& p : SourcePath)
         {
             err ((!fs::exists(p) || !fs::is_directory(p)), fmt("Directory does not exist. "_fmt.color(fmt::Bold_Red),p));
@@ -1240,7 +1317,7 @@ class Project
             }
         }
     }
-    
+
     Project& scanHeader() {
         // print << "Scanning Files"_fmt.color(fmt::Bold_Green).endl();
         for (auto& [K, V] : ProjectFile) {
@@ -1328,66 +1405,46 @@ class Project
                     const size_t searchStart = ipos + fileUtil::includeToken.size();
                     std::string_view includeFound = std::string_view{line}.substr(searchStart);
                     const auto startPos = includeFound.find_first_of("\"<");
-                    if (startPos == std::string_view::npos) {continue;}
-                    includeFound.remove_prefix(startPos + 1);
-                    const auto endPos = includeFound.find_last_of("\">");
-                    if (endPos == std::string_view::npos) {continue;}
-                    includeFound.remove_suffix( includeFound.size() - endPos);
-                    // std::erase_if(includeFound, [](char c) { 
-                    //     return c == '"' || c == '<' || c == '>' || c == ' '; 
-                    // });
+                    if (startPos == std::string_view::npos) { continue; }
 
-                    for (const auto& [KI, VI] : ProjectFile.hIter()) {
-                        for (const auto& I : VI) {
-                            print << fmt("include header "_fmt.color(fmt::Bold_Blue) , includeFound , " compare " , I , " in ", V.Name).endl();
-                            if (includeFound == I) {
-                                V.Flags.append(fmt(" -I", KI));
-                                break;
-                            }
+                    // Determine the required closing delimiter based on the opening one
+                    const char openChar = includeFound[startPos];
+                    const char closeChar = (openChar == '<') ? '>' : '"';
+
+                    // Search forward from the opening delimiter for its matching pair
+                    const auto endPos = includeFound.find(closeChar, startPos + 1);
+                    if (endPos == std::string_view::npos) { continue; }
+
+                    // Extract the substring directly using start and end indices
+                    includeFound = includeFound.substr(startPos + 1, endPos - (startPos + 1));
+                    for (auto&  [HP,HF] : ProjectFile.hIter()) {
+                        auto findInclude = std::ranges::find_if(HF,[&includeFound](auto& s){
+                            return s.Name == includeFound;
+                        });
+                        if (findInclude != HF.end()) {
+                            V.headerDeps.push_back(HP);
+
+                            if (!findInclude->dependencies.empty()) { 
+                                auto filter = V.headerDeps | std::views::filter([&](const auto& f) { 
+                                    return std::ranges::find(findInclude->dependencies,f) == findInclude->dependencies.end();
+                                });
+                                for (const auto& f : filter)
+                                V.headerDeps.push_back(f);
+                           }
                         }
                     }
                 }
             }
-
+            
+            for (const auto& H : V.headerDeps) {
+                V.Flags.append(fmt(" -I",H));
+            }
             files.close();
         }
         return *this;
     }
 
-    void getHeaderDependencies(File& file) {
-        err(file.Path.empty() ,"Error: Empty project path"_fmt.color(fmt::Bold_Red)); 
-        err(file.fileType != File::HeaderUnit ,"Error: Not Header unit"_fmt.color(fmt::Bold_Red)); 
     
-        std::ifstream files(file.Path);
-        err(!files.is_open(),fmt("Error: Unable to open file "_fmt.color(fmt::Bold_Red)," File: ",file.Path));
-        std::string line;
-        bool inBlockComment = false; 
-        
-        while (std::getline(files, line)) {
-            if(blockedComment(&inBlockComment, &line)) {continue;}
-            const size_t ipos = line.find(fileUtil::includeToken);
-            
-            if(singleLineComment(line, &ipos)) {continue;}
-            if (ipos != std::string::npos) { 
-                const size_t searchStart = ipos + fileUtil::includeToken.length();
-                std::string_view headerName = std::string_view{line}.substr(searchStart);
-                const auto startPos = headerName.find_first_of("\"<");
-                if (startPos == std::string_view::npos) {continue;}
-                headerName.remove_prefix(startPos + 1);
-                const auto endPos = headerName.find_last_of("\">");
-                if (endPos == std::string_view::npos) {continue;}
-                headerName.remove_suffix(headerName.size() - endPos);
-                for (const auto& [K,V] : ProjectFile.hIter()) {
-                    for (const auto& N : V) {
-                        // print << fmt("include header "_fmt.color(fmt::Bold_Blue) , headerName , " compare " , N , " in ", file.Name).endl();
-                        if (headerName == N) {
-                            file.Flags.append(fmt(" -I",K," ")); break;
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     Project& scanModule() {
         for (const auto& [K,V] : ProjectFile) {
@@ -1432,8 +1489,9 @@ class Project
                         F.second.fileType = isHeaderUnit ? File::HeaderUnit : File::SystemHeader;
                         if (isHeaderUnit) {
                             F.second.Path = (fs::path(ProjectFile.getHeaderPath(rawHeader))/ rawHeader).string();
-                            getHeaderDependencies(F.second);
                             moduleName = rawHeader;
+                            auto findHeader = std::ranges::find(ProjectFile.hIter() | std::views::values | std::views::join,
+                            moduleName,&HeaderFile::Name);
                             ProjectFile[V.ID].haveHeaderUnit = true;
                         }
                         F.second.objectPath = isHeaderUnit ? fmt((OutPath->modulePath / rawHeader).string(),fileUtil::pcmModule) : F.second.getModuleOutput(&OutPath->stdPath);
@@ -1695,7 +1753,8 @@ class Project
         for (const auto& [K,V]: ProjectFile.hIter()) {
             print << "Include Dir: " << K << " Header File: ";
             for (const auto& N : V) {
-                print << N << " ";
+                print << N.Name << " dependency ";
+                for (const auto& D : N.dependencies) print << D << " ";
             }
             print << "\n";
         }
