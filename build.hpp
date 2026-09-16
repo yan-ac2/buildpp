@@ -574,7 +574,8 @@ struct HeaderFile {
 class FileManager {
     constexpr FileManager& err(bool cnd = false,std::string_view msg = "",std::source_location fn = std::source_location::current()) {
         if (cnd) {
-            print << fmt ("At: ",fn.file_name(), " ",fn.function_name(), " col: ",std::to_string(fn.column())," line: ",std::to_string(fn.line()), "\n" , msg ,"\n"); 
+            print << fmt ("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name()); 
+            // print << fmt ("At: ",fn.file_name(), " ",fn.function_name(), " col: ",std::to_string(fn.column())," line: ",std::to_string(fn.line()), "\n" , msg ,"\n"); 
             std::exit(1);
         } 
         return *this;
@@ -628,9 +629,8 @@ class FileManager {
 
     void addHeader(std::string_view path,std::string_view name) {
         auto it = Header.find(path);
-        std::string n = fs::path(name).lexically_relative(path).generic_string();
         if (it != Header.end()) {
-            it->second.push_back(HeaderFile{.Name = {std::move(n)},.Path=path});
+            it->second.push_back(HeaderFile{.Name = {name.data(),name.size()},.Path=path});
         }
         return;
     }
@@ -661,7 +661,7 @@ class FileManager {
                 return I;
             }
         }
-        err(true,fmt("Error: "_fmt.color(fmt::Red),"Key doesn't exists"),loc);
+        err(true,fmt("Error: "_fmt.color(fmt::Red),"Key ",name," doesn't exists"),loc);
         return "";
     }
     File& copyFile(std::string_view name,const File& other) {
@@ -745,6 +745,9 @@ class FileManager {
     auto end()   { return Files.end(); }
     auto hIter() {
         return itUtl(&Header);
+    }
+    auto& headerContainer() {
+        return Header;
     }
     auto VIter() {
         return itUtl(&IDMap);
@@ -1025,7 +1028,7 @@ class Project
     std::string outputName      {};
     
     constexpr Project& err(bool cnd = false,std::string_view msg = "",std::source_location fn = std::source_location::current()) {
-        if (cnd) {print << fmt (msg,"  ",fn.function_name(),std::to_string(fn.line()),std::to_string(fn.column())," at: ",fn.file_name(), "\n"); std::exit(1);} 
+        if (cnd) {print << fmt ("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name()); std::exit(1);} 
         return *this;
     }
     
@@ -1037,11 +1040,6 @@ class Project
         staticLib,
         dynamicLib
     } outFile;
-    // enum includeas : char {
-    //     normal,
-    //     system,
-    //     module
-    // } includeas;
     
     outputPath* OutPath;
     compileCommand* cmdJson;
@@ -1269,7 +1267,6 @@ class Project
 
                         // Extract the substring directly using start and end indices
                         headerName = headerName.substr(startPos + 1, endPos - (startPos + 1));
-                        
                         for (const auto& [K,V] : ProjectFile.hIter()) {
                             for (const auto& N : V) {
                                 print << fmt("include header "_fmt.color(fmt::Bold_Blue) , headerName , " compare " , N.Name ).endl();
@@ -1292,7 +1289,7 @@ class Project
             for (const auto& entry : it) {
                 if (entry.is_regular_file() && fileUtil::isCppHeader(entry.path().extension().string()) ) {
                     // print << fmt("Add include " , entry.path().filename().string() , " From: " , K.first).endl();
-                    ProjectFile.addHeader(K.first, entry.path().string());
+                    ProjectFile.addHeader(K.first, entry.path().filename().string());
                 }
             }
         }
@@ -1418,8 +1415,8 @@ class Project
                     // Extract the substring directly using start and end indices
                     includeFound = includeFound.substr(startPos + 1, endPos - (startPos + 1));
                     for (auto&  [HP,HF] : ProjectFile.hIter()) {
-                        auto findInclude = std::ranges::find_if(HF,[&includeFound](auto& s){
-                            return s.Name == includeFound;
+                        auto findInclude = std::ranges::find_if(HF,[&](auto& s){
+                            return s.Name == includeFound && std::ranges::find(V.headerDeps,s.Path) == V.headerDeps.end();;
                         });
                         if (findInclude != HF.end()) {
                             V.headerDeps.push_back(HP);
@@ -1452,9 +1449,15 @@ class Project
             print << fmt("Scan module " , V.Path ).endl();
 
             err(V.Path.empty() ,"Error: Empty project path"_fmt.color(fmt::Bold_Red)); 
-
-            std::ifstream files(V.Path);
-            err(!files.is_open(),fmt("Error: Unable to open file "_fmt.color(fmt::Bold_Red)," File: ",V.Path));
+            
+            std::string temp = (fs::path(V.Path) / V.Name).generic_string();
+            std::ifstream files;
+            if (V.fileType == File::HeaderUnit) {
+                files.open(temp);
+            } else {
+                files.open(V.Path);
+            }
+            err(!files.is_open(),fmt("Error:"_fmt.color(fmt::Bold_Red)," Unable to open file "," File: ",temp));
 
             std::string line;
             bool inBlockComment = false;
@@ -1488,12 +1491,17 @@ class Project
                         F.second.Name = rawHeader;
                         F.second.fileType = isHeaderUnit ? File::HeaderUnit : File::SystemHeader;
                         if (isHeaderUnit) {
-                            F.second.Path = (fs::path(ProjectFile.getHeaderPath(rawHeader))/ rawHeader).string();
+                            F.second.Path = ProjectFile.getHeaderPath(rawHeader);
                             moduleName = rawHeader;
-                            auto findHeader = std::ranges::find(ProjectFile.hIter() | std::views::values | std::views::join,
-                            moduleName,&HeaderFile::Name);
+                            auto it = ProjectFile.hIter() | std::views::values | std::views::join;
+                            auto findHeader = std::ranges::find( it,moduleName,&HeaderFile::Name);
+                            if (findHeader != it.end()) {
+                                auto& h = findHeader;
+                                F.second.Flags.append(fmt(" -I",h->Path));
+                            }
                             ProjectFile[V.ID].haveHeaderUnit = true;
-                        }
+
+                        } 
                         F.second.objectPath = isHeaderUnit ? fmt((OutPath->modulePath / rawHeader).string(),fileUtil::pcmModule) : F.second.getModuleOutput(&OutPath->stdPath);
                         F.second.compiled = fs::exists(F.second.objectPath);
                     }
@@ -1566,7 +1574,8 @@ class Project
         };
 
         const std::string f_srcInput = 
-        isHeaderUnit ? fmt("-Wno-pragma-system-header-outside-header -fmodule-header=user --precompile {} -o {}",inFile.Path,fModule).str :
+        isHeaderUnit ? fmt("-Wno-pragma-system-header-outside-header -fmodule-header=user --precompile {} -o {}",
+            (fs::path(inFile.Path)/inFile.Name).string(),fModule).str :
         isSystemHeader ? fmt("-Wno-pragma-system-header-outside-header -x c++-system-header --precompile {} -o {}",inFile.Name,fModule).str :
         fmt("-c {} -fmodules-reduced-bmi -fmodule-output={} -fprebuilt-module-path={} ",inFile.Path,fModule,(mPath).string()).str;
         
@@ -1575,7 +1584,7 @@ class Project
             inFile.Flags.append(
                 depFile.fileType == File::SystemHeader ? fmt(" -fmodule-file={}{}",(OutPath->stdPath / depFile.Name).string(),fileUtil::pcmModule) :
                 // depFile.isPartition ? fmt(" -fmodule-file=",depFile.Name.substr(1),"=",fmt((mPath / depFile.Name.substr(1)).string(),file.pcmModule)):
-                depFile.fileType == File::HeaderUnit ? fmt("{} -fmodule-file={}{}",depFile.Flags,(mPath / depFile.getName()).string(),fileUtil::pcmModule) :
+                depFile.fileType == File::HeaderUnit ? fmt(" -fmodule-file={}{}",(mPath / depFile.getName()).string(),fileUtil::pcmModule) :
                 fmt(" -fmodule-file={}={}{}",depFile.Name,(mPath / depFile.getName()).string(),fileUtil::pcmModule)
             );
         }
@@ -1584,31 +1593,19 @@ class Project
 
         const std::string f_cmd = 
         isSystemHeader ? fmt(Compiler, Options,f_srcInput).clean().str : 
-        isHeaderUnit ? fmt(Compiler, Options,inFile.Flags,f_srcInput).clean().str :
-        fmt(Compiler, Options,inFile.haveHeaderUnit ? "-Wno-experimental-header-units ": "" ,f_srcInput ,inFile.Flags," -o ",fObjOutput).clean().str;
+        isHeaderUnit ? fmt("{} {} {} {}",Compiler, Options,inFile.Flags,f_srcInput).clean().str :
+        fmt("{} {} {} {} {} -o {}",Compiler, Options,(inFile.haveHeaderUnit ? "-Wno-experimental-header-units ": "") ,f_srcInput ,inFile.Flags,fObjOutput).clean().str;
         
         if(cmdJson != nullptr && !isSystemHeader) { cmdJson->addCompilecmd((Path / inFile.Path).parent_path().string(),f_cmd,(Path / inFile.Path).string(),fObjOutput);}
         
         int ret {};
-        // if (recompile && !) {
-        //     print << fmt("recompiling "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
-        //     l_rewrite();
-        //     ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
-        // } else if (!fs::exists(fModule)) {
-        //     print << fmt("compiling "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
-        //     ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
-        // } else if (inFile.fileType != File::SystemHeader && fs::last_write_time(inFile.Path) > fs::last_write_time(fModule)) {
-        //     print << fmt("updated "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
-        //     ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
-        // } 
-        
         // module use reduced bmi        
         if (isSystemHeader) {
-            print << fmt("compiling "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
+            print << fmt("compiling module "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
             ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
         } else {
             l_rewrite();
-            print << fmt("compiling "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
+            print << fmt("compiling module "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
             ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
         }
         inFile.compiled = (ret == 0 ? true : false);
@@ -1673,7 +1670,13 @@ class Project
             );
         }
 
-        const std::string f_cmd {fmt(Compiler, Options,inFile.haveHeaderUnit ? "-Wno-experimental-header-units":"" ,f_cppOutput,inFile.Flags,f_isModule?" -c -o ":" -o ", f_objOutput).clean()};
+        const std::string f_cmd {fmt("{} {} {} {} {} {} {}",
+            Compiler, Options,
+            inFile.haveHeaderUnit ? "-Wno-experimental-header-units":"" ,
+            f_cppOutput,
+            inFile.Flags,
+            f_isModule?" -c -o ":" -o ", 
+            f_objOutput).clean()};
         
         if(cmdJson != nullptr && !f_isModule) { cmdJson->addCompilecmd((Path / inFile.Path).parent_path().string(),f_cmd,(Path / inFile.Path).string(),f_objOutput);}
         
@@ -1743,17 +1746,21 @@ class Project
         
         print << "Dump project"_fmt.color(fmt::Yellow).endl();
         for (const auto& [K,V]: ProjectFile) {
+            bool isSource = V.fileType == File::Source;
+            bool isModule = V.fileType == File::Module;
+            bool isSystemHeader = V.fileType == File::SystemHeader;
+            bool isModuleImpl = V.fileType == File::ModuleImpl;
             print << "ID: " << std::to_string(V.ID) << " File: "<< K << " Name: "<< V.Name.data() << " Path: " << V.Path << " Type: "
-            << (V.fileType == File::Source ? "Source" : V.fileType == File::Module ? "Module" : V.fileType == File::SystemHeader ? "SystemHeader" : File::ModuleImpl ? "ModuleImpl" : "ETC") 
+            << (isSource ? "Source" : isModule ? "Module" : isSystemHeader ? "SystemHeader" : isModuleImpl ? "ModuleImpl" : "ETC") 
             << " OutPath: " << V.objectPath <<"\n";
         }
 
         print << "\nDump Include"_fmt.color(fmt::Yellow).endl();
         // ProjectFile.testHeader();
         for (const auto& [K,V]: ProjectFile.hIter()) {
-            print << "Include Dir: " << K << " Header File: ";
+            print << "Include Dir: " << K;
             for (const auto& N : V) {
-                print << N.Name << " dependency ";
+                print << "\nFile: " << N.Name << " Path: " << N.Path << (N.dependencies.empty() ? " " : "\ndependency ");
                 for (const auto& D : N.dependencies) print << D << " ";
             }
             print << "\n";
@@ -1771,7 +1778,11 @@ class Project
 
             print << "File: " << K << " Depends on: ";
             for (const auto& I : V.dependencies) {
-                print << " ID: " << std::to_string(I) << " " << ProjectFile[I].Name << " ";
+                print << fmt(" ID: " , I , " " , ProjectFile[I].Name , " ");
+            }
+            print << "\nFile: " << K << " Header dependencies: ";
+            for (const auto& I : V.headerDeps) {
+                print << " Header: " << I << " ";
             }
             print << "\n";
         }
