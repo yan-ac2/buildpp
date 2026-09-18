@@ -1268,11 +1268,15 @@ class Project
                         // Extract the substring directly using start and end indices
                         headerName = headerName.substr(startPos + 1, endPos - (startPos + 1));
                         for (const auto& [K,V] : ProjectFile.hIter()) {
-                            for (const auto& N : V) {
-                                print << fmt("include header "_fmt.color(fmt::Bold_Blue) , headerName , " compare " , N.Name ).endl();
-                                if (headerName == N.Name) {
-                                    Header.dependencies.push_back(K); break;
+                            bool foundMatch = std::ranges::find(V,headerName,&HeaderFile::Name) != V.end();
+                            // print << fmt("is header path "_fmt.color(fmt::Bold_Blue) , headerName , " in " , Header.Name ).endl();
+                            if (foundMatch) {
+                                bool alreadyAdded = std::ranges::find(Header.dependencies, K) != Header.dependencies.end();
+                                if (!alreadyAdded) {
+                                    print << fmt("add dependencies "_fmt.color(fmt::Bold_Blue) , K , " to " , Header.Name ).endl();
+                                    Header.dependencies.push_back(K);
                                 }
+                                break;
                             }
                         }
                     }
@@ -1416,11 +1420,11 @@ class Project
                     includeFound = includeFound.substr(startPos + 1, endPos - (startPos + 1));
                     for (auto&  [HP,HF] : ProjectFile.hIter()) {
                         auto findInclude = std::ranges::find_if(HF,[&](auto& s){
-                            return s.Name == includeFound && std::ranges::find(V.headerDeps,s.Path) == V.headerDeps.end();;
+                            return s.Name == includeFound;
                         });
                         if (findInclude != HF.end()) {
                             V.headerDeps.push_back(HP);
-
+                            
                             if (!findInclude->dependencies.empty()) { 
                                 auto filter = V.headerDeps | std::views::filter([&](const auto& f) { 
                                     return std::ranges::find(findInclude->dependencies,f) == findInclude->dependencies.end();
@@ -1484,6 +1488,7 @@ class Project
                     // 3. Detect System Module Unit
                     // -------------------------------------------------------------------
                     if (moduleName.front() == '<' || moduleName.front() == '"') {
+                        print << fmt("Header Unit module "_fmt.color(fmt::Bold_Blue) , " From: " , V.Name , " Name: " , moduleName).endl();
                         std::string_view rawHeader = moduleName.substr(1, moduleName.size() - 2);
                         const size_t extension = rawHeader.find_last_of('.');
                         const bool isHeaderUnit = fileUtil::isCppHeader(rawHeader.substr(extension));
@@ -1497,7 +1502,9 @@ class Project
                             auto findHeader = std::ranges::find( it,moduleName,&HeaderFile::Name);
                             if (findHeader != it.end()) {
                                 auto& h = findHeader;
+                                print << fmt("add Header into Unit module "_fmt.color(fmt::Bold_Green) , " From: " , h->Path , " to: " , moduleName , " and " , V.Name).endl();
                                 F.second.Flags.append(fmt(" -I",h->Path));
+                                ProjectFile[V.ID].Flags.append(fmt(" -I",h->Path));
                             }
                             ProjectFile[V.ID].haveHeaderUnit = true;
 

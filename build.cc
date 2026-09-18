@@ -219,7 +219,6 @@ int compileProject(bool recompile)
         mainProj
         .setMain("main.cc")
         .scanHeader()
-        .dumpProject()
         .scanModule()
         #ifdef _WIN32
         .addLinkLibrary("lib.win.ccm",{"gdi32","user32"})
@@ -228,6 +227,7 @@ int compileProject(bool recompile)
         // .addDependency("lib.RGFW.ccm",{"X11", "Xrandr"})
         // .addDependency("lib.std.ccm",{"c++","c++abi"})
         #endif
+        .dumpProject()
         // .compilePCH("pch.hpp")
         ;
 
