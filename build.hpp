@@ -18,6 +18,7 @@
 #include <functional>
 #include <mutex>
 #include <ranges>
+#include <algorithm>
 
 #include "json.hpp"
 
@@ -540,7 +541,6 @@ struct File {
     fStr Flags       {};
     fStr ldFlags     {};
     fStr objectPath  {};
-    std::vector<fStrView> headerDeps {};
     std::vector<IDx> dependencies {};
     [[nodiscard]] fStr getModuleOutput(const fs::path* mPath) {
         err(Name.empty(), "File Name Empty");
@@ -1141,7 +1141,7 @@ class Project
         
         f_deps.reserve(f_totalSize);
         for (const auto& d : inDeps) {
-            f_deps.append(fmt(" -l" , d , " "));
+            f_deps.append(fmt(" -l" , d));
         }
 
         for (const auto& [k,mod] : ProjectFile) {
@@ -1236,52 +1236,69 @@ class Project
         return false;
     };
 
+    bool containsToken(std::string_view str,std::string_view target) {
+        auto filter = str | std::views::split(' ')
+        | std::views::filter([](auto&& f) { return !f.empty();})
+        | std::views::transform([](auto&& f) { return std::string_view(f.data(),f.size());})
+        ;
+
+        return std::ranges::contains(filter,target);
+    }
+
+    auto rawHeader(std::string_view in) {
+        struct out {
+            std::string_view str;
+            bool startPos;
+            bool endPos;
+        };
+        const auto startPos = in.find_first_of("\"<");
+
+        // Determine the required closing delimiter based on the opening one
+        const char openChar = in[startPos];
+        const char closeChar = (openChar == '<') ? '>' : '"';
+
+        // Search forward from the opening delimiter for its matching pair
+        const auto endPos = in.find(closeChar, startPos + 1);
+
+        return out{
+            in.substr(startPos + 1, endPos - (startPos + 1)),
+            startPos == std::string_view::npos,
+            endPos == std::string_view::npos,
+        };
+    };
     
     void solveHeaderDependencies() {
-        for (auto& [P,H] : ProjectFile.hIter() ) {
-            for (auto& Header : H) {
-                err(Header.Path.empty() ,"Error: Empty project path"_fmt.color(fmt::Bold_Red)); 
-                const std::string HeaderPath = (fs::path{P} / Header.Name).generic_string(); 
-                std::ifstream files(HeaderPath);
-                err(!files.is_open(),fmt("Error: Unable to open file "_fmt.color(fmt::Bold_Red)," File: ",HeaderPath));
-                std::string line;
-                bool inBlockComment = false; 
-                while (std::getline(files, line)) {
-                    if(blockedComment(&inBlockComment, &line)) {continue;}
-                    const size_t ipos = line.find(fileUtil::includeToken);
+        for (auto& Header: ProjectFile.hIter() | std::views::values | std::views::join ) {
+            err(Header.Path.empty() ,"Error: Empty project path"_fmt.color(fmt::Bold_Red)); 
+            const std::string HeaderPath = (fs::path{Header.Path} / Header.Name).generic_string(); 
+            std::ifstream files(HeaderPath);
+            err(!files.is_open(),fmt("Error: Unable to open file "_fmt.color(fmt::Bold_Red)," File: ",HeaderPath));
+            std::string line;
+            bool inBlockComment = false; 
+            while (std::getline(files, line)) {
+                if(blockedComment(&inBlockComment, &line)) {continue;}
+                const size_t ipos = line.find(fileUtil::includeToken);
+                
+                if(singleLineComment(line, &ipos)) {continue;}
+                if (ipos != std::string::npos) { 
+                    const size_t searchStart = ipos + fileUtil::includeToken.length();
+                    const auto [headerName,start,end] = rawHeader(std::string_view{line}.substr(searchStart));
+                    if (start || end) { continue; }
                     
-                    if(singleLineComment(line, &ipos)) {continue;}
-                    if (ipos != std::string::npos) { 
-                        const size_t searchStart = ipos + fileUtil::includeToken.length();
-                        std::string_view headerName = std::string_view{line}.substr(searchStart);
-                        const auto startPos = headerName.find_first_of("\"<");
-                        if (startPos == std::string_view::npos) { continue; }
-
-                        // Determine the required closing delimiter based on the opening one
-                        const char openChar = headerName[startPos];
-                        const char closeChar = (openChar == '<') ? '>' : '"';
-
-                        // Search forward from the opening delimiter for its matching pair
-                        const auto endPos = headerName.find(closeChar, startPos + 1);
-                        if (endPos == std::string_view::npos) { continue; }
-
-                        // Extract the substring directly using start and end indices
-                        headerName = headerName.substr(startPos + 1, endPos - (startPos + 1));
-                        for (const auto& [K,V] : ProjectFile.hIter()) {
-                            bool foundMatch = std::ranges::find(V,headerName,&HeaderFile::Name) != V.end();
-                            // print << fmt("is header path "_fmt.color(fmt::Bold_Blue) , headerName , " in " , Header.Name ).endl();
-                            if (foundMatch) {
-                                bool alreadyAdded = std::ranges::find(Header.dependencies, K) != Header.dependencies.end();
-                                if (!alreadyAdded) {
-                                    print << fmt("add dependencies "_fmt.color(fmt::Bold_Blue) , K , " to " , Header.Name ).endl();
-                                    Header.dependencies.push_back(K);
-                                }
-                                break;
+                    for (const auto& [K,V] : ProjectFile.hIter()) {
+                        const bool foundMatch = std::ranges::find(V,headerName,&HeaderFile::Name) != V.end();
+                        // print << fmt("is header path "_fmt.color(fmt::Bold_Blue) , headerName , " in " , Header.Name ).endl();
+                        if (foundMatch) {
+                            const bool alreadyAdded = std::ranges::find(Header.dependencies, K) != Header.dependencies.end();
+                            if (!alreadyAdded && (Header.Path != K)) {
+                                print << fmt("add dependencies "_fmt.color(fmt::Bold_Blue) , K , " to " , Header.Name ).endl();
+                                Header.dependencies.push_back(K);
                             }
                         }
                     }
                 }
             }
+            
         }
     }
     
@@ -1404,42 +1421,23 @@ class Project
                 const size_t ipos = line.find(fileUtil::includeToken);
                 if (ipos != std::string::npos) {
                     const size_t searchStart = ipos + fileUtil::includeToken.size();
-                    std::string_view includeFound = std::string_view{line}.substr(searchStart);
-                    const auto startPos = includeFound.find_first_of("\"<");
-                    if (startPos == std::string_view::npos) { continue; }
-
-                    // Determine the required closing delimiter based on the opening one
-                    const char openChar = includeFound[startPos];
-                    const char closeChar = (openChar == '<') ? '>' : '"';
-
-                    // Search forward from the opening delimiter for its matching pair
-                    const auto endPos = includeFound.find(closeChar, startPos + 1);
-                    if (endPos == std::string_view::npos) { continue; }
-
-                    // Extract the substring directly using start and end indices
-                    includeFound = includeFound.substr(startPos + 1, endPos - (startPos + 1));
+                    auto [headerName,start,end] = rawHeader(std::string_view{line}.substr(searchStart));
+                    if (start || end) { continue; }
+                        
                     for (auto&  [HP,HF] : ProjectFile.hIter()) {
                         auto findInclude = std::ranges::find_if(HF,[&](auto& s){
-                            return s.Name == includeFound;
+                            return s.Name == headerName;
                         });
                         if (findInclude != HF.end()) {
-                            V.headerDeps.push_back(HP);
-                            
-                            if (!findInclude->dependencies.empty()) { 
-                                auto filter = V.headerDeps | std::views::filter([&](const auto& f) { 
-                                    return std::ranges::find(findInclude->dependencies,f) == findInclude->dependencies.end();
-                                });
-                                for (const auto& f : filter)
-                                V.headerDeps.push_back(f);
-                           }
+                            std::string i {fmt("-I",HP)};
+                            if (!containsToken(V.Flags, i)) {
+                                V.Flags.append(" ") += i; continue;
+                            }
                         }
                     }
                 }
             }
             
-            for (const auto& H : V.headerDeps) {
-                V.Flags.append(fmt(" -I",H));
-            }
             files.close();
         }
         return *this;
@@ -1503,8 +1501,15 @@ class Project
                             if (findHeader != it.end()) {
                                 auto& h = findHeader;
                                 print << fmt("add Header into Unit module "_fmt.color(fmt::Bold_Green) , " From: " , h->Path , " to: " , moduleName , " and " , V.Name).endl();
-                                F.second.Flags.append(fmt(" -I",h->Path));
-                                ProjectFile[V.ID].Flags.append(fmt(" -I",h->Path));
+                                std::string i {fmt("-I",h->Path)};
+                                if (!containsToken(F.second.Flags,i)) F.second.Flags.append(" ") += i;
+                                auto& p = ProjectFile[V.ID];
+                                if (!containsToken(p.Flags,i)) p.Flags.append(" ") += i;
+                                for (const auto& d : h->dependencies){
+                                    std::string flags {fmt("-I",d)};
+                                    if (!containsToken(p.Flags,flags)) p.Flags.append(" ") += flags;
+                                    if (!containsToken(F.second.Flags,flags)) F.second.Flags.append(" ") += flags;
+                                } 
                             }
                             ProjectFile[V.ID].haveHeaderUnit = true;
 
@@ -1787,10 +1792,10 @@ class Project
             for (const auto& I : V.dependencies) {
                 print << fmt(" ID: " , I , " " , ProjectFile[I].Name , " ");
             }
-            print << "\nFile: " << K << " Header dependencies: ";
-            for (const auto& I : V.headerDeps) {
-                print << " Header: " << I << " ";
-            }
+            // print << "\nFile: " << K << " Header dependencies: ";
+            // for (const auto& I : V.headerDeps) {
+            //     print << " Header: " << I << " ";
+            // }
             print << "\n";
         }
         print << "\nDump File Flags"_fmt.color(fmt::Yellow).endl();
