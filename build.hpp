@@ -1246,7 +1246,7 @@ class Project
         return std::ranges::contains(filter,target);
     }
 
-    auto rawHeader(std::string_view in) {
+    auto getRawHeaderName(std::string_view in) {
         struct out {
             std::string_view str;
             bool startPos;
@@ -1283,7 +1283,7 @@ class Project
                 if(singleLineComment(line, &ipos)) {continue;}
                 if (ipos != std::string::npos) { 
                     const size_t searchStart = ipos + fileUtil::includeToken.length();
-                    const auto [headerName,start,end] = rawHeader(std::string_view{line}.substr(searchStart));
+                    const auto [headerName,start,end] = getRawHeaderName(std::string_view{line}.substr(searchStart));
                     if (start || end) { continue; }
                     
                     for (const auto& [K,V] : ProjectFile.hIter()) {
@@ -1427,7 +1427,7 @@ class Project
                 const size_t ipos = line.find(fileUtil::includeToken);
                 if (ipos != std::string::npos) {
                     const size_t searchStart = ipos + fileUtil::includeToken.size();
-                    auto [headerName,start,end] = rawHeader(std::string_view{line}.substr(searchStart));
+                    auto [headerName,start,end] = getRawHeaderName(std::string_view{line}.substr(searchStart));
                     if (start || end) { continue; }
                         
                     for (auto&  [HP,HF] : ProjectFile.hIter()) {
@@ -1508,16 +1508,16 @@ class Project
                     if (endPos == std::string::npos || endPos < startPos) {continue;}
 
                     std::string_view moduleName = std::string_view{line}.substr(startPos, (endPos - startPos) + 1);
-                    // print << fmt("import module "_fmt.color(fmt::Bold_Blue) , moduleName , " found in " , V.Path).endl();
+                    print << fmt("import module "_fmt.color(fmt::Bold_Blue) , moduleName , " found in " , V.Path).endl();
                     
                     // -------------------------------------------------------------------
                     // 3. Detect System Module Unit
                     // -------------------------------------------------------------------
                     if (moduleName.front() == '<' || moduleName.front() == '"') {
                         print << fmt("Header Unit module "_fmt.color(fmt::Bold_Blue) , " From: " , V.Name , " Name: " , moduleName).endl();
-                        std::string_view rawHeader = moduleName.substr(1, moduleName.size() - 2);
+                        auto [rawHeader,start,end] = getRawHeaderName(moduleName);
                         const size_t extension = rawHeader.find_last_of('.');
-                        const bool isHeaderUnit = fileUtil::isCppHeader(rawHeader.substr(extension));
+                        const bool isHeaderUnit = (extension == std::string_view::npos ? false : fileUtil::isCppHeader(rawHeader.substr(extension)));
                         auto& [headerUnit,headerUnitFile] = ProjectFile.addFile( isHeaderUnit ? rawHeader : moduleName);
                         
                         headerUnitFile.Name = rawHeader;
@@ -1571,11 +1571,10 @@ class Project
                                     } 
                                 }
                             }
-                            ModuleFile.haveHeaderUnit = true;
-
                         } 
                         headerUnitFile.objectPath = isHeaderUnit ? fmt((OutPath->modulePath / rawHeader).string(),fileUtil::pcmModule) : headerUnitFile.getModuleOutput(&OutPath->stdPath);
                         headerUnitFile.compiled = fs::exists(headerUnitFile.objectPath);
+                        ModuleFile.haveHeaderUnit = true;
                     }
                     for (const auto& [M,MV] : ProjectFile) {
                         // print << "checking "_fmt.color(fmt::Red) << (MV.isPartition ? moduleName.substr(moduleName.find(':')) : moduleName)<< "\n";
@@ -1648,7 +1647,7 @@ class Project
         const std::string f_srcInput = 
         isHeaderUnit ? fmt("-Wno-pragma-system-header-outside-header -fmodule-header=user --precompile {} -o {}",
             (fs::path(inFile.Path)/inFile.Name).string(),fModule).str :
-        isSystemHeader ? fmt("-Wno-pragma-system-header-outside-header -x c++-system-header --precompile {} -o {}",inFile.Name,fModule).str :
+        isSystemHeader ? fmt("-Wno-pragma-system-header-outside-header -Wno-gnu-anonymous-struct -Wno-nullability-extension -Wno-gcc-compat -Wno-user-defined-literals -x c++-system-header --precompile {} -o {}",inFile.Name,fModule).str :
         fmt("-c {} -fmodules-reduced-bmi -fmodule-output={} -fprebuilt-module-path={} ",inFile.Path,fModule,(mPath).string()).str;
         
         for (const auto& I : inFile.dependencies) {

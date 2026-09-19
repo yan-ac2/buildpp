@@ -1,0 +1,34 @@
+module;
+export module lib.std;
+
+
+export import <cstddef>;
+export import <cstdint>;
+export import <cassert>;
+export import <type_traits>;
+
+export import <array>;
+export import <vector>;
+export import <variant>;
+
+export import <span>;
+export import <utility>;
+export import <algorithm>;
+export import <numeric>;
+export import <filesystem>;
+export import <unordered_map>;
+
+
+export import <string>;
+export import <chrono>;
+export import <iostream>;
+export import <fstream>;
+export import <ostream>;
+export import <thread>;
+
+export import <random>;
+
+
+
+
+

@@ -1,10 +1,9 @@
 module;
 #include "pch.hpp"
-#include <vector>
-#include <string>
-#include <iostream>
+
 export module lib.win:platform;
 
+import lib.std;
 import lib.types;
 import :common;
 import :renderer;

@@ -1,9 +1,7 @@
 module;
 #include <pch.hpp>
-#include <fstream>
-#include <ostream>
-#include <iostream>
 export module lib.image;
+import lib.std;
 import lib.types;
 import lib.utl;
 #pragma pack(push, 1)
