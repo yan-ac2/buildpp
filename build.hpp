@@ -561,14 +561,15 @@ struct File {
         return Name;
     }
 };
+
 struct HeaderFile {
     using fStr = std::string;
     using fStrView = std::string_view;
     using IDx = std::size_t;
 
-    fStr Name        {};
-    fStrView Path    {};
-    std::vector<fStrView> dependencies {};
+    fStr Name  {};
+    fStr Path  {};
+    fStr flags {};
 };
 
 class FileManager {
@@ -630,7 +631,7 @@ class FileManager {
     void addHeader(std::string_view path,std::string_view name) {
         auto it = Header.find(path);
         if (it != Header.end()) {
-            it->second.push_back(HeaderFile{.Name = {name.data(),name.size()},.Path=path});
+            it->second.push_back(HeaderFile{.Name = {name.data(),name.size()},.Path={path.data(),path.size()}});
         }
         return;
     }
@@ -641,13 +642,13 @@ class FileManager {
             ref->push_back(HeaderFile{
                 .Name = {std::move(H.Name)},
                 .Path=std::move(H.Path),
-                .dependencies=std::move(H.dependencies)
+                .flags=std::move(H.flags)
             });
         } else if (it != Header.end()) {
             it->second.push_back(HeaderFile{
                 .Name = {std::move(H.Name)},
                 .Path=std::move(H.Path),
-                .dependencies=std::move(H.dependencies)
+                .flags=std::move(H.flags)
             });
         }
         return;
@@ -1286,19 +1287,24 @@ class Project
                     if (start || end) { continue; }
                     
                     for (const auto& [K,V] : ProjectFile.hIter()) {
+                        if (K.empty()) continue;
                         const bool foundMatch = std::ranges::find(V,headerName,&HeaderFile::Name) != V.end();
                         // print << fmt("is header path "_fmt.color(fmt::Bold_Blue) , headerName , " in " , Header.Name ).endl();
                         if (foundMatch) {
-                            const bool alreadyAdded = std::ranges::find(Header.dependencies, K) != Header.dependencies.end();
-                            if (!alreadyAdded && (Header.Path != K)) {
+                            std::string flags {fmt("-I",K)};
+                            const bool alreadyAdded = containsToken(Header.flags, flags);
+                            const bool notSamePath = (Header.Path != K);
+                            if (!alreadyAdded && notSamePath) {
                                 print << fmt("add dependencies "_fmt.color(fmt::Bold_Blue) , K , " to " , Header.Name ).endl();
-                                Header.dependencies.push_back(K);
+                                if (!Header.flags.empty()) {
+                                    Header.flags += " ";
+                                }
+                                Header.flags += flags;
                             }
                         }
                     }
                 }
-            }
-            
+            }  
         }
     }
     
@@ -1428,10 +1434,30 @@ class Project
                         auto findInclude = std::ranges::find_if(HF,[&](auto& s){
                             return s.Name == headerName;
                         });
+                        auto splitFlags = findInclude->flags 
+                        | std::views::split(' ') 
+                        | std::views::transform([&](const auto& s){
+                            std::string_view temp(s.data(),s.size());
+                            struct ret {
+                                const std::string_view sv {}; 
+                                const bool empty;
+                            };
+                            return ret{temp,s.empty()};
+                        })
+                        | std::views::filter([](const auto& sv) {
+                            return !sv.empty; 
+                        });
                         if (findInclude != HF.end()) {
                             std::string i {fmt("-I",HP)};
                             if (!containsToken(V.Flags, i)) {
-                                V.Flags.append(" ") += i; continue;
+                                V.Flags.append(" ") += i; 
+                                if(!findInclude->flags.empty()) 
+                                for (const auto [sv,empty] : splitFlags) {
+                                    const bool hasTokenModule = containsToken(V.Flags,sv);
+                                    if (!hasTokenModule) {
+                                        if (!empty) {V.Flags += " ";} V.Flags += sv;
+                                    }
+                                }
                             }
                         }
                     }
@@ -1465,6 +1491,8 @@ class Project
             bool inBlockComment = false;
 
             while (std::getline(files, line)) {
+                auto& ModuleFile = ProjectFile[V.ID]; 
+
                 const size_t ipos = line.find(fileUtil::importToken);
                 const size_t epos = line.find(';');
                 if(blockedComment(&inBlockComment, &line) || singleLineComment(line, &ipos)) {continue;}
@@ -1490,11 +1518,13 @@ class Project
                         std::string_view rawHeader = moduleName.substr(1, moduleName.size() - 2);
                         const size_t extension = rawHeader.find_last_of('.');
                         const bool isHeaderUnit = fileUtil::isCppHeader(rawHeader.substr(extension));
-                        auto& F = ProjectFile.addFile( isHeaderUnit ? rawHeader : moduleName);
-                        F.second.Name = rawHeader;
-                        F.second.fileType = isHeaderUnit ? File::HeaderUnit : File::SystemHeader;
+                        auto& [headerUnit,headerUnitFile] = ProjectFile.addFile( isHeaderUnit ? rawHeader : moduleName);
+                        
+                        headerUnitFile.Name = rawHeader;
+                        headerUnitFile.fileType = isHeaderUnit ? File::HeaderUnit : File::SystemHeader;
                         if (isHeaderUnit) {
-                            F.second.Path = ProjectFile.getHeaderPath(rawHeader);
+                            auto& headerUnitFlags = headerUnitFile.Flags; 
+                            headerUnitFile.Path = ProjectFile.getHeaderPath(rawHeader);
                             moduleName = rawHeader;
                             auto it = ProjectFile.hIter() | std::views::values | std::views::join;
                             auto findHeader = std::ranges::find( it,moduleName,&HeaderFile::Name);
@@ -1502,25 +1532,55 @@ class Project
                                 auto& h = findHeader;
                                 print << fmt("add Header into Unit module "_fmt.color(fmt::Bold_Green) , " From: " , h->Path , " to: " , moduleName , " and " , V.Name).endl();
                                 std::string i {fmt("-I",h->Path)};
-                                if (!containsToken(F.second.Flags,i)) F.second.Flags.append(" ") += i;
-                                auto& p = ProjectFile[V.ID];
-                                if (!containsToken(p.Flags,i)) p.Flags.append(" ") += i;
-                                for (const auto& d : h->dependencies){
-                                    std::string flags {fmt("-I",d)};
-                                    if (!containsToken(p.Flags,flags)) p.Flags.append(" ") += flags;
-                                    if (!containsToken(F.second.Flags,flags)) F.second.Flags.append(" ") += flags;
-                                } 
+                                if (!containsToken(headerUnitFlags,i)) headerUnitFlags.append(" ") += i;
+                                
+                                if (!containsToken(ModuleFile.Flags,i)) ModuleFile.Flags.append(" ") += i;
+                                if (!h->flags.empty()) {
+                                    
+                                    auto splitFlags = h->flags 
+                                    | std::views::split(' ') 
+                                    | std::views::transform([&](const auto& s){
+                                        std::string_view temp(s.data(),s.size());
+                                        struct ret {
+                                            std::string_view sv; 
+                                            bool empty;
+                                        };
+                                        return ret{
+                                            temp,
+                                            s.empty()
+                                        };
+                                    })
+                                    | std::views::filter([](const auto& sv) {
+                                        return !sv.empty; 
+                                    });
+                                    for (const auto [sv,empty] : splitFlags){
+                                        const bool hasTokenModule = containsToken(ModuleFile.Flags,sv);
+                                        const bool hasTokenHeaderUnit = containsToken(headerUnitFlags,sv);
+                                        if (!hasTokenModule) {
+                                            if (!empty) {
+                                                ModuleFile.Flags += " ";
+                                            }
+                                            ModuleFile.Flags += sv;
+                                        }
+                                        if (!hasTokenHeaderUnit) {
+                                            if (!empty) {
+                                                headerUnitFlags += " ";
+                                            } 
+                                            headerUnitFlags += sv;
+                                        }
+                                    } 
+                                }
                             }
-                            ProjectFile[V.ID].haveHeaderUnit = true;
+                            ModuleFile.haveHeaderUnit = true;
 
                         } 
-                        F.second.objectPath = isHeaderUnit ? fmt((OutPath->modulePath / rawHeader).string(),fileUtil::pcmModule) : F.second.getModuleOutput(&OutPath->stdPath);
-                        F.second.compiled = fs::exists(F.second.objectPath);
+                        headerUnitFile.objectPath = isHeaderUnit ? fmt((OutPath->modulePath / rawHeader).string(),fileUtil::pcmModule) : headerUnitFile.getModuleOutput(&OutPath->stdPath);
+                        headerUnitFile.compiled = fs::exists(headerUnitFile.objectPath);
                     }
                     for (const auto& [M,MV] : ProjectFile) {
                         // print << "checking "_fmt.color(fmt::Red) << (MV.isPartition ? moduleName.substr(moduleName.find(':')) : moduleName)<< "\n";
                         if (((MV.fileType != File::Module) ? M : MV.isPartition ? MV.Name.substr(MV.Name.find(':')) : MV.Name) == moduleName) {
-                            ProjectFile[V.ID].dependencies.emplace_back(MV.ID);
+                            ModuleFile.dependencies.emplace_back(MV.ID);
                         }
                     }
                 }
@@ -1771,9 +1831,12 @@ class Project
         // ProjectFile.testHeader();
         for (const auto& [K,V]: ProjectFile.hIter()) {
             print << "Include Dir: " << K;
-            for (const auto& N : V) {
-                print << "\nFile: " << N.Name << " Path: " << N.Path << (N.dependencies.empty() ? " " : "\ndependency ");
-                for (const auto& D : N.dependencies) print << D << " ";
+            for (const auto& Header : V) {
+                const bool flagsEmpty = Header.flags.empty();
+                print << "\nFile: " << Header.Name 
+                << " Path: " << Header.Path 
+                << (flagsEmpty ? "" : "\ndependency ")
+                << (flagsEmpty ? "" : Header.flags);
             }
             print << "\n";
         }

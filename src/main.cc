@@ -49,7 +49,7 @@ GLuint loadTGATexture(const std::string& filename) {
 }
 
 int main() {
-    using et = EventType;
+    using key = keyboard::Key;
     namespace fs = std::filesystem;
     Window child;
     Window app("MainWindow",800,600,WindowFlags::WinOGL | WindowFlags::WinCenter ,{100,100});
@@ -65,7 +65,7 @@ int main() {
     glHints.Initialize(app.mHWND, 4, 3);
     glHints.Resize(app.Desc.width, app.Desc.height);
     
-    Keyboard KeyMap (&event);
+    keyboard::Keyboard KeyMap;
     event.addKeyboard(KeyMap.KeysState);
 
     float x = 0 ,y = 0;
@@ -120,18 +120,18 @@ int main() {
             std::cout << fmt( "Monitor\n X: {} Y: {} {}x{} isPrimary: {}\n",monitor->x,monitor->y,monitor->width,monitor->height,monitor->isPrimary ? "true" : "false"); 
         }
         if (KeyMap.poll(16,times.delta_time())) {
-            if (KeyMap[et::escape]) { 
+            if (KeyMap[key::escape]) { 
                 std::cout << "Closing app\n";
                 app.CloseApp();
             }
-            if (KeyMap[et::w]) {++(y); std::cout << fmt(x," " ,y,"\n"); };
-            if (KeyMap[et::a]) {--(x); std::cout << fmt(x," " ,y,"\n"); };
-            if (KeyMap[et::s]) {--(y); std::cout << fmt(x," " ,y,"\n"); };
-            if (KeyMap[et::d]) {
-                KeyMap[et::controlL].IsToggled() ? x += 10 : ++(x); 
+            if (KeyMap[key::w]) {++(y); std::cout << fmt(x," " ,y,"\n"); };
+            if (KeyMap[key::a]) {--(x); std::cout << fmt(x," " ,y,"\n"); };
+            if (KeyMap[key::s]) {--(y); std::cout << fmt(x," " ,y,"\n"); };
+            if (KeyMap[key::d]) {
+                KeyMap[key::controlL].IsToggled() ? x += 10 : ++(x); 
                 std::cout << fmt(x," " ,y,"\n");
             };
-            if (KeyMap[et::controlL]) {
+            if (KeyMap[key::controlL]) {
                 std::print("ctrlL pressed \n");
             }
         }
