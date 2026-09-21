@@ -3,8 +3,7 @@ module;
 
 export module lib.win:platform;
 
-import lib.std;
-import lib.types;
+import core;
 import :common;
 import :renderer;
 

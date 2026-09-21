@@ -57,7 +57,7 @@
 
 int test()
 { 
-    print << "compile test"_fmt.color(fmt::Bold_Green).endl();
+    std::cout << "compile test"_fmt.color(fmt::Bold_Green).endl();
     const fs::path rootPath = ".";
     const fs::path exePath = rootPath / "bin";
 
@@ -86,9 +86,9 @@ int test()
     #ifdef __unix__
     // test.addDependency("inprogress.cc",{"c++","c++abi"});
     #endif
-    for (auto& i : test.ProjectFile.VIter())
+    for (auto& i : test.ProjectFile)
     {
-        test.compileCpp(*i);
+        test.compileCpp(i.second);
     }
 
     test.link(test.ProjectFile.getMain());
@@ -99,7 +99,7 @@ int test()
 
 int selfCompile(bool recompile)
 {
-    print << "compile self"_fmt.color(fmt::Bold_Green).endl();
+    std::cout << "compile self"_fmt.color(fmt::Bold_Green).endl();
 
     const fs::path rootPath = ".";
     outputPath outPath;
@@ -125,9 +125,9 @@ int selfCompile(bool recompile)
     #ifdef __unix__
     rebuild.addDependency("build.cc",{"c++","c++abi"});
     #endif
-    for (auto& i : rebuild.ProjectFile.VIter())
+    for (auto& i : rebuild.ProjectFile)
     {
-        rebuild.compileCpp(*i);
+        rebuild.compileCpp(i.second);
     }
 
     rebuild.link(rebuild.ProjectFile.getMain());
@@ -205,9 +205,10 @@ int compileProject(bool recompile)
         .addCompileCommand(&cmdJson)
         .setProjectPath((rootPath).string())
         .addSourcePath((mainProj.Path / "src").string())
+        .addSourcePath((mainProj.Path / "src" / "core").string())
         .addSourcePath((mainProj.Path / "src" / "window").string());
         // .getLib(&meshoptimizer)
-        print << fmt("Source Path: "_fmt.color(fmt::Red),mainProj.getMainPath()," root path: "_fmt.color(fmt::Blue),mainProj.Path.string(),"\n");
+        std::cout << fmt("Source Path: "_fmt.color(fmt::Red),mainProj.getMainPath()," root path: "_fmt.color(fmt::Blue),mainProj.Path.string(),"\n");
         mainProj
         // .getLib(&libGLAD)
         // .addIncludefile((mainProj.Path / mainProj.getMainPath() / "lib" / "RGFW").string())
@@ -221,8 +222,9 @@ int compileProject(bool recompile)
         .scanHeader()
         .scanModule()
         #ifdef _WIN32
-        .addLinkLibrary("lib.win.ccm",{"gdi32","user32"})
-        .addLinkLibrary("renderer.ccm",{"opengl32"})
+        .addLinkLibrary("lib.win.ccm","gdi32,user32")
+        .addLinkLibrary("renderer.ccm","opengl32")
+        .configureModuleFlags()
         // #elif __unix__
         // .addDependency("lib.RGFW.ccm",{"X11", "Xrandr"})
         // .addDependency("lib.std.ccm",{"c++","c++abi"})
@@ -268,7 +270,7 @@ int compileProject(bool recompile)
 
 auto main(int argc, const char* argv[]) -> int 
 {
-    print << "CPP BUILD \n"_fmt.color(fmt::Bold_Purple).sv();
+    std::cout << "CPP BUILD \n"_fmt.color(fmt::Bold_Purple);
 
     std::string inputLine = argv[1];
     if (argc < 2) {return 1;} else 

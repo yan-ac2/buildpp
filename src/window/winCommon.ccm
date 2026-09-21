@@ -2,7 +2,7 @@ module;
 #include "pch.hpp"
 
 export module lib.win:common;
-import lib.types;
+import core;
 import keyboard;
 
 export class Window;

@@ -4,10 +4,8 @@
 // import lib;
 #include "pch.hpp"
 
-import lib.std;
-import lib.types;
+import core;
 import lib.win;
-import lib.utl;
 import lib.image;
 import lib.ui;
 
@@ -129,7 +127,7 @@ int main() {
                 std::cout << fmt(x," " ,y,"\n");
             };
             if (KeyMap[key::controlL]) {
-                std::print("ctrlL pressed \n");
+                std::cout << "ctrlL pressed \n";
             }
         }
         fmain.Bind();

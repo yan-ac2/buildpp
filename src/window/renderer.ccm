@@ -4,12 +4,13 @@ module;
 /*
     #include "retard.h"
 */
-#include "pch.hpp"
+#include "glHeader.hpp"
 export module lib.win:renderer;
 // import somethisng;
-import lib.std; // test
-import lib.types; // test
-import lib.utl; // test
+// import lib.std; // test
+// import lib.types; // test
+// import lib.utl; // test
+import core;
 import :common;
 
 enum class glType
@@ -192,7 +193,7 @@ class GlHints : public IRenderer {
         int format;
         UINT numFormats;
         if (!wglChoosePixelFormatARB(mHDC, pixelAttribs, nullptr, 1, &format, &numFormats) || numFormats == 0) {
-            std::print("Failed to find a matching pixel format.\n");
+            std::cout << "Failed to find a matching pixel format.\n";
             return false;
         }
 

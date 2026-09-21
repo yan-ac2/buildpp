@@ -2,8 +2,7 @@ module;
 #include "pch.hpp"
 
 export module lib.ui;
-import lib.std;
-import lib.types;
+import core;
 import lib.win;
 
 export

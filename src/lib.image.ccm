@@ -1,9 +1,7 @@
 module;
-#include <pch.hpp>
+#include "pch.hpp"
 export module lib.image;
-import lib.std;
-import lib.types;
-import lib.utl;
+import core;
 #pragma pack(push, 1)
 export struct TGAHeader {
     uint8  idlength = 0;

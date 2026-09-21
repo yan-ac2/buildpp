@@ -1,6 +1,7 @@
 Diagnostics:
   Suppress: [
-    "module_odr_violation_record"
+    "module_odr_violation_record",
+    "header_import_not_header_unit"
   ]
 CompileFlags:
   Remove: [

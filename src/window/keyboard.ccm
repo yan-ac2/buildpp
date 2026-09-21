@@ -3,8 +3,7 @@ module;
 #include "pch.hpp"
 
 export module keyboard;
-import lib.std;
-import lib.types;
+import core;
 
 export namespace keyboard {
 
