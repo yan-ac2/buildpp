@@ -2,7 +2,9 @@ module;
 
 export module lib.win;
 
-export import :platform;
+#ifdef __WIN32
+    export import :platform;
+#endif
 export import :renderer;
 export import :common;
 export import keyboard;

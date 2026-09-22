@@ -317,29 +317,26 @@ namespace used_std {
         return found_index;
     }(used_std::make_index_sequence<used_std::tuple_size_v<used_std::remove_cvref_t<Tuple>>>{});
 
-    template <auto Accessor, typename T, typename CasesTuple, used_std::size_t... Is>
+    template <auto Accessor,typename T,typename CasesTuple, used_std::size_t... Is>
     constexpr used_std::size_t find_by_value(T target_hash, used_std::index_sequence<Is...>) {
         using CleanTuple = used_std::remove_cvref_t<CasesTuple>;
         used_std::size_t found_index = static_cast<used_std::size_t>(-1);
-
-        auto check_element = [target_hash, &found_index](auto index_constant) {
-            constexpr used_std::size_t I = decltype(index_constant)::value;
-            using CaseType = used_std::remove_cvref_t<used_std::tuple_element_t<I, CleanTuple>>;
-
-            // Compile-time check: verifies if CaseType has a label member
-            if constexpr (requires { CaseType::label; }) {
-                if (found_index == static_cast<used_std::size_t>(-1)) {
-                    if (Accessor.template operator()<CaseType>() == target_hash) {
-                        found_index = I;
-                        return true; // Stop fold expansion on match
-                    }
+        auto getWithLabel = [&]<used_std::size_t Idx>(){
+            using element = used_std::remove_cvref_t<used_std::tuple_element_t<Idx, CleanTuple>>;
+            if constexpr ( requires (element tt) { tt.label;}) {
+                if (Accessor.template operator()<element>() == target_hash) {
+                    found_index = Idx;
+                    return true;
+                } else {
+                    return false;
                 }
+            } else {
+                return false;
             }
-            return false;
         };
-
-        (check_element(used_std::integral_constant<used_std::size_t, Is>{}) || ...);
-
+        (getWithLabel.template operator()<Is>() or ...);
+        // ((Accessor.template operator()<used_std::remove_cvref_t<used_std::tuple_element_t<Is, CleanTuple>>>() == target_hash ? (found_index = Is) : 0) or ...);
+        
         return found_index;
     }
 
@@ -471,7 +468,7 @@ struct goto_hash_t : SignalBase<FlowKind::Goto> {
 template <StaticLabel LabelID>
 struct goto_case_t : SignalBase<FlowKind::Goto> {
     static constexpr bool is_static_label = true;
-    static constexpr auto static_label = LabelID;
+    static constexpr auto label = LabelID;
 };
 
 
@@ -1143,12 +1140,12 @@ template <typename KeyType = DefaultState, typename ActionType = DefaultState>
 struct ImplCase {
     KeyType key;
     ActionType action;
-
+    
     constexpr ImplCase() = default;
 
     constexpr ImplCase(const KeyType& k) : key(k) {}
     constexpr ImplCase(KeyType&& k) : key(used_std::move(k)) {}
-
+    
     template <typename K, typename A>
     constexpr ImplCase(K&& k, A&& a) : key(used_std::forward<K>(k)), action(used_std::forward<A>(a)) {}
 
@@ -1164,15 +1161,25 @@ template<typename Key>
 ImplCase(Key) -> ImplCase<Key>;
 
 template <StaticLabel LabelID, typename KeyType = DefaultState, typename ActionType = DefaultState>
-struct ImplLabelCase : ImplCase<KeyType, ActionType> {
-    using base = ImplCase<KeyType, ActionType>;
+struct ImplLabelCase {
+    KeyType key;
+    ActionType action;
+    
     static constexpr auto label = LabelID;
-
-    constexpr ImplLabelCase(const KeyType& k) : base(k) {}
-    constexpr ImplLabelCase(KeyType&& k) : base(used_std::move(k)) {}
-
+    
+    constexpr ImplLabelCase(const KeyType& k) : key(k) {}
+    constexpr ImplLabelCase(KeyType&& k) : key(used_std::move(k)) {}
+    
     template <typename K, typename A>
-    constexpr ImplLabelCase(K&& k, A&& a) : base(used_std::forward<K>(k), used_std::forward<A>(a)) {}
+    constexpr ImplLabelCase(K&& k, A&& a) : key(used_std::forward<K>(k)), action(used_std::forward<A>(a)) {}
+
+    template <typename NewAction>
+    constexpr auto operator>>(NewAction&& new_action) && noexcept {
+        return ImplLabelCase<LabelID,KeyType, used_std::decay_t<NewAction>>(
+            used_std::move(key), 
+            used_std::forward<NewAction>(new_action)
+        );
+    }
 };
 
 template <typename T> 
@@ -1345,7 +1352,7 @@ struct match {
                     return {Is, current_state.current_target, false, true, {}};
                 } else {
                     decltype(auto) action_result = execute_action(current_case.action, ctx);
-                    using CaseActionDecay = used_std::decay_t<decltype(action_result)>;
+                    using CaseActionDecay = UnwrapReturnType<decltype(action_result)>::type;
 
                     // Signal 1: Static Goto
                     if constexpr (concepts::IsStaticGotoSignal<CaseActionDecay>) {
@@ -1378,6 +1385,7 @@ struct match {
                     // Terminal Return Value
                     else {
                         if constexpr (!concepts::IsGotoSignal<CaseActionDecay> && !concepts::IsFallthroughSignal<CaseActionDecay> && 
+                                      !concepts::IsDynamicGotoSignal<CaseActionDecay> &&
                                       !used_std::is_same_v<CaseActionDecay, void> && !used_std::is_same_v<CaseActionDecay, Wildcard>) {
                             return {Is, current_state.current_target, false, true,used_std::move(action_result)};
                         }

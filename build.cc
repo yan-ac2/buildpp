@@ -6,6 +6,7 @@
 #include <queue>
 
 
+[[maybe_unused]] inline Project* current {nullptr};
 // class ThreadPool {
 // public:
 //     explicit ThreadPool(size_t num_threads) {
@@ -55,41 +56,31 @@
 //     bool stop_ = false;
 // };
 
+
 int test()
 { 
     std::cout << "compile test"_fmt.color(fmt::Bold_Green).endl();
-    const fs::path rootPath = ".";
+    const fs::path rootPath = fs::current_path();
     const fs::path exePath = rootPath / "bin";
+    const fs::path outBuildPath = rootPath / ".build";
+    const fs::path outProjectPath = rootPath / ".build" / "test";
 
     outputPath outPath;
     outPath.setRootPath(rootPath)
     .setExePath(exePath)
-    .setOutfolder(rootPath / ".build")
-    .setOutpath(rootPath / ".build" / "test");
+    .setBuildfolder(outBuildPath)
+    .setOutpath(outProjectPath);
 
-    Project test("test",&outPath,Project::exe,true);
-
-    #ifdef _WIN32
+    Project test("test",outPath,Project::exe,true);
+    current = &test;
     test.setCompiler("clang++")
-    .setOptions("-O2 -Wall -Wextra -Wpedantic -Werror -std=c++20 -fno-rtti")
-    .setLdOptions("-s ")
-    #elif __unix__
-    test.setCompiler("clang++")
-    .setOptions("-O0 -std=c++23 -nostdlib ")
-    #endif
+    .addOptions("-O2 -Wall -Wextra -Wpedantic -Werror -std=c++20 -fno-rtti")
+    .addLdOptions("-s ")
     .setProjectPath(rootPath.string())
     .addSourcePath("testlib")
-    .addSource({(test.Path / test.getMainPath() / "strunion.cc").string()})
-    .setMain("strunion.cc");
-    // .getCppFile();
-    
-    #ifdef __unix__
-    // test.addDependency("inprogress.cc",{"c++","c++abi"});
-    #endif
-    for (auto& i : test.ProjectFile)
-    {
-        test.compileCpp(i.second);
-    }
+    .addSource("testlib","match_test.cc")
+    .setMain("match_test.cc");
+    test.compileCpp(test.ProjectFile.getMain());
 
     test.link(test.ProjectFile.getMain());
     return 0;
@@ -100,187 +91,146 @@ int test()
 int selfCompile(bool recompile)
 {
     std::cout << "compile self"_fmt.color(fmt::Bold_Green).endl();
-
-    const fs::path rootPath = ".";
+    const fs::path rootPath = fs::current_path();
+    const fs::path exePath = rootPath / "bin";
+    const fs::path outBuildPath = rootPath / ".build";
+    const fs::path outProjectPath = rootPath / ".build" / "self";
     outputPath outPath;
     outPath.setRootPath(rootPath)
     .setExePath(rootPath)
-    .setOutfolder(rootPath / ".build")
-    .setOutpath(rootPath/".build" / "self");
+    .setBuildfolder(outBuildPath)
+    .setOutpath(outProjectPath);
     
-    Project rebuild("build",&outPath,Project::exe,recompile);
-
-    #ifdef _WIN32
+    Project rebuild("build",outPath,Project::exe,recompile);
+    current = &rebuild;
     rebuild.setCompiler("clang++")
-    .setOptions("-Os -Wall -Wextra -Wpedantic -Werror -fno-rtti -fuse-ld=lld -std=c++23")
-    .setLdOptions("-fuse-ld=lld")
-    #elif __unix__
-    rebuild.setCompiler("clang++")
-    .setOptions("-O3 -Wall -std=c++26 -stdlib=libc++ ")
-    #endif
-    .setProjectPath(rootPath.string())
-    .addSourcePath(rootPath.string())
-    .addSource({(rootPath/"build.cc")});
-    rebuild.setMain("build.cc").dumpProject();
-    #ifdef __unix__
-    rebuild.addDependency("build.cc",{"c++","c++abi"});
-    #endif
-    for (auto& i : rebuild.ProjectFile)
-    {
-        rebuild.compileCpp(i.second);
-    }
+    .addOptions("-Os -Wall -Wextra -Wpedantic -Werror -fno-rtti -std=c++23")
+    .addLdOptions("-fuse-ld=lld")
+    .setProjectPath(rootPath)
+    .addSourcePath("")
+    .addSource("","build.cc")
+    .setMain("build.cc")
+    .dumpProject();
 
+    rebuild.compileCpp(rebuild.ProjectFile.getMain());
     rebuild.link(rebuild.ProjectFile.getMain());
     return 0;
 }
 
 int compileProject(bool recompile)
 {
-        // ThreadPool pool(std::thread::hardware_concurrency());
-        const fs::path rootPath = fs::current_path();
-        const fs::path exePath = rootPath / "bin";
+    const fs::path rootPath = fs::current_path();
+    const fs::path exePath = rootPath / "bin";
+    const fs::path outBuildPath = rootPath / ".build";
+    const fs::path outProjectPath = rootPath / ".build" / "Project";
+    compileCommand cmdJson;
+    outputPath outPath;
+    outPath.setRootPath(rootPath).setExePath(exePath).setBuildfolder(outBuildPath).setOutpath(outProjectPath);
+    Project compile("Main",outPath,Project::exe,recompile);
+    current = &compile;
+    compile.setCompiler("clang++")
+    .addOptions("-O2 -Wall -Wextra -Wpedantic -Werror -flto=thin -fno-rtti -fno-exceptions -std=c++26")
+    .addLdOptions("-fuse-ld=lld")
+    .addCompileCommand(&cmdJson)
+    .setProjectPath(rootPath)
+    .addSourcePath("src")
+    .addSourcePath("src/core")
+    .addSourcePath("src/window")
+    .addSource("src", {
+        "main.cc",
+        "lib.ui.ccm",
+        "lib.image.ccm",
+    })
+    .addSource("src/core", "*")
+    .addSource("src/window", {
+        "lib.win.ccm",
+        "winCommon.ccm",
+        "platform.ccm",
+        "renderer.ccm",
+        "keyboard.ccm",
+    })
+    .addIncludePathList({
+        "src",
+        "src/window"
+    })
+    .getHeaderFile()
+    .setResourcePath("res")
+    .setMain("main.cc").scanHeader().scanModule()
+    .addLinkLibrary("lib.win.ccm",{"gdi32","user32"})
+    .addLinkLibrary("renderer.ccm",{"opengl32"})
+    .configureModuleFlags().dumpProject()
+    ;
 
-        compileCommand cmdJson;
-        outputPath outPath;
-        outPath.setRootPath(rootPath)
-        .setExePath(exePath)
-        .setOutfolder(rootPath / ".build")
-        .setOutpath(rootPath / ".build" / "project");
-
+    auto getProjectFile = compile.ProjectFile | std::views::values; 
+    auto getModule = getProjectFile 
+    | std::views::filter([](const auto& File){
+        const bool isSource = File.fileType == File::Source;
+        const bool isModuleImpl = File.fileType == File::ModuleImpl;
+        return !isSource || isModuleImpl;
+    }); 
+    auto getSource = getProjectFile 
+    | std::views::filter([](const auto& File){
+        const bool isSource = File.fileType == File::Source;
+        const bool isModuleImpl = File.fileType == File::ModuleImpl;
+        return isSource || isModuleImpl;
+    });
     
-        // cProject libGLAD(&outPath, cProject::staticLib,recompile);
-
-
-        // #ifdef _WIN32
-        // libGLAD.setCompiler("clang")
-        // #elif __unix__
-        // libGLAD.setCompiler("clang")
-        // #endif
-        // .addCompileCommand(&cmdJson)
-        // .setOptions("-O2 -flto=thin")
-        // .setProjectPath(rootPath / "example"/ "lib" / "glad")
-        // .setSourcePath("src")
-        // .addIncludefile((libGLAD.Path / "include").string())
-        // .getCFile()
-        // .dumpProject()
-        // .setMain("glad.c")
-        // .scanInclude()
-        // // #ifdef _WIN32
-        // // .addDependency("glad.c", {"opengl32"})
-        // // #elif __unix__
-        // // .addDependency("glad.c", {"GL"})
-        // // #endif
-        // ;
-        // for (auto& f : libGLAD.ProjectFile.VIter()) {
-        //     libGLAD.compileC(*f);
-        // }
-        // libGLAD.link(libGLAD.ProjectFile.getMain());
-
-        // Project meshoptimizer("meshoptimizer",&outPath,Project::staticLib,false);
-        // meshoptimizer.setCompiler("clang++")
-        // .setOptions("-O3 -std=c++23")
-        // .setProjectPath(rootPath/"example"/"lib"/"meshoptimizer")
-        // .addSourcePath(meshoptimizer.Path/"src")
-        // .addIncludefile(meshoptimizer.Path/"src")
-        // .addIncludefile(meshoptimizer.Path/"extern")
-        // .addIncludefile(meshoptimizer.Path/"gltf")
-        // .getCppFile();
-        // thread_local auto* pp = &meshoptimizer.ProjectFile;
-        // for(const auto& i : *pp) {
-        //     meshoptimizer.compileCpp(i);
-        // }
-        // while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));}
-        // meshoptimizer.link("meshoptimizer");
-
-        Project mainProj("main",&outPath,Project::exe,recompile);
+    std::queue<std::reference_wrapper<File>> queue;
+    for (auto& i : getModule) {
+        queue.push(i);
+    }
+    while(!queue.empty()) {
+        auto& modulef = queue.front().get();
+        queue.pop();
+        if (compile.compileModule(modulef) == false) {
+            // std::cout << "Compiled Module: "_fmt.color(fmt::Red) << modulef.Name <<"\n";
+            queue.emplace(modulef);
+        }
+    }
     
-        #ifdef _WIN32
-        mainProj.setCompiler("clang++")
-        .setOptions(" -O2 -Wall -Wextra -Wpedantic -Werror -flto=thin -fno-rtti -fno-exceptions -std=c++26")
-        .setLdOptions("-fuse-ld=lld ")
-        #elif __unix__
-        mainProj.setCompiler("clang++")
-        .setOptions("-O3 -fno-exceptions  -stdlib=libc++ -std=c++26")
-        #endif
-        .addCompileCommand(&cmdJson)
-        .setProjectPath((rootPath).string())
-        .addSourcePath((mainProj.Path / "src").string())
-        .addSourcePath((mainProj.Path / "src" / "core").string())
-        .addSourcePath((mainProj.Path / "src" / "window").string());
-        // .getLib(&meshoptimizer)
-        std::cout << fmt("Source Path: "_fmt.color(fmt::Red),mainProj.getMainPath()," root path: "_fmt.color(fmt::Blue),mainProj.Path.string(),"\n");
-        mainProj
-        // .getLib(&libGLAD)
-        // .addIncludefile((mainProj.Path / mainProj.getMainPath() / "lib" / "RGFW").string())
-        .addIncludePath((mainProj.Path / mainProj.getMainPath()).string())
-        .addIncludePath((mainProj.Path / mainProj.getMainPath() / "window").string())
-        .setResourcePath("res")
-        .getCppFile();
-    
-        mainProj
-        .setMain("main.cc")
-        .scanHeader()
-        .scanModule()
-        #ifdef _WIN32
-        .addLinkLibrary("lib.win.ccm","gdi32,user32")
-        .addLinkLibrary("renderer.ccm","opengl32")
-        .configureModuleFlags()
-        // #elif __unix__
-        // .addDependency("lib.RGFW.ccm",{"X11", "Xrandr"})
-        // .addDependency("lib.std.ccm",{"c++","c++abi"})
-        #endif
-        .dumpProject()
-        // .compilePCH("pch.hpp")
-        ;
+    for (auto& i : getSource) {
+        compile.compileCpp(i);
+    }
 
-        // while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
-        std::queue<std::reference_wrapper<File>> queue;
-        for (auto& i : mainProj.ProjectFile) {
-            if (i.second.fileType == File::Source || i.second.fileType == File::ModuleImpl) {
-                continue;
-            } else {
-                queue.push(i.second);
-            }
-        }
-        while(!queue.empty()) {
-            auto& modulef = queue.front().get();
-            queue.pop();
-            // const auto moduleReady = mainProj.isModuleExist(modulef);
-            // print << "Compiling Module: "_fmt.color(fmt::Red) << modulef.Path <<"\n";
-            if (mainProj.compileModule(modulef) < 0) {
-                queue.emplace(modulef);
-            }
-        }
-        
-        // while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
-        
-        for (auto& i : mainProj.ProjectFile) {
-            // pool.enqueue ([&i,&mainProj]{mainProj.compileCpp(i);});
-            // print << "File " << i.first << " with ID: " << std::to_string(i.second.ID) << " is: " << (i.second.compiled ? "Compiled" : "not Compiled") << "\n";
-            mainProj.compileCpp(i.second);
-        }
-        // while (!pool.isEmpty()) {std::this_thread::sleep_for(std::chrono::milliseconds(100));};
+    if(compile.cmdJson != nullptr) compile.cmdJson->write(outPath.rootPath/"compile_commands.json");
 
-        if(mainProj.cmdJson != nullptr) mainProj.cmdJson->write(outPath.rootPath/"compile_commands.json");
-
-        mainProj.link(mainProj.ProjectFile.getMain());
+    compile.link(compile.ProjectFile.getMain());
     
     return 0;
+}
+void exitImpl() {
+    current->~Project();
 }
 
 auto main(int argc, const char* argv[]) -> int 
 {
     std::cout << "CPP BUILD \n"_fmt.color(fmt::Bold_Purple);
-
+    std::atexit(exitImpl);
+    
     std::string inputLine = argv[1];
     if (argc < 2) {return 1;} else 
     {
         if (inputLine.empty()) {return 0;}
-        if (inputLine == "-compile") {compileProject(false); return 0;}
-        if (inputLine == "-recompile") {compileProject(true); return 0;}
-        if (inputLine == "-self") {selfCompile(false); return 0;}
-        if (inputLine == "-recompileself") {selfCompile(true); return 0;}
-        if (inputLine == "-test") {test(); return 0;}
+        if (inputLine == "-compile") {
+            compileProject(false);
+            return 0;
+        }
+        if (inputLine == "-recompile") {
+            compileProject(true); 
+            return 0;
+        }
+        if (inputLine == "-self") {
+            selfCompile(false); 
+            return 0;
+        }
+        if (inputLine == "-recompileself") {
+            selfCompile(true); 
+            return 0;
+        }
+        if (inputLine == "-test") {
+            test(); 
+            return 0;
+        }
         else return 0;    
     }
 
