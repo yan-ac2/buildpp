@@ -640,7 +640,7 @@ class FileManager {
     }
     
     auto setHeaderPath(std::string_view path) -> HeaderContainer& {
-        return Header.try_emplace(path.data(),HeaderContainer{}).first->second;
+        return Header.try_emplace({path.data(),path.size()},HeaderContainer{}).first->second;
     }
 
     auto addHeader(std::string_view path,std::string_view name) -> void {
@@ -794,6 +794,15 @@ class Project
     std::set<std::string> SourcePath  {};
     FileManager ProjectFile        {};
 
+    Project(std::string_view name,outputPath& path,projectType exe,bool recomp = false) {
+        ProjectName = name,
+        OutPath = &path,
+        outFile = exe,
+        cmdJson = nullptr,
+        recompile = recomp;
+        std::cout << fmt("Project initialized at "_fmt.color(fmt::Green) , this->Path.string(),"\n" );
+    };
+
     constexpr auto setMain        (std::string_view main) -> Project& {ProjectFile.setMain(main); return *this;}
     constexpr auto setCompiler    (std::string_view comp) -> Project& {Compiler = comp; return *this;}
     constexpr auto addOptions     (std::string_view opt)  -> Project& {
@@ -826,7 +835,7 @@ class Project
         ProjectFile.setHeaderPath(temp.string()); 
         return *this;
     }
-    constexpr auto addIncludePathList (std::vector<std::string_view> ListPath) -> Project& {
+    constexpr auto addIncludePathList (std::initializer_list<std::string_view> ListPath) -> Project& {
         for (auto& in : ListPath) {
             const fs::path temp {Path / in};
             err(!fs::exists(temp),fmt("Include path: ",temp.string(), " does not exist ").color(fmt::Bold_Red));
@@ -844,8 +853,8 @@ class Project
         if (file == "*") {
             fs::directory_iterator iterator(fromPath);
             for (const auto& entry : iterator) {
-                bool isModule = fileUtil::isModule(entry.path().extension().string());
-                bool isSource = fileUtil::isCpp(entry.path().extension().string());
+                const bool isModule = fileUtil::isModule(entry.path().extension().string());
+                const bool isSource = fileUtil::isCpp(entry.path().extension().string());
                 if (entry.is_regular_file() && ( isModule || isSource)) {
                     const auto& path = entry.path();
                     // std::cout << fmt("add project file " , entry.path().filename().string() , " " , entry.path().string()).endl();
@@ -871,31 +880,12 @@ class Project
     
         return *this;
     }
-    constexpr auto addSource(std::string_view from,std::vector<std::string_view> ListFiles) -> Project& {
-        const fs::path fromPath {Path / from};
-        err (!fs::is_directory(fromPath),fmt("{} {} is not a directory","Error"_fmt.color(fmt::Red) , fromPath.string()));
+    constexpr auto addSource(std::string_view from,std::initializer_list<std::string_view> ListFiles) -> Project& {
         for (const auto& i : ListFiles) {
-            const fs::path sourcePath {fromPath / i};
-            err (!fs::exists(sourcePath),fmt("source file "_fmt.color(fmt::Red) , sourcePath.string() , " does not exist" ));
-            auto & P = ProjectFile.addFile(sourcePath.filename().string());
-            
-            P.second.FileName = sourcePath.filename().string();
-            P.second.Name = sourcePath.stem().string();
-            P.second.Path = sourcePath.string();
-            P.second.fileType = File::Source;
-            // P.second.onArchive = (outFile == Project::staticLib ? true : false);
+            addSource(from,i);
         }
         return *this;
     }
-
-    Project(std::string_view name,outputPath& path,projectType exe,bool recomp = false) {
-        ProjectName = name,
-        OutPath = &path,
-        outFile = exe,
-        cmdJson = nullptr,
-        recompile = recomp;
-        std::cout << fmt("Project initialized at "_fmt.color(fmt::Green) , this->Path.string(),"\n" );
-    };
 
     auto addCompileCommand(compileCommand* cmd) -> Project&
     {
@@ -935,7 +925,7 @@ class Project
         return *this;
     }
 
-    auto addLinkLibrary(std::string_view inFile, std::vector<std::string_view> ListDeps) -> Project&
+    auto addLinkLibrary(std::string_view inFile, std::initializer_list<std::string_view> ListDeps) -> Project&
     {
         // auto Deps = inDeps | std::views::split(','); 
         const auto rangeFile = ProjectFile | std::views::keys ;
@@ -945,7 +935,7 @@ class Project
             std::string_view f_file = *finds;
             auto& File = *ProjectFile[f_file]; 
             for (auto&& d : ListDeps) {
-                std::string_view dep {d.data(),d.size()};
+                std::string_view dep {d};
                 if(dep.empty()) continue;
                 while (!dep.empty() && dep.front() == ' ') dep.remove_prefix(1);
                 while (!dep.empty() && dep.back() == ' ') dep.remove_suffix(1);
@@ -956,18 +946,16 @@ class Project
         return *this;
     }
 
-    auto addCompileFlags(std::string_view inFile, std::string_view inFlags) -> Project&
+    auto addCompileFlags(std::string_view inFile, std::initializer_list<std::string_view> ListFlags) -> Project&
     {
-        auto Deps = inFlags | std::views::split(','); 
+        // auto Deps = inFlags | std::views::split(','); 
         const auto rangeFile = ProjectFile | std::views::keys;
         const auto finds = std::ranges::find(rangeFile,inFile);
 
         if (finds != rangeFile.end()) {
             std::string_view f_file {*finds};
             auto& File = *ProjectFile[f_file]; 
-            File.ldFlags.reserve(inFlags.size());
-            for (auto&& d : Deps) {
-                 std::string_view dep {d.data(),d.size()};
+            for (auto&& dep : ListFlags) {
                 if(dep.empty()) continue;
                 File.Flags += " ";
                 File.Flags += dep;
@@ -1247,7 +1235,7 @@ class Project
                             return ret{temp,containsToken(V.Flags,temp)};
                         });
                         if (findInclude != HF.end()) {
-                            std::string i {fmt("-I",HP)};
+                            std::string i {fmt("-I{}",HP)};
                             if (!containsToken(V.Flags, i)) {
                                 V.Flags.append(" ") += i; 
                                 if(!findInclude->flags.empty()) 

@@ -133,9 +133,11 @@ int compileProject(bool recompile)
     .addLdOptions("-fuse-ld=lld")
     .addCompileCommand(&cmdJson)
     .setProjectPath(rootPath)
-    .addSourcePath("src")
-    .addSourcePath("src/core")
-    .addSourcePath("src/window")
+    .addSourcePathList({
+        "src",
+        "src/core",
+        "src/window"
+    })
     .addSource("src", {
         "main.cc",
         "lib.ui.ccm",
