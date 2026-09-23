@@ -232,17 +232,26 @@ void exitImpl() {
     current->~Project();
 }
 
+struct argsParse {
+    std::vector<std::string_view> args {};
+
+    argsParse(int argc, const char* argv[]) {
+        std::span<const char*> argsSpan {argv, static_cast<std::size_t>(argc)};
+        auto argsRange = argsSpan | std::views::drop(1) | std::views::transform([](const auto s) {
+            return std::string_view{s};
+        });
+        args.reserve(argc);
+        args = argsRange | std::ranges::to<std::vector<std::string_view>>();
+    }
+};
+
 auto main(int argc, const char* argv[]) -> int 
 {
     std::cout << "CPP BUILD \n"_fmt.color(fmt::Bold_Purple);
     std::atexit(exitImpl);
+    argsParse cmd(argc,argv);
     
-    std::span<const char*> argsSpan {argv, static_cast<std::size_t>(argc)};
-    auto argsRange = argsSpan | std::views::drop(1) | std::views::transform([](const auto s) {
-        return std::string_view{s};
-    });
-    std::vector<std::string_view> args {argsRange | std::ranges::to<std::vector<std::string_view>>()};
-    std::string_view inputLine = args[0];
+    std::string_view inputLine = cmd.args[0];
     if (argc < 2) {return 1;} else 
     {
         if (inputLine.empty()) {return 0;}
@@ -267,20 +276,18 @@ auto main(int argc, const char* argv[]) -> int
             return 0;
         }
         else {
-            const auto compile = std::ranges::find_if(args,[](std::string_view& s) {
+            const auto compile = std::ranges::find_if(cmd.args,[](std::string_view& s) {
                 return s == "-c"; 
             });
-            const auto sourcePath = std::ranges::find_if(args,[](std::string_view& s) {
+            const auto sourcePath = std::ranges::find_if(cmd.args,[](std::string_view& s) {
                 return s == "-S"; 
             });
-            const std::size_t Pathidx {static_cast<std::size_t>(std::distance(args.begin(), sourcePath)) + 1};
-            const std::size_t compileidx {static_cast<std::size_t>(std::distance(args.begin(), compile)) + 1};
-            std::string_view& Name = args[0];
-            std::string_view& sourceLocation = args[Pathidx];
+            const std::size_t Pathidx {static_cast<std::size_t>(std::distance(cmd.args.begin(), sourcePath)) + 1};
+            const std::size_t compileidx {static_cast<std::size_t>(std::distance(cmd.args.begin(), compile)) + 1};
+            std::string_view& Name = cmd.args[0];
+            std::string_view& sourceLocation = cmd.args[Pathidx];
             // std::span<const char*> srcList {argv + sourceidx, static_cast<std::size_t>(argc) - sourceidx};
-            auto srcRange = argsSpan | std::views::drop(compileidx) | std::views::transform([](const auto s) {
-                return std::string_view{s};
-            }) | std::ranges::enable_view<std::span<std::string_view>>;
+            auto srcRange = cmd.args | std::views::drop(compileidx);
             CompileFile(Name,sourceLocation,srcRange,true);
             return 0;
         };    
