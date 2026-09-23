@@ -110,8 +110,36 @@ int selfCompile(bool recompile)
     .addSourcePath("")
     .addSource("","build.cc")
     .setMain("build.cc")
-    .dumpProject();
-
+    // .dumpProject()
+    ;
+    rebuild.compileCpp(rebuild.ProjectFile.getMain());
+    rebuild.link(rebuild.ProjectFile.getMain());
+    return 0;
+}
+int CompileFile(std::string_view Name,std::string_view From,std::span<std::string_view> src,bool recompile)
+{
+    std::cout << fmt("Compiling {}\nFrom: {}\n" ,Name,From);
+    const fs::path rootPath = fs::current_path();
+    const fs::path exePath = rootPath / "bin";
+    const fs::path outBuildPath = rootPath / ".build";
+    const fs::path outProjectPath = rootPath / ".build" / Name;
+    outputPath outPath;
+    outPath.setRootPath(rootPath)
+    .setExePath(rootPath)
+    .setBuildfolder(outBuildPath)
+    .setOutpath(outProjectPath);
+    
+    Project rebuild("build",outPath,Project::exe,recompile);
+    current = &rebuild;
+    rebuild.setCompiler("clang++")
+    .addOptions("-Os -Wall -Wextra -Wpedantic -Werror -fno-rtti -std=c++23")
+    .addLdOptions("-fuse-ld=lld")
+    .setProjectPath(rootPath)
+    .addSourcePath(From)
+    .addSource(From,src)
+    .setMain(src[0])
+    // .dumpProject()
+    ;
     rebuild.compileCpp(rebuild.ProjectFile.getMain());
     rebuild.link(rebuild.ProjectFile.getMain());
     return 0;
@@ -209,7 +237,12 @@ auto main(int argc, const char* argv[]) -> int
     std::cout << "CPP BUILD \n"_fmt.color(fmt::Bold_Purple);
     std::atexit(exitImpl);
     
-    std::string inputLine = argv[1];
+    std::span<const char*> argsSpan {argv, static_cast<std::size_t>(argc)};
+    auto argsRange = argsSpan | std::views::drop(1) | std::views::transform([](const auto s) {
+        return std::string_view{s};
+    });
+    std::vector<std::string_view> args {argsRange | std::ranges::to<std::vector<std::string_view>>()};
+    std::string_view inputLine = args[0];
     if (argc < 2) {return 1;} else 
     {
         if (inputLine.empty()) {return 0;}
@@ -233,7 +266,24 @@ auto main(int argc, const char* argv[]) -> int
             test(); 
             return 0;
         }
-        else return 0;    
+        else {
+            const auto compile = std::ranges::find_if(args,[](std::string_view& s) {
+                return s == "-c"; 
+            });
+            const auto sourcePath = std::ranges::find_if(args,[](std::string_view& s) {
+                return s == "-S"; 
+            });
+            const std::size_t Pathidx {static_cast<std::size_t>(std::distance(args.begin(), sourcePath)) + 1};
+            const std::size_t compileidx {static_cast<std::size_t>(std::distance(args.begin(), compile)) + 1};
+            std::string_view& Name = args[0];
+            std::string_view& sourceLocation = args[Pathidx];
+            // std::span<const char*> srcList {argv + sourceidx, static_cast<std::size_t>(argc) - sourceidx};
+            auto srcRange = argsSpan | std::views::drop(compileidx) | std::views::transform([](const auto s) {
+                return std::string_view{s};
+            }) | std::ranges::enable_view<std::span<std::string_view>>;
+            CompileFile(Name,sourceLocation,srcRange,true);
+            return 0;
+        };    
     }
 
     return 0;

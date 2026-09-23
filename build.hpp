@@ -369,12 +369,12 @@ struct outputPath {
         if (!fs::exists(exe)) 
         {
             if (fs::create_directory(exe)) {
-                std::cout << fmt("Directory created: {}\n" , exe.string());
+                // std::cout << fmt("Directory created: {}\n" , exe.string());
             } else {
                 err(true,fmt("Failed to create directory: {}\n",exe.string()));
             }        
         } else {
-            std::cout << fmt("{} {}\n","Directory already exists:"_fmt.color(fmt::Bold_Yellow) , exe.string());
+            // std::cout << fmt("{} {}\n","Directory already exists:"_fmt.color(fmt::Bold_Yellow) , exe.string());
         } 
         exePath = exe;
         return err();
@@ -384,12 +384,12 @@ struct outputPath {
         if (!fs::exists(folder)) 
         {
             if (fs::create_directory(folder)) {
-                std::cout << fmt("Directory created: {}\n" , folder.string());
+                // std::cout << fmt("Directory created: {}\n" , folder.string());
             } else {
                 err(true,fmt("Failed to create directory: {}\n",folder.string()));
             }        
         } else {
-            std::cout << fmt("{} {}\n","Directory already exists:"_fmt.color(fmt::Bold_Yellow) , folder.string());
+            // std::cout << fmt("{} {}\n","Directory already exists:"_fmt.color(fmt::Bold_Yellow) , folder.string());
         }
         return *this;
     }
@@ -407,7 +407,7 @@ struct outputPath {
                     err(true,fmt("Error: Path has no parent path: {}" ,lm_dir.string()));
                 }
                 if (fs::create_directory(lm_dir)) {
-                    std::cout << fmt("Directory created: {}\n" , lm_dir.string());
+                    // std::cout << fmt("Directory created: {}\n" , lm_dir.string());
                 } else {
                     err(true,fmt("Failed to create directory: {}\n",lm_dir.string()));
                 }        
@@ -800,7 +800,7 @@ class Project
         outFile = exe,
         cmdJson = nullptr,
         recompile = recomp;
-        std::cout << fmt("Project initialized at "_fmt.color(fmt::Green) , this->Path.string(),"\n" );
+        std::cout << fmt("{} {}\n","Project initialized at "_fmt.color(fmt::Green) , this->OutPath->rootPath.string());
     };
 
     constexpr auto setMain        (std::string_view main) -> Project& {ProjectFile.setMain(main); return *this;}
@@ -819,7 +819,7 @@ class Project
     constexpr auto setResourcePath(std::string_view in) -> Project&   {ResPath = in; return *this;}
     constexpr auto addSourcePath  (std::string_view in) -> Project&   {
         const fs::path temp {Path / in};
-        err(!fs::exists(temp),fmt("Source path: ",temp.string(), " does not exist ").color(fmt::Bold_Red));
+        err(!fs::exists(temp),fmt("{} Source path: {} does not exist","Error:"_fmt.color(fmt::Bold_Red),temp.string()));
         SourcePath.insert(temp.string()); 
         return *this;
     }
@@ -868,7 +868,7 @@ class Project
             }
         } else {
             const fs::path sourcePath {fromPath / file};
-            err (!fs::exists(sourcePath),fmt("{} source file {} does not exist","Error:"_fmt.color(fmt::Red) , sourcePath.string()));
+            err (!fs::exists(sourcePath),fmt("{} Source Path {} does not exist","Error:"_fmt.color(fmt::Red) , sourcePath.string()));
             auto & P = ProjectFile.addFile(sourcePath.filename().string());
 
             P.second.FileName = sourcePath.filename().string();
@@ -881,6 +881,12 @@ class Project
         return *this;
     }
     constexpr auto addSource(std::string_view from,std::initializer_list<std::string_view> ListFiles) -> Project& {
+        for (const auto& i : ListFiles) {
+            addSource(from,i);
+        }
+        return *this;
+    }
+    constexpr auto addSource(std::string_view from,std::span<std::string_view> ListFiles) -> Project& {
         for (const auto& i : ListFiles) {
             addSource(from,i);
         }
@@ -1169,9 +1175,9 @@ class Project
                     V.setObjOutputName(OutPath->objPath);
 
                     std::string moPath = V.getModuleOutput(&OutPath->modulePath);
-                    V.compiled = fs::exists(V.objectPath) && fs::exists(moPath) 
+                    V.compiled = recompile ? false : (fs::exists(V.objectPath) && fs::exists(moPath) 
                         ? fs::last_write_time(V.Path) < fs::last_write_time(V.objectPath) 
-                        : false;
+                        : false);
 
                     exportModuleFound = true;
                     moduleFound = true;
@@ -1199,9 +1205,9 @@ class Project
                             auto minterface = ProjectFile.getByName(moduleName);
                             V.dependencies.push_back(minterface->Name);
                             // std::string moPath = V.getModuleOutput(&OutPath->modulePath);
-                            V.compiled = fs::exists(V.objectPath)
+                            V.compiled = recompile ? false : (fs::exists(V.objectPath)
                                 ? fs::last_write_time(V.Path) < fs::last_write_time(V.objectPath) 
-                                : false;
+                                : false);
 
                             moduleFound = true;
                         }
@@ -1384,12 +1390,12 @@ class Project
     auto compilePCH(std::string_view PCHfile) -> bool {
         const std::string headerFile = (fs::path(ProjectFile.getHeaderPath(PCHfile)) / PCHfile).string();
         const auto& oPath = OutPath->buildPath;
-        const std::string pchOut {fmt((oPath / fs::path(PCHfile).stem()).string(),".pch")};
+        const std::string pchOut {fmt("{}.pch",(oPath / fs::path(PCHfile).stem()).string())};
         const std::string f_cmd  {fmt("{} {} -x c++-header {} -o {}",Compiler, Options,headerFile,pchOut)};
         Options += fmt(" -include-pch {} ",pchOut);
         if (fs::exists(pchOut)) {
             if (fs::last_write_time(headerFile) > fs::last_write_time(pchOut)) {
-                fs::rename(pchOut,fmt(pchOut,".old").str);
+                fs::rename(pchOut,fmt("{}.old",pchOut).str);
             } else {
                 return 1;
             }
@@ -1426,7 +1432,7 @@ class Project
         const bool isSystemHeader = (inFile.fileType == File::SystemHeader);
         const bool isModuleImpl = (inFile.fileType == File::ModuleImpl);
         const bool isHeaderUnit = (inFile.fileType == File::HeaderUnit);
-        if (isModuleImpl) { return true; }
+        if (isModuleImpl || (isSystemHeader && inFile.compiled)) { return true; }
         if(!inFile.dependencies.empty()) {
             for (const auto& I : inFile.dependencies) {
                 auto& dep = *ProjectFile[I];
@@ -1458,10 +1464,12 @@ class Project
         const std::string f_cmd {
             isSystemHeader ? fmt("{} {} {}",Compiler, Options,f_srcInput) : 
             isHeaderUnit ? fmt("{} {} {} {}",Compiler, Options,inFile.Flags,f_srcInput) :
-            fmt("{} {} {} {} {} -o {}",Compiler, Options,(inFile.haveHeaderUnit ? "-Wno-experimental-header-units ": "") ,f_srcInput ,inFile.Flags,fObjOutput)};
+            fmt("{} {} {} {} {} -o {}",Compiler, Options,(inFile.haveHeaderUnit ? "-Wno-experimental-header-units ": "") ,
+            f_srcInput ,inFile.Flags,fObjOutput)
+        };
             
-            if(cmdJson != nullptr && !isSystemHeader) { 
-                cmdJson->addCompilecmd((Path / inFile.Path).parent_path().string(),f_cmd,(Path / inFile.Path).string(),fObjOutput);
+        if(cmdJson != nullptr && !isSystemHeader) { 
+            cmdJson->addCompilecmd((Path / inFile.Path).parent_path().string(),f_cmd,(Path / inFile.Path).string(),fObjOutput);
         }
         
         if (inFile.compiled && !recompile) {
@@ -1472,18 +1480,18 @@ class Project
         // module use reduced bmi        
         if (isSystemHeader) {
             std::cout << fmt("{} {}","compiling module "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
-            ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
+            ret = cmd << f_cmd >> "recompile error"_fmt.color(fmt::Red);
         } else {
             #ifdef __WIN32
             if(fs::exists(fModule)) {
-                const std::string old = fmt(fModule,".old"); 
+                const std::string old {fmt("{}.old",fModule)}; 
                 if (fs::exists(old)){fs::remove(old);}
                 fs::rename(fModule,old);
-                fs::copy(old,fModule);
             }
             #endif
+            // fs::copy(old,fModule);
             std::cout << fmt("{} {}","compiling module "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
-            ret = cmd << f_cmd.c_str() >> "recompile error"_fmt.color(fmt::Red);
+            ret = cmd << f_cmd >> "recompile error"_fmt.color(fmt::Red);
         }
         inFile.compiled = (ret == 0 ? true : false);
         return true; 
@@ -1521,7 +1529,8 @@ class Project
             cppOutput,
             inFile.Flags,
             isModule? "-c -o":"-o", 
-            objOutput).clean()};
+            objOutput).clean()
+        };
         
         if(cmdJson != nullptr && !isModule) { 
             cmdJson->addCompilecmd(
@@ -1542,17 +1551,17 @@ class Project
         int ret {};
         if (recompile) {
             std::cout << fmt("{} {}","recompiling"_fmt.color(fmt::Bold_Green) , f_cmd) << "\n" ;
-            ret = cmd << f_cmd.c_str() >> "Error compiling "_fmt.color(fmt::Bold_Red);
+            ret = cmd << f_cmd >> "Error compiling "_fmt.color(fmt::Bold_Red);
             
         } else if (!fs::exists(objOutput))
         {
             std::cout << fmt("{} {}","compiling "_fmt.color(fmt::Bold_Green) , f_cmd) << "\n" ;
-            ret = cmd << f_cmd.c_str() >> "Error compiling "_fmt.color(fmt::Bold_Red);
+            ret = cmd << f_cmd >> "Error compiling "_fmt.color(fmt::Bold_Red);
             
         } else if (fs::last_write_time(inFile.Path) > fs::last_write_time(objOutput))
         {
             std::cout << fmt("{} {}","updated "_fmt.color(fmt::Bold_Green) , f_cmd) << "\n" ;
-            ret = cmd << f_cmd.c_str() >> "Error compiling "_fmt.color(fmt::Bold_Red);
+            ret = cmd << f_cmd >> "Error compiling "_fmt.color(fmt::Bold_Red);
         }
         inFile.compiled = (ret == 0 ? true : false);
         return ret; 
