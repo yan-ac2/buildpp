@@ -1,7 +1,9 @@
 Diagnostics:
   Suppress: [
     "module_odr_violation_record",
-    "header_import_not_header_unit"
+    "header_import_not_header_unit",
+    "fatal_too_many_errors",
+    "module_not_found"
   ]
 CompileFlags:
   Remove: [
@@ -12,6 +14,6 @@ CompileFlags:
   Add: [
     -std=c++23,
     -fno-exceptions,
-    --target=x86_64-w64-windows-gnu
+    -fprebuilt-module-path="C:/etc/project/buildpp/.build/buildModule/module"
   ]
   Compiler: clang++

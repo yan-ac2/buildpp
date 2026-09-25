@@ -104,7 +104,7 @@ int selfCompile(bool recompile)
     Project rebuild("build",outPath,Project::exe,recompile);
     current = &rebuild;
     rebuild.setCompiler("clang++")
-    .addOptions("-Os -Wall -Wextra -Wpedantic -Werror -fno-rtti -std=c++23")
+    .addOptions("-O1 -Wall -Wextra -Wpedantic -Werror -fno-rtti -std=c++23")
     .addLdOptions("-fuse-ld=lld")
     .setProjectPath(rootPath)
     .addSourcePath("")
@@ -116,7 +116,7 @@ int selfCompile(bool recompile)
     rebuild.link(rebuild.ProjectFile.getMain());
     return 0;
 }
-int CompileFile(std::string_view Name,std::string_view From,std::span<std::string_view> src,bool recompile)
+int CompileFile(const std::string_view Name,const std::string_view From,std::span<const std::string_view> src,bool recompile)
 {
     std::cout << fmt("Compiling {}\nFrom: {}\n" ,Name,From);
     const fs::path rootPath = fs::current_path();
@@ -129,19 +129,49 @@ int CompileFile(std::string_view Name,std::string_view From,std::span<std::strin
     .setBuildfolder(outBuildPath)
     .setOutpath(outProjectPath);
     
-    Project rebuild("build",outPath,Project::exe,recompile);
-    current = &rebuild;
-    rebuild.setCompiler("clang++")
+    Project compile("build",outPath,Project::exe,recompile);
+    current = &compile;
+    compile.setCompiler("clang++")
     .addOptions("-Os -Wall -Wextra -Wpedantic -Werror -fno-rtti -std=c++23")
     .addLdOptions("-fuse-ld=lld")
     .setProjectPath(rootPath)
     .addSourcePath(From)
     .addSource(From,src)
-    .setMain(src[0])
-    // .dumpProject()
+    .setMain(src[0]).scanHeader().scanModule()
+    .configureModuleFlags()
+    .dumpProject()
     ;
-    rebuild.compileCpp(rebuild.ProjectFile.getMain());
-    rebuild.link(rebuild.ProjectFile.getMain());
+    auto getProjectFile = compile.ProjectFile | std::views::values;
+    auto getModule = getProjectFile 
+    | std::views::filter([](const auto& File){
+        const bool isSource = File.fileType == File::Source;
+        const bool isModuleImpl = File.fileType == File::ModuleImpl;
+        return !isSource || isModuleImpl;
+    }); 
+    auto getSource = getProjectFile 
+    | std::views::filter([](const auto& File){
+        const bool isSource = File.fileType == File::Source;
+        const bool isModuleImpl = File.fileType == File::ModuleImpl;
+        return isSource || isModuleImpl;
+    });
+    if(!getModule.empty()) {
+        std::queue<std::reference_wrapper<File>> queue;
+        for (auto& i : getModule) {
+            queue.push(i);
+        }
+        while(!queue.empty()) {
+            auto& modulef = queue.front().get();
+            queue.pop();
+            if (compile.compileModule(modulef) == false) {
+                // std::cout << "Compiled Module: "_fmt.color(fmt::Red) << modulef.Name <<"\n";
+                queue.emplace(modulef);
+            }
+        }
+    }
+    for (auto& S : getSource) {
+        compile.compileCpp(S);
+    }
+    compile.link(compile.ProjectFile.getMain());
     return 0;
 }
 
@@ -186,8 +216,8 @@ int compileProject(bool recompile)
     .getHeaderFile()
     .setResourcePath("res")
     .setMain("main.cc").scanHeader().scanModule()
-    .addLinkLibrary("lib.win.ccm",{"gdi32","user32"})
-    .addLinkLibrary("renderer.ccm",{"opengl32"})
+    .LinkLibrary("lib.win.ccm",{"gdi32","user32"})
+    .LinkLibrary("renderer.ccm",{"opengl32"})
     .configureModuleFlags().dumpProject()
     ;
 
@@ -232,24 +262,61 @@ void exitImpl() {
     current->~Project();
 }
 
-struct argsParse {
-    std::vector<std::string_view> args {};
+struct argsVal{
+    std::vector<std::string_view> opt;
 
-    argsParse(int argc, const char* argv[]) {
-        std::span<const char*> argsSpan {argv, static_cast<std::size_t>(argc)};
-        auto argsRange = argsSpan | std::views::drop(1) | std::views::transform([](const auto s) {
-            return std::string_view{s};
-        });
-        args.reserve(argc);
-        args = argsRange | std::ranges::to<std::vector<std::string_view>>();
+    constexpr bool operator ==(std::string_view other) {
+        return [&,this]{ 
+            for (auto& S : opt) { if (S == other) {return true;}}
+            return false;
+        }();
     }
 };
+template<std::size_t N = 0>
+struct argsParse {
+
+    const std::vector<std::string_view> args;
+    const std::array<argsVal, N> val;
+    constexpr argsParse() : args() {}
+    argsParse(std::size_t argc, const char* argv[],argsParse<N>&& other) : 
+    args([&]() {
+            std::span<const char*> argsSpan {argv,argc};
+            auto argsRange = argsSpan | std::views::drop(1) | std::views::transform([](const auto s) {
+                return std::string_view{s};
+            }) | std::ranges::to<std::vector<std::string_view>>();
+            return argsRange;
+        }()),
+    val(std::move(other.val)) 
+    {
+    }
+    template<typename... V> requires (std::is_same_v<argsVal, V> && ...)
+    constexpr argsParse(V&&... value) : val{value...} {
+    }
+    template<typename... V> requires (std::is_same_v<argsVal, V> && ...)
+    constexpr argsParse addOptions(V&&... opt) {
+        return argsParse(opt...);
+    }
+};
+
 
 auto main(int argc, const char* argv[]) -> int 
 {
     std::cout << "CPP BUILD \n"_fmt.color(fmt::Bold_Purple);
     std::atexit(exitImpl);
-    argsParse cmd(argc,argv);
+    auto makeArgs = argsParse()
+    .addOptions({{"-C","-compile"}})
+    .addOptions({{"-S"}});
+    auto cmd = argsParse(argc,argv,std::move(makeArgs));
+    for(const auto& c : cmd.val) {
+        for(const auto& cc : c.opt) {
+            std::cout << cc << " ";
+        }
+    }
+    std::cout << "\n";
+    for(const auto& c : cmd.args) {
+        std::cout << c << " ";
+    }
+    std::cout << "\n";
     
     std::string_view inputLine = cmd.args[0];
     if (argc < 2) {return 1;} else 
@@ -276,16 +343,16 @@ auto main(int argc, const char* argv[]) -> int
             return 0;
         }
         else {
-            const auto compile = std::ranges::find_if(cmd.args,[](std::string_view& s) {
+            const auto compile = std::ranges::find_if(cmd.args,[](auto& s) {
                 return s == "-c"; 
             });
-            const auto sourcePath = std::ranges::find_if(cmd.args,[](std::string_view& s) {
+            const auto sourcePath = std::ranges::find_if(cmd.args,[](auto& s) {
                 return s == "-S"; 
             });
             const std::size_t Pathidx {static_cast<std::size_t>(std::distance(cmd.args.begin(), sourcePath)) + 1};
             const std::size_t compileidx {static_cast<std::size_t>(std::distance(cmd.args.begin(), compile)) + 1};
-            std::string_view& Name = cmd.args[0];
-            std::string_view& sourceLocation = cmd.args[Pathidx];
+            auto& Name = cmd.args[0];
+            auto& sourceLocation = cmd.args[Pathidx];
             // std::span<const char*> srcList {argv + sourceidx, static_cast<std::size_t>(argc) - sourceidx};
             auto srcRange = cmd.args | std::views::drop(compileidx);
             CompileFile(Name,sourceLocation,srcRange,true);
