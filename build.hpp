@@ -654,12 +654,12 @@ class FileManager {
     }
     auto moveHeaderFrom(const std::string& Path,HeaderFile& H) -> void {
         auto it = Header[Path];
-        auto found = [&](std::span<HeaderFile> from)-> bool{ 
+        const bool found = [&](std::span<HeaderFile> from)-> bool{ 
             for (const auto& F : from) {
                 if (H.Name == F.Name) return true;
             } return false;
-        };
-        if (!found(it)) {it.push_back(std::move(H));}
+        }(it);
+        if (!found) {it.push_back(std::move(H));}
     }
     
     auto getHeaderPath(std::string_view name,std::source_location loc = std::source_location::current()) -> std::string_view {
@@ -741,6 +741,8 @@ class FileManager {
 
 class Project
 {
+    outputPath* OutPath;
+    compileCommand* cmdJson;
     std::string ProjectName     {};
     std::string Options         {};
     std::string LdOptions       {};
@@ -761,8 +763,6 @@ class Project
         dynamicLib
     } outFile;
     
-    outputPath* OutPath;
-    compileCommand* cmdJson;
    
 
     fs::path Path       {};
@@ -821,6 +821,7 @@ class Project
     }
     
     constexpr auto getMainPath () const -> const std::string& {return *SourcePath.begin();}
+    constexpr auto getCompileCommand () const -> compileCommand* {return cmdJson;}
     
     constexpr auto addSource(std::string_view from,std::string_view file) -> Project& {
         const fs::path fromPath {Path / from};

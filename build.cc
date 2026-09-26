@@ -252,7 +252,7 @@ int compileProject(bool recompile)
         compile.compileCpp(i);
     }
 
-    if(compile.cmdJson != nullptr) compile.cmdJson->write(outPath.rootPath/"compile_commands.json");
+    if(compile.getCompileCommand() != nullptr) compile.getCompileCommand()->write(outPath.rootPath/"compile_commands.json");
 
     compile.link(compile.ProjectFile.getMain());
     
@@ -262,7 +262,17 @@ void exitImpl() {
     current->~Project();
 }
 
-struct argsVal{
+template<typename T,std::size_t N>
+constexpr std::array<T, N> appendArray(std::array<T, N <= 1 ? 0 : N - 1>& from,T&& add) {
+    return [&]<std::size_t... I>(std::index_sequence<I...>){
+        std::array<T,N> temp;
+        ((temp[I] = std::move(from[I])),...);
+        temp[N - 1] = std::move(add);
+        return temp;
+    }(std::make_index_sequence<N <= 1 ? 0 : N - 1>{});
+}
+
+struct Options{
     std::vector<std::string_view> opt;
 
     constexpr bool operator ==(std::string_view other) {
@@ -275,8 +285,8 @@ struct argsVal{
 template<std::size_t N = 0>
 struct argsParse {
 
-    const std::vector<std::string_view> args;
-    const std::array<argsVal, N> val;
+    std::vector<std::string_view> args;
+    std::array<Options, N> options;
     constexpr argsParse() : args() {}
     argsParse(std::size_t argc, const char* argv[],argsParse<N>&& other) : 
     args([&]() {
@@ -286,15 +296,15 @@ struct argsParse {
             }) | std::ranges::to<std::vector<std::string_view>>();
             return argsRange;
         }()),
-    val(std::move(other.val)) 
+    options(std::move(other.options)) 
     {
     }
-    template<typename... V> requires (std::is_same_v<argsVal, V> && ...)
-    constexpr argsParse(V&&... value) : val{value...} {
+    
+    constexpr argsParse(argsParse<N <= 1 ? 0 : N - 1>&& other,Options&& value) : options(appendArray<Options,N>(other.options, std::move(value))) {
     }
-    template<typename... V> requires (std::is_same_v<argsVal, V> && ...)
-    constexpr argsParse addOptions(V&&... opt) {
-        return argsParse(opt...);
+    
+    constexpr argsParse<N + 1> addOptions(Options opt) {
+        return argsParse<N + 1>(std::move(*this),std::move(opt));
     }
 };
 
@@ -307,7 +317,7 @@ auto main(int argc, const char* argv[]) -> int
     .addOptions({{"-C","-compile"}})
     .addOptions({{"-S"}});
     auto cmd = argsParse(argc,argv,std::move(makeArgs));
-    for(const auto& c : cmd.val) {
+    for(const auto& c : cmd.options) {
         for(const auto& cc : c.opt) {
             std::cout << cc << " ";
         }

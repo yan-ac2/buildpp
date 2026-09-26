@@ -366,7 +366,6 @@ public:
     }
 };
 
-
 int main()
 {
         string s ("hello world before");
