@@ -264,49 +264,62 @@ void exitImpl() {
 
 template<typename T,std::size_t N>
 constexpr std::array<T, N> appendArray(std::array<T, N <= 1 ? 0 : N - 1>& from,T&& add) {
-    return [&]<std::size_t... I>(std::index_sequence<I...>){
-        std::array<T,N> temp;
-        ((temp[I] = std::move(from[I])),...);
-        temp[N - 1] = std::move(add);
-        return temp;
-    }(std::make_index_sequence<N <= 1 ? 0 : N - 1>{});
+    std::size_t idx {0};
+    std::array<T,N> temp;
+    for (auto& F : from) {
+        *(temp.data() + idx) = std::move(F); ++idx;
+    }
+    temp[idx] = std::move(add);
+    return temp;
 }
 
-struct Options{
-    std::vector<std::string_view> opt;
+template<typename T,std::size_t N>
+constexpr std::array<T, N> appendArray(std::array<T,( N < 1 ? 0 : N - 1)>& from,T&& add) {
+    std::size_t idx {0};
+    std::array<T,N> temp;
+    for (auto& F : from) {
+        *(temp.data() + idx) = std::move(F); ++idx;
+    }
+    temp[idx] = std::move(add);
+    return temp;
+}
 
+template<std::size_t N = 0>
+struct Options{
+    std::array<std::vector<std::string_view>, N> options;
+    Options() {}
+    Options(Options<N <= 1 ? 0 : N - 1>&& other,std::vector<std::string_view>&& value) : options(appendArray<Options,N>(other.options, std::move(value))) {
+    }
+    
+    constexpr Options<N + 1> addOptions(std::vector<std::string_view> opt) && {
+        return Options<N + 1>(std::move(*this),std::move(opt));
+    }
     constexpr bool operator ==(std::string_view other) {
         return [&,this]{ 
-            for (auto& S : opt) { if (S == other) {return true;}}
+            for (const auto& O : options) { for(const auto& SV : O) if (SV == other) {return true;}}
             return false;
         }();
     }
+
+    auto* begin() {return options.begin();}
+    auto* end() {return options.end();}
 };
 template<std::size_t N = 0>
 struct argsParse {
 
     std::vector<std::string_view> args;
-    std::array<Options, N> options;
-    constexpr argsParse() : args() {}
-    argsParse(std::size_t argc, const char* argv[],argsParse<N>&& other) : 
-    args([&]() {
-            std::span<const char*> argsSpan {argv,argc};
-            auto argsRange = argsSpan | std::views::drop(1) | std::views::transform([](const auto s) {
-                return std::string_view{s};
-            }) | std::ranges::to<std::vector<std::string_view>>();
-            return argsRange;
-        }()),
-    options(std::move(other.options)) 
+    Options<N> options;
+    argsParse(std::size_t argc, const char* argv[],Options<N>&& other) :
+    options(std::move(other)) 
     {
+        std::span<const char*> argsSpan {argv,argc};
+        args.reserve(argc);
+        for(auto sv : argsSpan) args.push_back(std::string_view{sv});
     }
     
-    constexpr argsParse(argsParse<N <= 1 ? 0 : N - 1>&& other,Options&& value) : options(appendArray<Options,N>(other.options, std::move(value))) {
-    }
-    
-    constexpr argsParse<N + 1> addOptions(Options opt) {
-        return argsParse<N + 1>(std::move(*this),std::move(opt));
-    }
 };
+
+
 
 
 auto main(int argc, const char* argv[]) -> int 
