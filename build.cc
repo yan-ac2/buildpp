@@ -263,18 +263,7 @@ void exitImpl() {
 }
 
 template<typename T,std::size_t N>
-constexpr std::array<T, N> appendArray(std::array<T, N <= 1 ? 0 : N - 1>& from,T&& add) {
-    std::size_t idx {0};
-    std::array<T,N> temp;
-    for (auto& F : from) {
-        *(temp.data() + idx) = std::move(F); ++idx;
-    }
-    temp[idx] = std::move(add);
-    return temp;
-}
-
-template<typename T,std::size_t N>
-constexpr std::array<T, N> appendArray(std::array<T,( N < 1 ? 0 : N - 1)>& from,T&& add) {
+constexpr std::array<T, N> appendArray(std::array<T,( N < 1 ? 0 : N - 1)>&& from,T&& add) {
     std::size_t idx {0};
     std::array<T,N> temp;
     for (auto& F : from) {
@@ -287,12 +276,12 @@ constexpr std::array<T, N> appendArray(std::array<T,( N < 1 ? 0 : N - 1)>& from,
 template<std::size_t N = 0>
 struct Options{
     std::array<std::vector<std::string_view>, N> options;
-    Options() {}
-    Options(Options<N <= 1 ? 0 : N - 1>&& other,std::vector<std::string_view>&& value) : options(appendArray<Options,N>(other.options, std::move(value))) {
+    Options() requires (N == 0) {}
+    Options(Options&& other) requires (N > 0) : options(other.options) {}
+    Options(Options<N < 1 ? 0 : N - 1>&& other,std::vector<std::string_view>&& value) : options(appendArray<std::vector<std::string_view>,N>(std::move(other.options), std::forward<std::vector<std::string_view>>(value))) {
     }
-    
-    constexpr Options<N + 1> addOptions(std::vector<std::string_view> opt) && {
-        return Options<N + 1>(std::move(*this),std::move(opt));
+    constexpr Options<N + 1> addOptions(std::vector<std::string_view>&& opt) && {
+        return Options<N + 1>(std::move(*this),std::forward<std::vector<std::string_view>>(opt));
     }
     constexpr bool operator ==(std::string_view other) {
         return [&,this]{ 
@@ -306,15 +295,12 @@ struct Options{
 };
 template<std::size_t N = 0>
 struct argsParse {
-
     std::vector<std::string_view> args;
     Options<N> options;
-    argsParse(std::size_t argc, const char* argv[],Options<N>&& other) :
-    options(std::move(other)) 
+    argsParse(std::size_t argc, const char* argv[],Options<N>&& other) : options(std::forward<Options<N>>(other)) 
     {
-        std::span<const char*> argsSpan {argv,argc};
         args.reserve(argc);
-        for(auto sv : argsSpan) args.push_back(std::string_view{sv});
+        for(auto sv : std::span<const char*>{argv + 1,argc - 1}) args.push_back(std::string_view{sv});
     }
     
 };
@@ -326,12 +312,12 @@ auto main(int argc, const char* argv[]) -> int
 {
     std::cout << "CPP BUILD \n"_fmt.color(fmt::Bold_Purple);
     std::atexit(exitImpl);
-    auto makeArgs = argsParse()
+    auto makeOptions = Options()
     .addOptions({{"-C","-compile"}})
     .addOptions({{"-S"}});
-    auto cmd = argsParse(argc,argv,std::move(makeArgs));
+    auto cmd = argsParse(argc,argv,std::move(makeOptions));
     for(const auto& c : cmd.options) {
-        for(const auto& cc : c.opt) {
+        for(const auto& cc : c) {
             std::cout << cc << " ";
         }
     }

@@ -17,7 +17,6 @@
 #include <ranges>
 #include <source_location>
 #include <mutex>
-#include <limits>
 
 #include "json.hpp"
 
@@ -28,93 +27,6 @@
 
 namespace  fs = std::filesystem;
 using namespace std::string_view_literals;
-
-namespace Math {
-    template<typename T> requires (std::integral<std::decay_t<T>> || std::floating_point<std::decay_t<T>>)
-    static consteval auto maxDigits() -> std::size_t {
-        using Unqualified = std::remove_cvref_t<T>;
-        if (std::integral<Unqualified>) {
-            constexpr bool isSigned = std::is_signed_v<Unqualified>;
-            return std::numeric_limits<Unqualified>::digits10 + 1 + (isSigned ? 1 : 0);
-        } else {
-            return 24;
-        }
-    }
-
-    static constexpr double PI = 3.1415926535;
-
-    constexpr std::array<double, 19> CompactPow10 = []() consteval {
-        std::array<double, 19> arr{};
-        arr[0] = 1.0;
-        for (size_t i = 1; i < arr.size(); ++i) {
-            arr[i] = arr[i - 1] * 10.0;
-        }
-        return arr;
-    }();
-
-    
-    template <std::floating_point T>
-    constexpr size_t digitLength (const T& in,size_t precision = 0) {
-        if (in == 0) return 1;
-
-        bool isNeg = in < 0.0;
-        double absVal = static_cast<double>(isNeg ? -in : in);
-
-        if (absVal < 9.9) {
-            return 1 + precision + (isNeg ? 1 : 0);
-        }
-
-        // Fast unrolled binary search over the 19-element LUT
-        std::size_t digits = 1;
-        if (absVal >= Math::CompactPow10[10]) {
-            if (absVal >= Math::CompactPow10[14]) {
-                digits = (absVal >= Math::CompactPow10[16]) 
-                    ? (absVal >= Math::CompactPow10[17] ? (absVal >= Math::CompactPow10[18] ? 19 : 18) : 17)
-                    : (absVal >= Math::CompactPow10[15] ? 16 : 15);
-            } else {
-                digits = (absVal >= Math::CompactPow10[12]) 
-                    ? (absVal >= Math::CompactPow10[13] ? 14 : 13)
-                    : (absVal >= Math::CompactPow10[11] ? 12 : 11);
-            }
-        } else {
-            if (absVal >= Math::CompactPow10[5]) {
-                digits = (absVal >= Math::CompactPow10[7]) 
-                    ? (absVal >= Math::CompactPow10[8] ? (absVal >= Math::CompactPow10[9] ? 10 : 9) : 8)
-                    : (absVal >= Math::CompactPow10[6] ? 7 : 6);
-            } else {
-                digits = (absVal >= Math::CompactPow10[2]) 
-                    ? (absVal >= Math::CompactPow10[3] ? (absVal >= Math::CompactPow10[4] ? 5 : 4) : 3)
-                    : (absVal >= Math::CompactPow10[1] ? 2 : 1);
-            }
-        }
-
-        return digits + precision + (isNeg ? 1 : 0);
-    }
-
-    template <std::integral T>
-    constexpr size_t digitLength (const T& in) {
-        using UnsignedT = std::make_unsigned_t<T>;
-        bool isNeg = in < 0;
-        UnsignedT val = isNeg ? static_cast<UnsignedT>(-in) : static_cast<UnsignedT>(in);
-
-        if (val <= 9) return 1;
-
-        static constexpr unsigned char table[] = {
-            1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 9, 9, 9,
-            10, 10, 10, 10, 11, 11, 11, 12, 12, 12, 13, 13, 13, 13, 14, 14, 14, 15, 15, 15, 16, 16, 16, 16, 17, 17, 17, 18, 18, 18, 19, 19, 19, 19, 20
-        };
-
-        size_t bits = sizeof(UnsignedT) * 8 - std::countl_zero(val);
-        size_t digits = table[bits - 1];
-        digits -= (val < Math::CompactPow10[digits - 1]);
-
-        return digits + isNeg;
-    }
-};
-
-
-static_assert(Math::digitLength(900) == 3,"" );
-static_assert(Math::digitLength(900.6) == 3,"" );
 
 template <typename T>
 concept onlyStrConv = requires(T t) { { std::string_view(t) } -> std::same_as<std::string_view>; };
@@ -146,24 +58,7 @@ struct [[nodiscard]] fmt {
     constexpr fmt(std::string_view fmtStr) : str(fmtStr) {}
     template<onlyStr... Args>
     constexpr fmt(std::string_view fmtStr, Args&&... args) {
-        // Check if fmtStr actually contains placeholders
-        // if constexpr (sizeof...(Args) > 0) {
-        //     if (fmtStr.find('{') != std::string_view::npos) {
         formatInit(fmtStr, std::forward<Args>(args)...);
-        // return;
-        //     }
-        // }
-        // varConcat(fmtStr, std::forward<Args>(args)...);
-        // return;
-        // __builtin_unreachable();
-        // Default to concatenation if no placeholders found
-    }
-    template<onlyStr... Args>
-    constexpr auto varConcat(Args&&... args) -> fmt& { 
-        size_t preAlloc = (getArgSize(args) + ... + 0);
-        str.reserve(preAlloc);
-        (appendArg(std::forward<Args>(args)), ...);
-        return *this;
     }
     
     // Apply ANSI Color
@@ -212,59 +107,68 @@ struct [[nodiscard]] fmt {
     }
 
 private:
+    struct pos {
+        size_t start;
+        size_t len;
+    };
     template<onlyStr... Args>
     constexpr auto formatInit(std::string_view fmtStr, Args&&... args) -> void {
-        size_t preAlloc = fmtStr.size() + (getArgSize(args) + ... + 0);
-        str.reserve(preAlloc);
-
+        const std::array<pos,sizeof...(Args)> argsPos {getPos<sizeof...(Args)>(fmtStr)};
         size_t lastPos = 0;
-        (pargs(std::forward<Args>(args),fmtStr,lastPos), ...);
-        if (lastPos < fmtStr.size()) {
-            str += fmtStr.substr(lastPos);
-        }
+        std::ptrdiff_t offset = 0;
+        str = fmtStr;
+        ((appendArg(std::forward<Args>(args),offset,argsPos[lastPos]),++lastPos), ...);
     }
-    template <typename T>
-    constexpr auto pargs(T&& arg,std::string_view& fmtStr,std::size_t& lastPos) {
-        size_t pBegin = fmtStr.find('{', lastPos);
-        if (pBegin != std::string_view::npos) {
-            size_t pEnd = fmtStr.find('}', pBegin + 1);
-            if (pEnd != std::string_view::npos) {
-                str.append(fmtStr.substr(lastPos, pBegin - lastPos));
-                appendArg(std::forward<T>(arg));
-                lastPos = pEnd + 1;
+    
+    template<size_t N>
+    constexpr auto getPos(std::string_view fmtStr) -> std::array<pos, N> {
+        size_t lastPos = 0;
+        std::array<pos, N> temp;
+        
+        for (size_t idx = 0; idx < N; ++idx) { // Fixed loop condition
+            const size_t pbegin = fmtStr.find('{', lastPos);
+            if (pbegin != std::string_view::npos) {
+                const size_t pend = fmtStr.find('}', pbegin + 1);
+                if (pend != std::string_view::npos) {
+                    // Length = pend - pbegin + 1 (e.g. "{}" is 1 - 0 + 1 = 2 chars)
+                    temp[idx] = {pbegin, pend - pbegin + 1};
+                    lastPos = pend + 1; // Advance past '}'
+                }
             }
         }
+        return temp;
     }
 
-    template<onlyStr T>
-    constexpr auto getArgSize(const T& arg) const -> size_t {
+    template<Formattable T>
+    constexpr auto appendArg(T&& arg, std::ptrdiff_t& offset, const pos& Pos) -> void {
         using Raw = std::remove_cvref_t<T>;
-        if constexpr (std::is_convertible_v<Raw, std::string_view>) {
-            return std::string_view (arg).size();
-        } else if constexpr (std::integral<Raw>) {
-            return Math::digitLength(arg);
-        } else if constexpr (std::floating_point<Raw>) {
-            return Math::digitLength(arg);
-        }
-        return 0;
-    }
 
-    template<onlyStr T>
-    constexpr auto appendArg(T&& arg) -> void {
-        using Raw = std::remove_cvref_t<T>;
         if constexpr (std::is_convertible_v<Raw, std::string_view>) {
-            str += std::string_view(arg);
-        } else if constexpr (std::integral<Raw>) {
-            char digit[Math::maxDigits<Raw>()];
-            char* eDigit = std::to_chars(digit, digit + Math::maxDigits<Raw>(), std::forward<T>(arg)).ptr;
-            str += std::string_view(digit, static_cast<std::size_t>(eDigit - digit));
-        } else if constexpr (std::floating_point<Raw>) {
-            char digit[Math::maxDigits<Raw>()];
-            char* eDigit = std::to_chars(digit, digit + Math::maxDigits<Raw>(), std::forward<T>(arg)).ptr;
-            str += std::string_view(digit, static_cast<std::size_t>(eDigit - digit));
-        } else {
-            __builtin_unreachable();
+            std::string_view argStr;
+            argStr = std::string_view(arg);
+            // 1. Calculate shifted start position
+            const size_t actualStart = static_cast<size_t>(static_cast<std::ptrdiff_t>(Pos.start) + offset);
+
+            // 2. Replace only the placeholder length (Pos.len)
+            str.replace(actualStart, Pos.len, argStr);
+
+            // 3. Accumulate delta into offset for the next replacement
+            offset += static_cast<std::ptrdiff_t>(argStr.size()) - static_cast<std::ptrdiff_t>(Pos.len);
+        } else if constexpr (std::integral<Raw> || std::floating_point<Raw>) {
+        char digit[64];
+            std::string_view argStr;
+            auto [ptr, ec] = std::to_chars(digit, digit + sizeof(digit), arg);
+            argStr = std::string_view(digit, static_cast<size_t>(ptr - digit));
+            // 1. Calculate shifted start position
+            const size_t actualStart = static_cast<size_t>(static_cast<std::ptrdiff_t>(Pos.start) + offset);
+
+            // 2. Replace only the placeholder length (Pos.len)
+            str.replace(actualStart, Pos.len, argStr);
+
+            // 3. Accumulate delta into offset for the next replacement
+            offset += static_cast<std::ptrdiff_t>(argStr.size()) - static_cast<std::ptrdiff_t>(Pos.len);
         }
+
     }
 
     
@@ -300,6 +204,7 @@ private:
         }
     }
 };
+
 constexpr auto operator""_fmt(const char* str,size_t) -> fmt { return fmt(str);}
 
 class cmdImpl {
