@@ -1,4 +1,8 @@
 #include <cstdio>
+#include <string>
+#include <iostream>
+#include <format>
+#include <charconv>
 
 using size_t = __SIZE_TYPE__;
 template<typename T,T v>
@@ -352,6 +356,14 @@ inline struct implPrint
         std::printf("%s",in.data());
         return *this;
     }
+    constexpr implPrint& operator ,(std::string in) {
+        std::printf("%s",in.c_str());
+        return *this;
+    }
+    constexpr implPrint& operator ,(double in) {
+        std::printf("%f",in);
+        return *this;
+    }
     constexpr void operator <<(implPrint& f) {f = *this;}
 }print;
 
@@ -390,74 +402,187 @@ void Ftoa(double value, char* buf, int precision) {
 }
 
 
-struct fmt {
-    enum colors {Not_color,
-        Black,    Bold_Black,   High_Black,
-        Red,      Bold_Red,     High_Red,
-        Green,    Bold_Green,   High_Green,
-        Yellow,   Bold_Yellow,  High_Yellow,
-        Blue,     Bold_Blue,    High_Blue,
-        Purple,   Bold_Purple,  High_Purple,
-        Cyan,     Bold_Cyan,    High_Cyan,
-        White,    Bold_White,   High_White,
-    };
-    
-    string str;
-    
+template <typename T>
+concept onlyStrConv = requires(T t) { { std::string_view(t) } -> std::same_as<std::string_view>; };
+template <typename T>
+concept Formattable = 
+    onlyStrConv<T> || 
+    std::integral<std::decay_t<T>> ||
+    std::floating_point<std::decay_t<T>>;
 
-    constexpr fmt(auto&&... args) {
+template <typename... Args>
+concept onlyStr = (Formattable<Args> && ...);
 
-        // size_t totalSize = [](auto&&... args) -> size_t {
-        //     size_t size = 0;
-        //     ((size += std::string_view(args).size()), ...);
-        //     return size;
-        // }(args...);
-        // str.reserve(totalSize);
-        
-    };
-    constexpr fmt& color(colors color) {return *this;}
-    constexpr fmt& endl() {return *this;}
-    
-    constexpr strView sv() const { return this->str;}
-    constexpr operator strView() const { return this->sv();}
-    constexpr const char* cstr() const { return this->str.data();}
-    constexpr operator const char*() const { return this->cstr();}
-    constexpr operator string() const { return this->str;}
-    //constexpr const char* cstr() const { return this->str.c_str();}
-    //constexpr operator const char*() const { return this->cstr();}
+struct [[nodiscard]] fmt {
+    std::string str;
 
-    // private:
-    static constexpr strView Color(colors color) {
-        switch (color) {
-            case Not_color:    return "\033[0m"; break;
-            case Black:        return "\033[0;0m" ; break;
-            case Red:          return "\033[0;31m"; break;
-            case Green:        return "\033[0;32m"; break;
-            case Yellow:       return "\033[0;33m"; break;
-            case Blue:         return "\033[0;34m"; break;
-            case Purple:       return "\033[0;35m"; break;
-            case Cyan:         return "\033[0;36m"; break;
-            case White:        return "\033[0;37m"; break;
-            case Bold_Black:   return "\033[1;30m"; break;
-            case Bold_Red:     return "\033[1;31m"; break;
-            case Bold_Green:   return "\033[1;32m"; break;
-            case Bold_Yellow:  return "\033[1;33m"; break;
-            case Bold_Blue:    return "\033[1;34m"; break;
-            case Bold_Purple:  return "\033[1;35m"; break;
-            case Bold_Cyan:    return "\033[1;36m"; break;
-            case Bold_White:   return "\033[1;37m"; break;
-            case High_Black:   return "\033[0;90m"; break;
-            case High_Red:     return "\033[0;91m"; break;
-            case High_Green:   return "\033[0;92m"; break;
-            case High_Yellow:  return "\033[0;93m"; break;
-            case High_Blue:    return "\033[0;94m"; break;
-            case High_Purple:  return "\033[0;95m"; break;
-            case High_Cyan:    return "\033[0;96m"; break;
-            case High_White:   return "\033[0;97m"; break;
+    // 2. Format String Constructor: fmt("Value: {}, Status: {}", 42, "OK")
+    constexpr fmt(std::string_view fmtStr) : str(fmtStr) {}
+    template<onlyStr... Args>
+    constexpr fmt(std::string_view fmtStr, Args&&... args) noexcept : str(fmtStr) {
+        if constexpr (sizeof...(Args) > 0) {
+            size_t lastPos = 0;
+            pos argsPos[sizeof...(Args)];
+            size_t posIdx {0};
+            size_t pbegin {0};
+            size_t pend {0};
+            bool foundop = false;
+            for (std::size_t idx {0};idx < fmtStr.size();++idx) {
+                if (fmtStr[idx] == '{') {
+                    pbegin = idx;
+                    foundop = true;
+                }
+                if (fmtStr[idx] == '}' && foundop) {
+                    pend = idx;
+                    argsPos[posIdx] = {pbegin,pend + 1 - pbegin };
+                    foundop = false;
+                    ++posIdx;
+                }
+            }
+            // for (pos& V : argsPos) { // Fixed loop condition
+            //     const size_t pbegin = fmtStr.find('{');
+            //     const size_t pend = fmtStr.find('}');
+            //     if (pbegin != std::string_view::npos && pend != std::string_view::npos) {
+            //         const size_t start = pbegin + offset;
+            //         const size_t advance = pend + 1;
+            //         // Length = pend - pbegin + 1 (e.g. "{}" is 1 - 0 + 1 = 2 chars)
+            //         const size_t len = advance - pbegin;
+            //         V = {start, len};
+            //         fmtStr.remove_prefix(advance); // Advance past '}'
+            //         offset += static_cast<std::ptrdiff_t>(fmtStr.size()) - static_cast<std::ptrdiff_t>(len);
+            //     }
+            // }
+            lastPos = 0;
+            std::ptrdiff_t offset = 0;
+            ((appendArg(std::forward<Args>(args),offset,argsPos[lastPos]),++lastPos), ...);
         }
+    }
+
+    // Collapse multiple contiguous spaces into a single space
+    constexpr auto clean() -> fmt& { 
+        if (str.empty()) return *this;
+
+        size_t writeIdx = 0;
+        bool inSpace = false;
+
+        for (size_t readIdx = 0; readIdx < str.size(); ++readIdx) {
+            char c = str[readIdx];
+            if (c == ' ') {
+                if (!inSpace) {
+                    str[writeIdx++] = c;
+                    inSpace = true;
+                }
+            } else {
+                str[writeIdx++] = c;
+                inSpace = false;
+            }
+        }
+        str.resize(writeIdx);
+        return *this;
+    }
+
+    constexpr auto endl() noexcept -> fmt& { str.append("\n"); return *this; }
+
+    constexpr auto sv()   const noexcept -> std::string_view { return {str}; }
+    constexpr auto cstr() const noexcept -> const char* { return str.c_str(); }
+
+    constexpr operator std::string_view() const noexcept { return sv(); }
+    constexpr explicit operator const char*() const & noexcept { return cstr(); }
+    constexpr explicit operator std::string() && noexcept { return std::move(str); }
+    
+    friend auto operator<<(std::ostream& os, const fmt& f) -> std::ostream& {
+        return os << f.str;
+    }
+
+private:
+    struct pos {
+        size_t start;
+        size_t len;
     };
+
+    template<Formattable T>
+    constexpr auto appendArg(T&& arg, std::ptrdiff_t& offset, const pos& Pos) noexcept -> void {
+        using Raw = std::remove_cvref_t<T>;
+        std::string_view argStr;
+        // 1. Calculate shifted start position
+        const size_t actualStart = static_cast<size_t>(static_cast<std::ptrdiff_t>(Pos.start) + offset);
+
+        if constexpr (std::is_convertible_v<Raw, std::string_view>) {
+            argStr = std::string_view(arg);
+            // 2. Replace only the placeholder length (Pos.len)
+            str.replace(actualStart, Pos.len, argStr);
+            // 3. Accumulate delta into offset for the next replacement
+            offset += static_cast<std::ptrdiff_t>(argStr.size()) - static_cast<std::ptrdiff_t>(Pos.len);
+        } else if constexpr (std::integral<Raw> || std::floating_point<Raw>) {
+            char digit[64];
+            auto [ptr, ec] = std::to_chars(digit, digit + sizeof(digit), arg);
+            argStr = std::string_view(digit, static_cast<size_t>(ptr - digit));
+            str.replace(actualStart, Pos.len, argStr);
+            offset += static_cast<std::ptrdiff_t>(argStr.size()) - static_cast<std::ptrdiff_t>(Pos.len);
+        }
+
+    }
+
+    
+
 };
-constexpr fmt operator""_fmt(const char* str,size_t) { return fmt(str);}
+
+struct strColors {
+    enum colors {
+        Not_color = 0,
+        Black,     Bold_Black,     High_Black,
+        Red,       Bold_Red,       High_Red,
+        Green,     Bold_Green,     High_Green,
+        Yellow,    Bold_Yellow,    High_Yellow,
+        Blue,      Bold_Blue,      High_Blue,
+        Purple,    Bold_Purple,    High_Purple,
+        Cyan,      Bold_Cyan,      High_Cyan,
+        White,     Bold_White,     High_White,
+    };
+    
+    static constexpr auto getColor(colors color) noexcept -> std::string_view {
+        switch (color) {
+            case Not_color:    return "\033[0m";
+            case Black:        return "\033[0;30m";
+            case Red:          return "\033[0;31m";
+            case Green:        return "\033[0;32m";
+            case Yellow:       return "\033[0;33m";
+            case Blue:         return "\033[0;34m";
+            case Purple:       return "\033[0;35m";
+            case Cyan:         return "\033[0;36m";
+            case White:        return "\033[0;37m";
+            case Bold_Black:   return "\033[1;30m";
+            case Bold_Red:     return "\033[1;31m";
+            case Bold_Green:   return "\033[1;32m";
+            case Bold_Yellow:  return "\033[1;33m";
+            case Bold_Blue:    return "\033[1;34m";
+            case Bold_Purple:  return "\033[1;35m";
+            case Bold_Cyan:    return "\033[1;36m";
+            case Bold_White:   return "\033[1;37m";
+            case High_Black:   return "\033[0;90m";
+            case High_Red:     return "\033[0;91m";
+            case High_Green:   return "\033[0;92m";
+            case High_Yellow:  return "\033[0;93m";
+            case High_Blue:    return "\033[0;94m";
+            case High_Purple:  return "\033[0;95m";
+            case High_Cyan:    return "\033[0;96m";
+            case High_White:   return "\033[0;97m";
+            default:           __builtin_unreachable();
+        }
+    }
+};
+
+constexpr auto addColors(std::string_view str,strColors::colors c) noexcept -> std::string {
+    static constexpr std::string_view notcolor = strColors::getColor(strColors::Not_color);
+    const std::string_view color = strColors::getColor(c);
+    const std::size_t len = str.size() + notcolor.size() + color.size();
+    std::string temp;
+    temp.reserve(len);
+    for (auto& c : {color,str,notcolor}) {
+        temp += c;
+    }
+    return temp;
+}
 
 
 void intconv(size_t i,char* buff) {
@@ -473,17 +598,18 @@ void intconv(size_t i,char* buff) {
 };
 
 
-
+constexpr std::string fm {fmt("Hello {}",2)};
 
 int main ()
 {
+    std::cout << fm;
     sPtr<int> sptr(new int(5));
     const char* test1 = "53412.23123";
     const char* test2 = test1;
     float test = 53412.23123;
     for (int i = 0; i < 10; i++) {
         printf("printf %f %llu \n",test, char_trait::len(test2));
-        print << fmt::Color(fmt::Red) << "convert " << fmt::Color(fmt::Not_color), test ," ","\n";
+        std::cout << addColors( "convert ",strColors::Red) << test << "\n";
         test *= 2.0f;
     }
     // int te = 0x0003E174;
