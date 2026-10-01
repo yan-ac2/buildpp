@@ -180,9 +180,9 @@ int main()
         const char* str;
         size_t num;
     };
-    std::string makeOptions  = sformat("{{{}}} {} {}\n", 2,3,4);
+    constexpr std::string makeOptions  = sformat("{{{}}} {} {}\n", 2,3,4);
     std::string makeOptions2 = sformat("{} {}\n",addColors("hello world",strColors::Red),12);
-    std::string makeOptions3 = sformat("hello {}\n",2);
+    constexpr std::string makeOptions3 = sformat("hello {}\n",2);
     std::string makeOptions4;
     for (auto s : {test{"hello",5},test{"world",15},test{"num",65}}) {
         makeOptions4 += sformat("{} {} ",s.str,s.num);
