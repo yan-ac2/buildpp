@@ -116,11 +116,12 @@ int selfCompile(bool recompile)
     rebuild.link(rebuild.ProjectFile.getMain());
     return 0;
 }
-int CompileFile(const std::string_view Name,const std::string_view From,std::span<const std::string_view> src,std::span<const std::string_view> libraryList,bool recompile)
+int CompileFile(const std::string_view Name,const std::string_view From,const std::string_view oPath,Project::projectType type,std::span<const std::string_view> options,std::span<const std::string_view> ldoptions,
+    std::span<const std::string_view> IncludePath,std::span<const std::string_view> src,const std::span<const std::string_view> libraryList,bool recompile)
 {
     std::cout << sformat("Compiling {}\nFrom: {}\n" ,Name,From);
     const fs::path rootPath = fs::current_path();
-    const fs::path exePath = rootPath / "bin";
+    const fs::path exePath = rootPath / (oPath.empty() ? "" : oPath);
     const fs::path outBuildPath = rootPath / ".build";
     const fs::path outProjectPath = rootPath / ".build" / Name;
     outputPath outPath;
@@ -129,16 +130,17 @@ int CompileFile(const std::string_view Name,const std::string_view From,std::spa
     .setBuildfolder(outBuildPath)
     .setOutpath(outProjectPath);
     
-    Project compile("build",outPath,Project::exe,recompile);
+    Project compile("build",outPath,type,recompile);
     current = &compile;
     compile.setCompiler("clang++")
-    .addOptions("-Os -Wall -Wextra -Wpedantic -Werror -fno-rtti -std=c++23")
-    .addLdOptions("-fuse-ld=lld")
+    .addOptions(options)
+    .addLdOptions(ldoptions)
     .setProjectPath(rootPath)
     .addSourcePath(From)
     .addSource(From,src)
-    .LinkLibrary(src[0], libraryList)
+    .addIncludePathList(IncludePath)
     .setMain(src[0]).scanHeader().scanModule()
+    .LinkLibrary(src[0], libraryList)
     .configureModuleFlags()
     .dumpProject()
     ;
@@ -261,6 +263,7 @@ int compileProject(bool recompile)
 }
 void exitImpl() {
     current->~Project();
+    std::cout << sformat("{} forced Exit\n",addColors("Error:",strColors::Bold_Red));
 }
 
 template<typename T,std::size_t N>
@@ -294,6 +297,71 @@ struct Options{
     auto* begin() {return options.begin();}
     auto* end() {return options.end();}
 };
+
+struct ParsedArgs {
+    std::string_view projectName;
+    std::string_view sourcePath;
+    std::string_view outputPath;
+    Project::projectType outType;
+    std::vector<std::string_view> options;
+    std::vector<std::string_view> ldoptions;
+    std::vector<std::string_view> sources;
+    std::vector<std::string_view> libraries;
+    std::vector<std::string_view> IncludePath;
+};
+
+ParsedArgs parseCommandLine(std::span<const std::string_view> args) {
+    ParsedArgs result;
+    std::string_view currentFlag;
+    bool inStr = false;
+    for (std::string_view arg : args) {
+        bool startsQuote = (!inStr && arg.front() == '<');
+        if (startsQuote) {
+            inStr = true;
+            arg.remove_prefix(1); // Strip leading quote
+        }
+
+        bool endsQuote = (inStr && !arg.empty() && arg.back() == '>');
+        if (endsQuote) {
+            arg.remove_suffix(1); // Strip trailing quote
+        }
+        if (!inStr && !arg.empty() && arg[0] == '-' ) {
+            currentFlag = arg; // Switch current active flag
+            continue;
+        }
+
+        if (currentFlag == "-P") {
+            result.projectName = arg;
+        } else if (currentFlag == "-S") {
+            result.sourcePath = arg;
+        } else if (currentFlag == "-C") {
+            result.sources.push_back(arg);
+        } else if (currentFlag == "-L") {
+            result.libraries.push_back(arg);
+        } else if (currentFlag == "-I") {
+            result.libraries.push_back(arg);
+        } else if (currentFlag == "-Ld") {
+            result.ldoptions.push_back(arg);
+        } else if (currentFlag == "-CXX") {
+            result.options.push_back(arg);
+        } else if (currentFlag == "-O") {
+            result.outputPath = arg;
+        } else if (currentFlag == "-type") {
+            if (arg == "exe") {
+                result.outType = Project::exe;
+            }
+            if (arg == "static") {
+                result.outType = Project::staticLib;
+            }
+        }
+        if (endsQuote) {
+            inStr = false;
+        }
+    }
+
+    return result;
+}
+
 template<std::size_t N = 0>
 struct argsParse {
     std::vector<std::string_view> args;
@@ -349,27 +417,10 @@ auto main(int argc, const char* argv[]) -> int
             return 0;
         }
         if (inputLine == "-P") {
-            const auto [ProjectNameIdx,sourcePathIdx,sourceListIdx,libraryListidx] = [&]{
-                struct ret {std::size_t ProjectName,sourcePathIdx,sourceListIdx,libraryList;} retv;
-                std::size_t idx {0};
-                for (std::string_view& s : cmd.args) {
-                    if(s == "-C") retv.sourceListIdx = idx + 1;
-                    if(s == "-P") retv.ProjectName = idx + 1;
-                    if(s == "-S") retv.sourcePathIdx = idx + 1;
-                    if(s == "-L") retv.libraryList = idx + 1;
-                    ++idx;
-                }
-                return retv;
-            }();
-            auto& ProjectName = cmd.args[ProjectNameIdx];
-            auto& sourceLocation = cmd.args[sourcePathIdx];
-            auto srcList = cmd.args | std::views::drop(sourceListIdx) | std::views::take_while([](std::string_view s) { 
-                return !s.empty() && s[0] != '-'; 
-            });
-            auto libraryList = cmd.args | std::views::drop(libraryListidx) | std::views::take_while([](std::string_view s) { 
-                return !s.empty() && s[0] != '-'; 
-            });
-            CompileFile(ProjectName,sourceLocation,srcList,libraryList,true);
+            const auto parsed = parseCommandLine(cmd.args);
+            CompileFile(parsed.projectName,parsed.sourcePath,parsed.outputPath,
+                parsed.outType,parsed.options,parsed.ldoptions,parsed.IncludePath,
+                parsed.sources,parsed.libraries,true);
             return 0;
         };    
     }

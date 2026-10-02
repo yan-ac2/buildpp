@@ -698,6 +698,20 @@ class Project
         Options += opt; 
         return *this;
     }
+    constexpr auto addOptions     (std::span<const std::string_view> opt)  -> Project& {
+        for (auto& sv : opt) {
+            if(!Options.empty()) Options+= " ";
+            Options += sv; 
+        }
+        return *this;
+    }
+    constexpr auto addLdOptions   (std::span<const std::string_view> opt)  -> Project&  {
+        for (auto& sv : opt) {
+            if(!Options.empty()) LdOptions+= " ";
+            LdOptions += sv; 
+        }
+        return *this;
+    }
     constexpr auto addLdOptions   (std::string_view opt)  -> Project&  {
         if(!LdOptions.empty()) LdOptions+= " ";
         LdOptions += opt; 
@@ -721,6 +735,15 @@ class Project
         const fs::path temp {Path / IncludePath};
         err(!fs::exists(temp),sformat("{} Include path: {} does not exist",addColors("Error:",strColors::Red),temp.string()));
         ProjectFile.setHeaderPath(temp.string()); 
+        return *this;
+    }
+    constexpr auto addIncludePathList (std::span<const std::string_view> ListPath) -> Project& {
+        if(ListPath.empty()) return *this;
+        for (auto& in : ListPath) {
+            const fs::path temp {Path / in};
+            err(!fs::exists(temp),sformat("{} Include path: {}  does not exist",addColors("Error:",strColors::Red),temp.string()));
+            ProjectFile.setHeaderPath(temp.string()); 
+        }
         return *this;
     }
     constexpr auto addIncludePathList (std::initializer_list<std::string_view> ListPath) -> Project& {
@@ -770,12 +793,14 @@ class Project
         return *this;
     }
     constexpr auto addSource(const std::string_view from,std::initializer_list<const std::string_view> ListFiles) -> Project& {
+        err(ListFiles.size() == 0,sformat("{} Please add atleast one file to compile",addColors("Error:",strColors::Bold_Red)));
         for (const auto& i : ListFiles) {
             addSource(from,i);
         }
         return *this;
     }
     constexpr auto addSource(const std::string_view from,std::span<const std::string_view> ListFiles) -> Project& {
+        err(ListFiles.empty(),sformat("{} Please add atleast one file to compile",addColors("Error:",strColors::Bold_Red)));
         for (const auto& i : ListFiles) {
             addSource(from,i);
         }
@@ -806,6 +831,7 @@ class Project
 
     auto LinkLibrary(const std::string_view inFile, std::span<const std::string_view> ListDeps) -> Project&
     {
+        if(ListDeps.empty()) return *this;
         // auto Deps = inDeps | std::views::split(','); 
         const auto rangeFile = ProjectFile | std::views::keys ;
         const auto finds = std::ranges::find(rangeFile,inFile);
@@ -1409,11 +1435,9 @@ class Project
             sformat( "-c {} -fprebuilt-module-path={}",filein,(mPath).string())
         };
            
-        const std::string f_cmd {sformat("{} {} {} {} -o {}",
-            Compiler, Options,
-            cppOutput,
-            inFile.Flags,
-            objOutput)
+        const std::string f_cmd {
+            inFile.Flags.empty() ? sformat("{} {} {} -o {}",Compiler, Options,cppOutput,objOutput)
+            : sformat("{} {} {} {} -o {}",Compiler, Options,cppOutput,inFile.Flags,objOutput)
         };
         
         if(cmdJson != nullptr && !isModule) { 
@@ -1471,7 +1495,7 @@ class Project
                 if(isStaticLib) {I.onArchive = true;}
                 if(I.fileType == File::SystemHeader) {continue;}
                 if(!I.ldFlags.empty() && !isStaticLib) {temp +=I.ldFlags;}
-                if(*I.ldFlags.end() != ' ') {temp += " ";}
+                if(!temp.empty() && *temp.end() != ' ') {temp += " ";}
                 temp += I.objectPath;
             }
             return (hasDependencies && !isStaticLib ?
@@ -1488,7 +1512,7 @@ class Project
         }
         const std::string typeCmd {isStaticLib ? 
             sformat("{} {}",fileUtil::libTool,"rcs") : 
-            sformat("{} {} {}",Compiler,Options,LdOptions)
+            LdOptions.empty() ? sformat("{} {}",Compiler,Options) : sformat("{} {} {}",Compiler,Options,LdOptions)
         };
         const std::string f_cmd { isStaticLib ?
             sformat("{} {} {}",typeCmd,f_Output,makeFlags) :
@@ -1513,7 +1537,7 @@ class Project
             const bool isModule = V.fileType == File::Module;
             const bool isSystemHeader = V.fileType == File::SystemHeader;
             const bool isModuleImpl = V.fileType == File::ModuleImpl;
-            std::cout << sformat("File: {}\n Name: {}\n Path: {}\n Type: {}\n OutPath: {}\n",
+            std::cout << sformat("File: {}\nName: {}\nPath: {}\nType: {}\nOutPath: {}\n",
             K , 
             V.Name , 
             V.Path ,

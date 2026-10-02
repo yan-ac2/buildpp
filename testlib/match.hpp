@@ -639,9 +639,23 @@ template <typename MemFn, typename ExpectedPattern>
 struct is_projection_caseimpl<ProjectionCaseimpl<MemFn,ExpectedPattern>> : used_std::true_type {};
 template <typename MemFn, typename ExpectedPattern>
 concept is_projection_case = is_projection_caseimpl<ProjectionCaseimpl<MemFn,ExpectedPattern>>::value;
+template<typename T>
+struct TypePredImpl {
+    using type = T;
+};
 
+template<typename T>
+inline constexpr auto TypePred = TypePredImpl<T>{};
 
+template <typename T>
+struct is_type_pred : used_std::false_type {};
 
+template <typename T>
+struct is_type_pred<TypePredImpl<T>> : used_std::true_type {};
+
+// FIX: Check is_type_pred<T> directly
+template <typename T>
+concept isTypePred = is_type_pred<T>::value;
 
 // ============================================================================
 // MATH INTERVAL DEFINITIONS
@@ -991,6 +1005,9 @@ template <typename TargetType, typename KeyType>
     if constexpr (concepts::IsWildcard<KeyType>) {
         return true;
     }
+    else if constexpr (isTypePred<KeyDecay>) {
+        return used_std::is_same_v<typename KeyDecay::type, TargetDecay>;
+    } 
     // 2. Type-Level Trait Matching on Tuples/Types
     else if constexpr (concepts::IsTypePredicate<KeyType>) {
         if constexpr (used_std::is_tuple<TargetDecay>) {
@@ -1060,6 +1077,7 @@ template <typename TargetType, typename KeyType>
     else if constexpr (concepts::IsCallablePredicate<KeyType, TargetType>) {
         return used_std::invoke(key, target);
     } 
+    
     else if constexpr (requires { { target == key } -> concepts::convertible_to<bool>; }) {
         return (target == key);
     } 

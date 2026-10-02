@@ -1,22 +1,19 @@
 
 #include <iostream>
 // #include <ranges>
+#include <variant>
 #include "match.hpp"
 
 // --- A. Numeric & Range matching ---
 void showcase_numeric_and_ranges(int score) {
     std::cout << "\n=== 1. Numeric & Range Pattern matching ===" << std::endl;
-    char test = 't';
     // std::size_t score2 = 2;
-    std::string_view result = match(score)(score,test)  (
+    std::string_view result = match(score)()  (
         Case(100)                      >> "Perfect Score!",
-        Case(Range{90,99})        >> "Grade: A",
-        Case(Range{80, 89})       >> "Grade: B",
-        Case(Range{70, 79})       >> "Grade: C",
-        [](int& s) { 
-            return (s < 70 ? "Grade: Fail" : "Grade: Invalid"); 
-
-        }
+        Case(Range{90,99})   >> "Grade: A",
+        Case(Range{80, 89})  >> "Grade: B",
+        Case(Range{70, 79})  >> "Grade: C",
+        (score < 70 ? "Grade: Fail" : "Grade: Invalid")
     );
 
     std::cout << "Score [" << score << "] -> " << result << std::endl;
@@ -29,22 +26,24 @@ void showcase_hash_labels(std::string_view command) {
     std::size_t cmd_hash = used_std::strHash::fnv1a_hash(command.data(), command.size());
 
     std::string_view response = match(command)(command,&cmd_hash,&test) (
-        Case<"start">("start")   >> [] { return "System Starting..."; },
-        Case<"stop">
-        ("stop")        >>  [&](){ return test == 1 ? Goto<"start"> : Goto<"err">;},
-        // [](int* i) { 
-        //     if (*i == 1) {
-        //         return Goto<"start">; 
-        //     } else {
-        //         return Goto<"err">; 
-        //     }
-        // },
-        Case("pause")           >> [] { return "System Paused."; },
-        Case<"err">(__)   >> []() { return "err"; },
-        []{return "UNDEFINED!";}
+        Case<"start">("start") >> "System Starting...",
+        Case<"stop"> ("stop")  >>  [](std::size_t* test){ return *test == 1 ? Goto<"start"> : Goto<"err">;},
+        Case("pause")          >> "System Paused.",
+        Case<"err">(__)        >> "err",
+        "UNDEFINED!"
     );
 
     std::cout << "Command [\"" << command << "\"] (Hash: " << cmd_hash << ") -> " << response << std::endl;
+}
+auto visit(auto&& arg) {
+    std::cout << "\n=== Visit ===" << std::endl;
+    return match(arg)() (
+        Case(TypePred<int>)    >> "int",
+        Case(TypePred<float>)  >> "float",
+        Case(TypePred<double>) >> "double",
+        Case(__)               >> "err",
+        "UNDEFINED!"
+    );
 }
 
 
@@ -95,12 +94,16 @@ int main () {
     User u1{"Alice", 22, true};
     
     std::string_view user_res = match(u1)() (
-        Case(ProjectionCase(true,&User::is_adult))  >> [] { return "Adult User"; },
-        Case(Predicate(&User::is_active)) >> [] { return "Active Minor"; },
-        [] { return "Inactive Minor"; }
+        Case(ProjectionCase(true,&User::is_adult))  >> "Adult User",
+        Case(Predicate(&User::is_active)) >> "Active Minor",
+        "Inactive Minor"
     );
     std::cout << u1.name << " -> " << user_res << "\n";
-
+    
+    // std::variant<int,double,float> var;
+    // var = 12.f;
+    std::string_view visited = visit(12); 
+    std::cout << "value : " << visited << "\n";
     // -------------------------------------------------------------
     // 3. Bound Member Function Evaluation (External Instance)
     // -------------------------------------------------------------
@@ -108,10 +111,8 @@ int main () {
     int score = 75;
 
     std::string_view val_res = match(score)()(
-        Case(Predicate(&Validator::exceeds_threshold,&validator)) >> [] {
-            return "Passed Validation";
-        },
-        [] { return "Failed Validation"; }
+        Case(Predicate(&Validator::exceeds_threshold,&validator)) >> "Passed Validation",
+        "Failed Validation"
     );
     std::cout << "Score " << score << " -> " << val_res << "\n";
 
