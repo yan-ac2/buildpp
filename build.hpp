@@ -28,184 +28,191 @@
 namespace  fs = std::filesystem;
 using namespace std::string_view_literals;
 
-template <typename T>
-concept onlyStrConv = requires(T t) { { std::string_view(t) } -> std::same_as<std::string_view>; };
-template <typename T>
-concept Formattable = 
-    onlyStrConv<T> || 
-    std::integral<std::decay_t<T>> ||
-    std::floating_point<std::decay_t<T>>;
+template<size_t N>
+struct formatString {
+    static constexpr size_t NPlaceholder {N * 2};
+    std::string_view sv;
+    size_t posArray[NPlaceholder];
+    template<size_t I>
+    consteval formatString(const char (&str)[I]) noexcept
+        : sv{str,I - 1} {getPosSize(sv);}
+    constexpr formatString(std::string_view inSv) noexcept
+        : sv{inSv} { getPosSize(sv); }
+    constexpr formatString(const std::string& inSv) noexcept
+        : sv{inSv} { getPosSize(sv); }
 
-template <typename... Args>
-concept onlyStr = (Formattable<Args> && ...);
-
-struct [[nodiscard]] fmt {
-    std::string str;
-
-    enum colors {
-        Not_color,
-        Black,     Bold_Black,     High_Black,
-        Red,       Bold_Red,       High_Red,
-        Green,     Bold_Green,     High_Green,
-        Yellow,    Bold_Yellow,    High_Yellow,
-        Blue,      Bold_Blue,      High_Blue,
-        Purple,    Bold_Purple,    High_Purple,
-        Cyan,      Bold_Cyan,      High_Cyan,
-        White,     Bold_White,     High_White,
-    };
-
-    // 2. Format String Constructor: fmt("Value: {}, Status: {}", 42, "OK")
-    constexpr fmt(std::string_view fmtStr) : str(fmtStr) {}
-    template<onlyStr... Args>
-    constexpr fmt(std::string_view fmtStr, Args&&... args) {
-        formatInit(fmtStr, std::forward<Args>(args)...);
+    constexpr formatString(formatString&& str) noexcept
+        : sv{str.sv}
+    {
+        size_t idx {0}; 
+        for (size_t s : str.posArray) posArray[idx++] = s; 
     }
-    
-    // Apply ANSI Color
-    constexpr auto color(colors c) -> fmt& { 
-        str.reserve(str.size() + 14);
-        str.insert(0, this->getColor(c));
-        str.append(this->getColor(Not_color));
-        return *this;
+    constexpr formatString(const formatString& str) noexcept
+        : sv{str.sv}
+    {
+        size_t idx {0}; 
+        for (size_t s : str.posArray) posArray[idx++] = s; 
     }
 
-    // Collapse multiple contiguous spaces into a single space
-    constexpr auto clean() -> fmt& { 
-        if (str.empty()) return *this;
 
-        size_t writeIdx = 0;
-        bool inSpace = false;
-
-        for (size_t readIdx = 0; readIdx < str.size(); ++readIdx) {
-            char c = str[readIdx];
-            if (c == ' ') {
-                if (!inSpace) {
-                    str[writeIdx++] = c;
-                    inSpace = true;
-                }
-            } else {
-                str[writeIdx++] = c;
-                inSpace = false;
+    constexpr size_t getPosSize(std::string_view str) noexcept {
+        bool open = false;
+        size_t slot = 0,idx = 0, openidx = 0;
+        for (char c : str) {
+            if (slot > NPlaceholder) break;
+            if (c == '{') {
+                openidx = idx;
+                open = true;
+            } else if (c == '}' && open) {
+                posArray[slot] = openidx;
+                posArray[slot + 1] = (idx + 1) - openidx;
+                slot += 2;
+                open = false;
             }
+            ++idx;
         }
-        str.resize(writeIdx);
-        return *this;
-    }
-
-    constexpr auto endl() -> fmt& { str.append("\n"); return *this; }
-
-    constexpr auto sv() const   -> std::string_view { return str; }
-    constexpr auto cstr() const -> const char* { return str.c_str(); }
-
-    constexpr operator std::string() const & { return str; }
-    constexpr operator std::string_view() const noexcept { return sv(); }
-    constexpr explicit operator const char*() const & noexcept { return cstr(); }
-    constexpr explicit operator std::string() && { return std::move(str); }
-    
-    friend auto operator<<(std::ostream& os, const fmt& f) -> std::ostream& {
-        return os << f.str;
-    }
-
-private:
-    struct pos {
-        size_t start;
-        size_t len;
-    };
-    template<onlyStr... Args>
-    constexpr auto formatInit(std::string_view fmtStr, Args&&... args) -> void {
-        const std::array<pos,sizeof...(Args)> argsPos {getPos<sizeof...(Args)>(fmtStr)};
-        size_t lastPos = 0;
-        std::ptrdiff_t offset = 0;
-        str = fmtStr;
-        ((appendArg(std::forward<Args>(args),offset,argsPos[lastPos]),++lastPos), ...);
-    }
-    
-    template<size_t N>
-    constexpr auto getPos(std::string_view fmtStr) -> std::array<pos, N> {
-        size_t lastPos = 0;
-        std::array<pos, N> temp;
-        
-        for (size_t idx = 0; idx < N; ++idx) { // Fixed loop condition
-            const size_t pbegin = fmtStr.find('{', lastPos);
-            if (pbegin != std::string_view::npos) {
-                const size_t pend = fmtStr.find('}', pbegin + 1);
-                if (pend != std::string_view::npos) {
-                    // Length = pend - pbegin + 1 (e.g. "{}" is 1 - 0 + 1 = 2 chars)
-                    temp[idx] = {pbegin, pend - pbegin + 1};
-                    lastPos = pend + 1; // Advance past '}'
-                }
-            }
-        }
-        return temp;
-    }
-
-    template<Formattable T>
-    constexpr auto appendArg(T&& arg, std::ptrdiff_t& offset, const pos& Pos) -> void {
-        using Raw = std::remove_cvref_t<T>;
-
-        if constexpr (std::is_convertible_v<Raw, std::string_view>) {
-            std::string_view argStr;
-            argStr = std::string_view(arg);
-            // 1. Calculate shifted start position
-            const size_t actualStart = static_cast<size_t>(static_cast<std::ptrdiff_t>(Pos.start) + offset);
-
-            // 2. Replace only the placeholder length (Pos.len)
-            str.replace(actualStart, Pos.len, argStr);
-
-            // 3. Accumulate delta into offset for the next replacement
-            offset += static_cast<std::ptrdiff_t>(argStr.size()) - static_cast<std::ptrdiff_t>(Pos.len);
-        } else if constexpr (std::integral<Raw> || std::floating_point<Raw>) {
-        char digit[64];
-            std::string_view argStr;
-            auto [ptr, ec] = std::to_chars(digit, digit + sizeof(digit), arg);
-            argStr = std::string_view(digit, static_cast<size_t>(ptr - digit));
-            // 1. Calculate shifted start position
-            const size_t actualStart = static_cast<size_t>(static_cast<std::ptrdiff_t>(Pos.start) + offset);
-
-            // 2. Replace only the placeholder length (Pos.len)
-            str.replace(actualStart, Pos.len, argStr);
-
-            // 3. Accumulate delta into offset for the next replacement
-            offset += static_cast<std::ptrdiff_t>(argStr.size()) - static_cast<std::ptrdiff_t>(Pos.len);
-        }
-
-    }
-
-    
-
-    constexpr auto getColor(colors color) const -> std::string_view {
-        switch (color) {
-            case Not_color:    return "\033[0m";
-            case Black:        return "\033[0;30m";
-            case Red:          return "\033[0;31m";
-            case Green:        return "\033[0;32m";
-            case Yellow:       return "\033[0;33m";
-            case Blue:         return "\033[0;34m";
-            case Purple:       return "\033[0;35m";
-            case Cyan:         return "\033[0;36m";
-            case White:        return "\033[0;37m";
-            case Bold_Black:   return "\033[1;30m";
-            case Bold_Red:     return "\033[1;31m";
-            case Bold_Green:   return "\033[1;32m";
-            case Bold_Yellow:  return "\033[1;33m";
-            case Bold_Blue:    return "\033[1;34m";
-            case Bold_Purple:  return "\033[1;35m";
-            case Bold_Cyan:    return "\033[1;36m";
-            case Bold_White:   return "\033[1;37m";
-            case High_Black:   return "\033[0;90m";
-            case High_Red:     return "\033[0;91m";
-            case High_Green:   return "\033[0;92m";
-            case High_Yellow:  return "\033[0;93m";
-            case High_Blue:    return "\033[0;94m";
-            case High_Purple:  return "\033[0;95m";
-            case High_Cyan:    return "\033[0;96m";
-            case High_White:   return "\033[0;97m";
-            default:           return "";
-        }
+        return str.size();
     }
 };
 
-constexpr auto operator""_fmt(const char* str,size_t) -> fmt { return fmt(str);}
+
+
+struct strColors {
+    enum colors {
+        Not_color = 0,
+        Black     = 1,     Bold_Black = 9,      High_Black = 17,
+        Red       = 2,       Bold_Red = 10,       High_Red = 18,
+        Green     = 3,     Bold_Green = 11,     High_Green = 19,
+        Yellow    = 4,    Bold_Yellow = 12,    High_Yellow = 20,
+        Blue      = 5,      Bold_Blue = 13,      High_Blue = 21,
+        Purple    = 6,    Bold_Purple = 14,    High_Purple = 22,
+        Cyan      = 7,      Bold_Cyan = 15,      High_Cyan = 23,
+        White     = 8,     Bold_White = 16,     High_White = 24,
+    };
+    static constexpr std::string_view colorTable[] {
+        "\033[0m",    //Not_color 
+        "\033[0;30m", //Black
+        "\033[0;31m", //Red
+        "\033[0;32m", //Green
+        "\033[0;33m", //Yellow
+        "\033[0;34m", //Blue
+        "\033[0;35m", //Purple
+        "\033[0;36m", //Cyan
+        "\033[0;37m", //White
+        "\033[1;30m", //Bold_Black
+        "\033[1;31m", //Bold_Red
+        "\033[1;32m", //Bold_Green
+        "\033[1;33m", //Bold_Yellow
+        "\033[1;34m", //Bold_Blue
+        "\033[1;35m", //Bold_Purple
+        "\033[1;36m", //Bold_Cyan
+        "\033[1;37m", //Bold_White
+        "\033[0;90m", //High_Black
+        "\033[0;91m", //High_Red
+        "\033[0;92m", //High_Green
+        "\033[0;93m", //High_Yellow
+        "\033[0;94m", //High_Blue
+        "\033[0;95m", //High_Purple
+        "\033[0;96m", //High_Cyan
+        "\033[0;97m", //High_White
+    };
+    
+    static constexpr auto getColor(colors color) noexcept -> std::string_view {
+        return colorTable[static_cast<std::size_t>(color)];
+    }
+};
+
+
+struct addColors {
+    static constexpr std::string_view notcolor = strColors::getColor(strColors::Not_color);
+    std::string_view str[3];
+    constexpr addColors(std::string_view str,const strColors::colors c) noexcept
+    :str{strColors::getColor(c),str,notcolor} {}
+    std::string_view* begin() noexcept {return str;}
+    std::string_view* end()   noexcept {return str + 3;}
+};
+
+// template<typename T> 
+// struct converter {
+//     converter(T&&) {}
+
+// };
+// template<> 
+// struct converter<const char*> {
+//     std::string_view sv;
+//     converter(const char* str) : sv(str) {}
+//     converter(const char* str,size_t count) : sv(str,count) {}
+//     template<size_t N>
+//     converter(const char (&str)[N]) : sv(str,N) {}
+//     constexpr auto appendArg(std::string& str,std::size_t offset,const std::size_t& Pos) -> std::size_t {
+//         const size_t start = Pos;
+//         const size_t len = *(&Pos + 1);
+//         const size_t actualStart = static_cast<size_t>(static_cast<std::ptrdiff_t>(start) + offset);
+//         str.replace(actualStart, len, sv);
+//         return static_cast<std::ptrdiff_t>(sv.size()) - static_cast<std::ptrdiff_t>(len);
+//     } 
+// };
+// template<> 
+// struct converter<std::size_t> {
+//     char digit[64];
+//     size_t len;
+//     converter(std::size_t arg) : len(std::to_chars(digit, digit + sizeof(digit), arg).ptr - digit) {}
+//     constexpr auto appendArg(std::string& str,std::size_t offset,const std::size_t& Pos) -> std::size_t {
+//         const size_t start = Pos;
+//         const size_t len = *(&Pos + 1);
+//         const size_t actualStart = static_cast<size_t>(static_cast<std::ptrdiff_t>(start) + offset);
+//         std::string_view sv {digit, len};
+//         str.replace(actualStart, len, sv);
+//         return static_cast<std::ptrdiff_t>(sv.size()) - static_cast<std::ptrdiff_t>(len);
+//     } 
+// };
+template <typename T>
+constexpr auto appendArg(T&& arg,std::string& str, std::ptrdiff_t& offset, const size_t& pos) noexcept -> void {
+    using Raw = std::remove_cvref_t<T>;
+    const size_t start = pos;
+    const size_t len = (&pos)[1];
+    // 1. Calculate shifted start position
+    const size_t actualStart = static_cast<size_t>(static_cast<std::ptrdiff_t>(start) + offset);
+
+    if constexpr (std::is_same_v<Raw, addColors>) {
+        std::string temp;
+        for (std::string_view sv : arg) {
+            temp += sv;
+        }
+        str.replace(actualStart, len, temp);
+        offset += static_cast<std::ptrdiff_t>(temp.size()) - static_cast<std::ptrdiff_t>(len);
+    } else {
+        std::string_view argStr;
+        if constexpr (std::is_convertible_v<Raw, std::string_view>) {
+            argStr = std::string_view(arg);
+            // 2. Replace only the placeholder length (Pos.len)
+            str.replace(actualStart, len, argStr);
+        } else if constexpr (std::integral<Raw> || std::floating_point<Raw>) {
+            char digit[64];
+            auto [ptr, ec] = std::to_chars(digit, digit + sizeof(digit), arg);
+            argStr = std::string_view(digit, static_cast<size_t>(ptr - digit));
+            str.replace(actualStart, len, argStr);
+        }
+        // 3. Accumulate delta into offset for the next replacement
+        offset += static_cast<std::ptrdiff_t>(argStr.size()) - static_cast<std::ptrdiff_t>(len);
+
+    }
+
+};
+
+template<typename... Args>
+constexpr auto sformat(formatString<sizeof...(Args)> fmtStr,Args&&... args) noexcept -> std::string {
+    std::string str {fmtStr.sv};
+    if constexpr (sizeof...(Args) > 0) {
+        size_t* posArray = fmtStr.posArray;
+        size_t lastPos = 0;
+        std::ptrdiff_t offset = 0;
+        ((appendArg(std::forward<Args>(args),str,offset,posArray[lastPos]),lastPos += 2), ...);
+    }
+    return str;
+}
+
+// constexpr auto operator""_fmt(const char* str,size_t) -> fmt { return fmt(str);}
 
 class cmdImpl {
     struct PipeDeleter {
@@ -257,7 +264,7 @@ inline cmdImpl cmd;
 struct outputPath {
     private:
     auto err (bool e = false,std::string_view msg = "",std::source_location fn = std::source_location::current()) -> outputPath& {
-        if (e) {std::cout << fmt ("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name()); std::exit(1);} 
+        if (e) {std::cout << sformat("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name()); std::exit(1);} 
         return *this;
     }
     public:
@@ -276,7 +283,7 @@ struct outputPath {
             if (fs::create_directory(exe)) {
                 // std::cout << fmt("Directory created: {}\n" , exe.string());
             } else {
-                err(true,fmt("Failed to create directory: {}\n",exe.string()));
+                err(true,sformat("Failed to create directory: {}\n",exe.string()));
             }        
         } else {
             // std::cout << fmt("{} {}\n","Directory already exists:"_fmt.color(fmt::Bold_Yellow) , exe.string());
@@ -291,7 +298,7 @@ struct outputPath {
             if (fs::create_directory(folder)) {
                 // std::cout << fmt("Directory created: {}\n" , folder.string());
             } else {
-                err(true,fmt("Failed to create directory: {}\n",folder.string()));
+                err(true,sformat("Failed to create directory: {}\n",folder.string()));
             }        
         } else {
             // std::cout << fmt("{} {}\n","Directory already exists:"_fmt.color(fmt::Bold_Yellow) , folder.string());
@@ -309,12 +316,12 @@ struct outputPath {
             if (!fs::exists(lm_dir)) 
             {
                 if (!lm_dir.has_parent_path()) {
-                    err(true,fmt("Error: Path has no parent path: {}" ,lm_dir.string()));
+                    err(true,sformat("Error: Path has no parent path: {}" ,lm_dir.string()));
                 }
                 if (fs::create_directory(lm_dir)) {
                     // std::cout << fmt("Directory created: {}\n" , lm_dir.string());
                 } else {
-                    err(true,fmt("Failed to create directory: {}\n",lm_dir.string()));
+                    err(true,sformat("Failed to create directory: {}\n",lm_dir.string()));
                 }        
             }
         }
@@ -446,7 +453,7 @@ struct File {
     // using IDx = std::size_t;
     auto err(bool cnd = false,std::string_view msg = "",std::source_location fn = std::source_location::current()) const -> const File& {
         if (cnd) {
-            std::cout << fmt ("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name()); 
+            std::cout << sformat("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name()); 
             std::exit(1);
         } 
         return *this;
@@ -477,11 +484,11 @@ struct File {
     [[nodiscard]] auto getModuleOutput(const fs::path* mPath) const -> string_type {
         err(Name.empty(), "File Name Empty");
         err((fileType != Module) && (fileType != SystemHeader) && (fileType != HeaderUnit), "File Not a Module");
-        return fmt("{}{}",(*mPath / getName()).string(), fileUtil::pcmModule);
+        return sformat("{}{}",(*mPath / getName()).string(), fileUtil::pcmModule);
     }
     auto setObjOutputName(const fs::path& oPath) -> void {
         err(Name.empty(),"File Name Empty");
-        objectPath = fmt("{}{}{}",(oPath / getName()).string(),fileType == ModuleImpl ? "-impl" : "", fileUtil::objFile);
+        objectPath = sformat("{}{}{}",(oPath / getName()).string(),fileType == ModuleImpl ? "-impl" : "", fileUtil::objFile);
     }
     auto getName() const -> string_type {
         err(Name.empty(),"File Name Empty");
@@ -523,7 +530,7 @@ class FileManager {
 
     auto err(bool cnd = false,std::string_view msg = "",std::source_location fn = std::source_location::current()) -> FileManager& {
         if (cnd) {
-            std::cout << fmt ("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name());
+            std::cout << sformat("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name());
             std::exit(1);
         } 
         return *this;
@@ -554,7 +561,7 @@ class FileManager {
         if (it != Header.end()) {
             if (!found(it->second)) it->second.push_back(HeaderFile{.Name = {name.data(),name.size()},.Path={path.data(),path.size()}});
         } else {
-            err(true,fmt("{} Path {} is not registered\n","Error:"_fmt.color(fmt::Bold_Red),path));
+            err(true,sformat("{} Path {} is not registered\n",addColors("Error:",strColors::Bold_Red),path));
         }
     }
     auto moveHeaderFrom(const std::string& Path,HeaderFile& H) -> void {
@@ -574,7 +581,7 @@ class FileManager {
                 return I;
             }
         }
-        err(true,fmt("{} Key {} doesn't exists","Error:"_fmt.color(fmt::Red),name),loc);
+        err(true,sformat("{} Key {} doesn't exists",addColors("Error:",strColors::Bold_Red),name),loc);
         return "";
     }
     auto copyFile(std::string& name,const File& other) -> File_type& {
@@ -599,7 +606,7 @@ class FileManager {
                 return &I.second;
             }
         }
-        err(true,fmt("Error: "_fmt.color(fmt::Red),"Name " ,id, " doesn't exists"));
+        err(true,sformat("{} Name {} doens't exists",addColors("Error:",strColors::Red),id));
         return nullptr;
     }
     auto operator [](std::string_view id,std::source_location fn = std::source_location::current()) -> File* {
@@ -607,7 +614,7 @@ class FileManager {
         if (it != Files.end()) {
             return &it->second;
         }
-        err(true,fmt("Error: "_fmt.color(fmt::Red),"Key " ,id, " doesn't exists"),fn);
+        err(true,sformat("{} Name {} doens't exists",addColors("Error:",strColors::Red),id),fn);
         return nullptr;
     }
     
@@ -616,7 +623,7 @@ class FileManager {
         if (it != Files.end()) {
             return &*it; 
         }
-        err(true,fmt("Error: "_fmt.color(fmt::Red),"Key doesn't exists"));
+        err(true,sformat("{} Name {} doens't exists",addColors("Error:",strColors::Red),id));
         return nullptr; 
     }
 
@@ -655,7 +662,7 @@ class Project
     std::string outputName      {};
     
     constexpr auto err(bool cnd = false,std::string_view msg = "",std::source_location fn = std::source_location::current()) -> Project& {
-        if (cnd) {std::cout << fmt ("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name()); std::exit(1);} 
+        if (cnd) {std::cout << sformat("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name()); std::exit(1);} 
         return *this;
     }
     
@@ -681,7 +688,7 @@ class Project
         outFile = exe,
         cmdJson = nullptr,
         recompile = recomp;
-        std::cout << fmt("{} {}\n","Project initialized at "_fmt.color(fmt::Green) , this->OutPath->rootPath.string());
+        std::cout << sformat("{} {}\n",addColors("Project initialized at",strColors::Green), this->OutPath->rootPath.string());
     };
 
     constexpr auto setMain        (std::string_view main) -> Project& {ProjectFile.setMain(main); return *this;}
@@ -700,7 +707,7 @@ class Project
     constexpr auto setResourcePath(std::string_view in) -> Project&   {ResPath = in; return *this;}
     constexpr auto addSourcePath  (std::string_view in) -> Project&   {
         const fs::path temp {Path / in};
-        err(!fs::exists(temp),fmt("{} Source path: {} does not exist","Error:"_fmt.color(fmt::Bold_Red),temp.string()));
+        err(!fs::exists(temp),sformat("{} Source path: {} does not exist",addColors("Error:",strColors::Bold_Red),temp.string()));
         SourcePath.insert(temp.string()); 
         return *this;
     }
@@ -712,14 +719,14 @@ class Project
     }
     constexpr auto addIncludePath (std::string_view IncludePath) -> Project& {
         const fs::path temp {Path / IncludePath};
-        err(!fs::exists(temp),fmt("Include path: {} does not exist",temp.string()).color(fmt::Bold_Red));
+        err(!fs::exists(temp),sformat("{} Include path: {} does not exist",addColors("Error:",strColors::Red),temp.string()));
         ProjectFile.setHeaderPath(temp.string()); 
         return *this;
     }
     constexpr auto addIncludePathList (std::initializer_list<std::string_view> ListPath) -> Project& {
         for (auto& in : ListPath) {
             const fs::path temp {Path / in};
-            err(!fs::exists(temp),fmt("Include path: {}  does not exist",temp.string()).color(fmt::Bold_Red));
+            err(!fs::exists(temp),sformat("{} Include path: {}  does not exist",addColors("Error:",strColors::Red),temp.string()));
             ProjectFile.setHeaderPath(temp.string()); 
         }
         return *this;
@@ -730,7 +737,7 @@ class Project
     
     constexpr auto addSource(std::string_view from,std::string_view file) -> Project& {
         const fs::path fromPath {Path / from};
-        err (!fs::is_directory(fromPath),fmt("{} {} is not a directory","Error"_fmt.color(fmt::Red) , fromPath.string()));
+        err (!fs::is_directory(fromPath),sformat("{} {} is not a directory",addColors("Error:",strColors::Red), fromPath.string()));
         
         if (file == "*") {
             const fs::directory_iterator iterator(fromPath);
@@ -750,7 +757,7 @@ class Project
             }
         } else {
             const fs::path sourcePath {fromPath / file};
-            err (!fs::exists(sourcePath),fmt("{} Source Path {} does not exist","Error:"_fmt.color(fmt::Red) , sourcePath.string()));
+            err (!fs::exists(sourcePath),sformat("{} Source Path {} does not exist",addColors("Error:",strColors::Bold_Red) , sourcePath.string()));
             auto & P = ProjectFile.addFile(sourcePath.filename().string());
 
             P.second.FileName = sourcePath.filename().string();
@@ -790,13 +797,33 @@ class Project
                 }
             }
             if(!other.outputName.empty()) {
-                LdOptions += fmt(" -L{} -l{}",other.OutPath->exePath.string(),other.outputName);
+                LdOptions += sformat(" -L{} -l{}",other.OutPath->exePath.string(),other.outputName);
             }
             other.~Project();
         }
         return *this;
     }
 
+    auto LinkLibrary(const std::string_view inFile, std::span<const std::string_view> ListDeps) -> Project&
+    {
+        // auto Deps = inDeps | std::views::split(','); 
+        const auto rangeFile = ProjectFile | std::views::keys ;
+        const auto finds = std::ranges::find(rangeFile,inFile);
+        
+        if (finds != rangeFile.end()) {
+            std::string_view f_file = *finds;
+            auto& File = *ProjectFile[f_file]; 
+            for (auto&& d : ListDeps) {
+                std::string_view dep {d};
+                if(dep.empty()) continue;
+                while (!dep.empty() && dep.front() == ' ') dep.remove_prefix(1);
+                while (!dep.empty() && dep.back() == ' ') dep.remove_suffix(1);
+                File.ldFlags += " -l";
+                File.ldFlags +=  dep;
+            }
+        }
+        return *this;
+    }
     auto LinkLibrary(const std::string_view inFile, std::initializer_list<const std::string_view> ListDeps) -> Project&
     {
         // auto Deps = inDeps | std::views::split(','); 
@@ -916,10 +943,10 @@ class Project
     
     auto solveHeaderDependencies(HeaderFile& Header) -> void 
     {
-        err(Header.Path.empty() ,"Error: Empty project path"_fmt.color(fmt::Bold_Red)); 
+        err(Header.Path.empty() ,sformat("{} Empty project path {}",addColors("Error:",strColors::Bold_Red),Header.Path)); 
         const std::string HeaderPath = (fs::path{Header.Path} / Header.Name).generic_string(); 
         std::ifstream files(HeaderPath);
-        err(!files.is_open(),fmt("{} {}","Error: Unable to open file"_fmt.color(fmt::Bold_Red),HeaderPath));
+        err(!files.is_open(),sformat("{} Unable to open file {}",addColors("Error:",strColors::Bold_Red),HeaderPath));
         std::string line;
         bool inBlockComment = false; 
         while (std::getline(files, line)) {
@@ -937,11 +964,11 @@ class Project
                     const bool foundMatch = std::ranges::find(V,headerName,&HeaderFile::Name) != V.end();
                     // std::cout << fmt("is header path "_fmt.color(fmt::Bold_Blue) , headerName , " in " , Header.Name ).endl();
                     if (foundMatch) {
-                        std::string flags {fmt("-I{}",K)};
+                        std::string flags {sformat("-I{}",K)};
                         const bool alreadyAdded = containsToken(Header.flags, flags);
                         const bool notSamePath = (Header.Path != K);
                         if (!alreadyAdded && notSamePath) {
-                            std::cout << fmt("{} {} to {}","add dependencies "_fmt.color(fmt::Bold_Blue) , K , Header.Name ).endl();
+                            std::cout << sformat("{} {} to {}\n",addColors("Add dependencies",strColors::Bold_Blue) , K , Header.Name );
                             if (!Header.flags.empty()) {
                                 Header.flags += " ";
                             }
@@ -978,7 +1005,7 @@ class Project
     {
         for (const auto& p : SourcePath)
         {
-            err ((!fs::exists(p) || !fs::is_directory(p)), fmt("{} {}","Directory does not exist. "_fmt.color(fmt::Bold_Red),p));
+            err ((!fs::exists(p) || !fs::is_directory(p)), sformat("{} Directory {} does not exist",addColors("Error:",strColors::Bold_Red),p));
             fs::directory_iterator iterator(p);
             
             for (const auto& entry : iterator) {
@@ -1001,10 +1028,10 @@ class Project
     auto scanHeader() -> Project& 
     {
         for (auto& [K, V] : ProjectFile) {
-            if (V.Path.empty()) { err(true, "Error: Empty project path"_fmt.color(fmt::Bold_Red)); }
+            err(V.Path.empty(), sformat("{} Empty project path {}",addColors("Error:",strColors::Bold_Red),V.Path));
             
             std::ifstream files(V.Path.data());
-            if (!files.is_open()) { err(true, fmt("{} {}","Error: Unable to open file "_fmt.color(fmt::Bold_Red), V.Path)); }
+            err(!files.is_open(), sformat("{} Unable to open file {}",addColors("Error:",strColors::Bold_Red), V.Path));
 
             std::string line;
             bool inBlockComment = false;
@@ -1101,7 +1128,7 @@ class Project
                             return ret{temp,containsToken(V.Flags,temp)};
                         });
                         if (findInclude != HF.end()) {
-                            std::string i {fmt("-I{}",HP)};
+                            std::string i {sformat("-I{}",HP)};
                             if (!containsToken(V.Flags, i)) {
                                 V.Flags.append(" ") += i; 
                                 if(!findInclude->flags.empty()) 
@@ -1125,9 +1152,9 @@ class Project
     {
         for (const auto& [K,V] : ProjectFile) {
             if (V.fileType == File::SystemHeader) { continue;}
-            std::cout << fmt("Scan module {}" , V.Path ).endl();
+            std::cout << sformat("Scan module {}\n" , V.Path );
 
-            err(V.Path.empty() ,"Error: Empty project path"_fmt.color(fmt::Bold_Red)); 
+            err(V.Path.empty() ,sformat("{} Empty project path {}",addColors("Error:",strColors::Bold_Red),V.Path)); 
             
             const std::string temp = (fs::path(V.Path) / V.Name).generic_string();
             std::ifstream files;
@@ -1136,7 +1163,7 @@ class Project
             } else {
                 files.open(V.Path);
             }
-            err(!files.is_open(),fmt("{} Unable to open file {}","Error:"_fmt.color(fmt::Bold_Red),temp));
+            err(!files.is_open(),sformat("{} Unable to open file {}",addColors("Error:",strColors::Bold_Red),temp));
 
             std::string line;
             bool inBlockComment = false;
@@ -1160,13 +1187,13 @@ class Project
                     if (endPos == std::string::npos || endPos < startPos) {continue;}
 
                     moduleName = std::string_view{line}.substr(startPos, (endPos - startPos) + 1);
-                    std::cout << fmt("{} {} found in {}","import module"_fmt.color(fmt::Bold_Blue) , moduleName , V.Path).endl();
+                    std::cout << sformat("{} {} found in {}\n",addColors("import module",strColors::Bold_Blue), moduleName , V.Path);
                     
                     // -------------------------------------------------------------------
                     // 3. Detect System Module Unit
                     // -------------------------------------------------------------------
                     if (moduleName.front() == '<' || moduleName.front() == '"') {
-                        std::cout << fmt("{} From: {} Name: {}","Header Unit module "_fmt.color(fmt::Bold_Blue), V.Name , moduleName).endl();
+                        std::cout << sformat("{} From: {} Name: {}\n",addColors("Header Unit module",strColors::Bold_Blue), V.Name , moduleName);
                         const auto [rawHeader,start,end] = getRawHeaderName(moduleName);
                         const size_t extension = rawHeader.find_last_of('.');
                         const bool isHeaderUnit = (extension == std::string_view::npos ? false : fileUtil::isCppHeader(rawHeader.substr(extension)));
@@ -1182,8 +1209,8 @@ class Project
                             auto findHeader = std::ranges::find( it,moduleName,&HeaderFile::Name);
                             if (findHeader != it.end()) {
                                 auto& h = findHeader;
-                                std::cout << fmt("{} From: {} to: {} and {}","add Header into Unit module "_fmt.color(fmt::Bold_Green) , h->Path , moduleName , V.Name).endl();
-                                std::string i {fmt("-I{}",h->Path)};
+                                std::cout << sformat("{} From: {} to: {} and {}\n",addColors("add Header into Unit module",strColors::Bold_Green) , h->Path , moduleName , V.Name);
+                                std::string i {sformat("-I{}",h->Path)};
                                 if (!containsToken(headerUnitFlags,i)) headerUnitFlags.append(" ") += i;
                                 
                                 if (!containsToken(ModuleFile.Flags,i)) ModuleFile.Flags.append(" ") += i;
@@ -1214,7 +1241,7 @@ class Project
                             }
                         } 
                         headerUnitFile.objectPath = isHeaderUnit ? 
-                        fmt("{}{}",(OutPath->modulePath / rawHeader).string(),fileUtil::pcmModule) : 
+                        sformat("{}{}",(OutPath->modulePath / rawHeader).string(),fileUtil::pcmModule) : 
                         headerUnitFile.getModuleOutput(&OutPath->stdPath);
                         headerUnitFile.compiled = fs::exists(headerUnitFile.objectPath);
                         ModuleFile.haveHeaderUnit = true;
@@ -1250,18 +1277,18 @@ class Project
     auto compilePCH(std::string_view PCHfile) -> bool {
         const std::string headerFile = (fs::path(ProjectFile.getHeaderPath(PCHfile)) / PCHfile).string();
         const auto& oPath = OutPath->buildPath;
-        const std::string pchOut {fmt("{}.pch",(oPath / fs::path(PCHfile).stem()).string())};
-        const std::string f_cmd  {fmt("{} {} -x c++-header {} -o {}",Compiler, Options,headerFile,pchOut)};
-        Options += fmt(" -include-pch {} ",pchOut);
+        const std::string pchOut {sformat("{}.pch",(oPath / fs::path(PCHfile).stem()).string())};
+        const std::string f_cmd  {sformat("{} {} -x c++-header {} -o {}",Compiler, Options,headerFile,pchOut)};
+        Options += sformat(" -include-pch {} ",pchOut);
         if (fs::exists(pchOut)) {
             if (fs::last_write_time(headerFile) > fs::last_write_time(pchOut)) {
-                fs::rename(pchOut,fmt("{}.old",pchOut).str);
+                fs::rename(pchOut,sformat("{}.old",pchOut));
             } else {
                 return 1;
             }
         }
-        std::cout << fmt("{} {}","Compiling PCH "_fmt.color(fmt::Bold_Green) , f_cmd) << "\n" ;
-        return cmd << f_cmd >> "Error compiling "_fmt.color(fmt::Bold_Red);
+        std::cout << sformat("{} {}",addColors("Compiling PCH",strColors::Bold_Green) , f_cmd) << "\n" ;
+        return cmd << f_cmd >> sformat("{}",addColors("Error compiling ",strColors::Bold_Red));
     };
 
     auto configureModuleFlags() -> Project& {
@@ -1276,9 +1303,9 @@ class Project
                 const bool depisSystemHeader = depFile.fileType == File::SystemHeader;
                 const bool depisHeaderUnit = depFile.fileType == File::HeaderUnit;
                 temp += (
-                    depisSystemHeader ? fmt(" -fmodule-file={}",depFile.objectPath) :
-                    depisHeaderUnit ? fmt(" -fmodule-file={}{}",(mPath / depFile.getName()).string(), fileUtil::pcmModule) :
-                    fmt(" -fmodule-file={}={}{}",depFile.Name,(mPath / depFile.getName()).string(),fileUtil::pcmModule)
+                    depisSystemHeader ? sformat(" -fmodule-file={}",depFile.objectPath) :
+                    depisHeaderUnit ? sformat(" -fmodule-file={}{}",(mPath / depFile.getName()).string(), fileUtil::pcmModule) :
+                    sformat(" -fmodule-file={}={}{}",depFile.Name,(mPath / depFile.getName()).string(),fileUtil::pcmModule)
                 );
             }
             inFile.Flags += temp;
@@ -1311,20 +1338,20 @@ class Project
         
         const std::string fModule    { inFile.getModuleOutput(&mPath) };
         
-        const std::string fObjOutput { fmt("{}{}",(oPath / inFile.getName()).string(), fileUtil::objFile) };
+        const std::string fObjOutput { sformat("{}{}",(oPath / inFile.getName()).string(), fileUtil::objFile) };
         
         const std::string f_srcInput {
-                isHeaderUnit ? fmt("-Wno-pragma-system-header-outside-header -fmodule-header=user --precompile {} -o {}",
+                isHeaderUnit ? sformat("-Wno-pragma-system-header-outside-header -fmodule-header=user --precompile {} -o {}",
                 (fs::path(inFile.Path)/inFile.Name).string(),fModule) :
-                isSystemHeader ? fmt("-Wno-pragma-system-header-outside-header -Wno-gnu-anonymous-struct -Wno-nullability-extension -Wno-gcc-compat -Wno-user-defined-literals -x c++-system-header --precompile {} -o {}",inFile.Name,fModule) :
-                fmt("-c {} -fmodules-reduced-bmi -fmodule-output={} -fprebuilt-module-path={} ",inFile.Path,fModule,(mPath).string())
+                isSystemHeader ? sformat("-Wno-pragma-system-header-outside-header -Wno-gnu-anonymous-struct -Wno-nullability-extension -Wno-gcc-compat -Wno-user-defined-literals -x c++-system-header --precompile {} -o {}",inFile.Name,fModule) :
+                sformat("-c {} -fmodules-reduced-bmi -fmodule-output={} -fprebuilt-module-path={} ",inFile.Path,fModule,(mPath).string())
             };
         if (inFile.objectPath.empty()) {inFile.objectPath = fObjOutput;}
         
         const std::string f_cmd {
-            isSystemHeader ? fmt("{} {} {}",Compiler, Options,f_srcInput) : 
-            isHeaderUnit ? fmt("{} {} {} {}",Compiler, Options,inFile.Flags,f_srcInput) :
-            fmt("{} {} {} {} {} -o {}",Compiler, Options,(inFile.haveHeaderUnit ? "-Wno-experimental-header-units ": "") ,
+            isSystemHeader ? sformat("{} {} {}",Compiler, Options,f_srcInput) : 
+            isHeaderUnit ? sformat("{} {} {} {}",Compiler, Options,inFile.Flags,f_srcInput) :
+            sformat("{} {} {} {} {} -o {}",Compiler, Options,(inFile.haveHeaderUnit ? "-Wno-experimental-header-units ": "") ,
             f_srcInput ,inFile.Flags,fObjOutput)
         };
             
@@ -1339,19 +1366,19 @@ class Project
         int ret {};
         // module use reduced bmi        
         if (isSystemHeader) {
-            std::cout << fmt("{} {}","compiling module "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
-            ret = cmd << f_cmd >> "recompile error"_fmt.color(fmt::Red);
+            std::cout << sformat("{} {}",addColors("compiling module",strColors::Green) , f_cmd) << "\n" ;
+            ret = cmd << f_cmd >> sformat("{}",addColors("recompile error",strColors::Red));
         } else {
             #ifdef __WIN32
             if(fs::exists(fModule)) {
-                const std::string old {fmt("{}.old",fModule)}; 
+                const std::string old {sformat("{}.old",fModule)}; 
                 if (fs::exists(old)){fs::remove(old);}
                 fs::rename(fModule,old);
             }
             #endif
             // fs::copy(old,fModule);
-            std::cout << fmt("{} {}","compiling module "_fmt.color(fmt::Green) , f_cmd) << "\n" ;
-            ret = cmd << f_cmd >> "recompile error"_fmt.color(fmt::Red);
+            std::cout << sformat("{} {}\n",addColors("compiling module",strColors::Green) , f_cmd);
+            ret = cmd << f_cmd >> sformat("{}",addColors("recompile error",strColors::Red));
         }
         inFile.compiled = (ret == 0 ? true : false);
         return true; 
@@ -1369,27 +1396,24 @@ class Project
 
         const std::string objOutput {(
             isModuleImpl ? inFile.objectPath : 
-            fmt("{}{}",(oPath / inFile.getName()).string(), fileUtil::objFile)
+            sformat("{}{}",(oPath / inFile.getName()).string(), fileUtil::objFile)
         )};
 
         const std::string filein    { isModule ? 
-            fmt("{}{}",(mPath / inFile.getName()).string(),fileUtil::pcmModule ) : 
+            sformat("{}{}",(mPath / inFile.getName()).string(),fileUtil::pcmModule ) : 
             inFile.Path
         };
 
         const std::string cppOutput { 
-            noDependencies ? 
-            fmt( "{}{}",(isModule ? "":"-c "),filein) :
-            fmt( "{}{} -fprebuilt-module-path={}",(isModule ? "":"-c "),filein,(mPath).string())
+            noDependencies ? sformat( "-c {}",filein) :
+            sformat( "-c {} -fprebuilt-module-path={}",filein,(mPath).string())
         };
            
-        const std::string f_cmd {fmt("{} {} {} {} {} {} {}",
+        const std::string f_cmd {sformat("{} {} {} {} -o {}",
             Compiler, Options,
-            inFile.haveHeaderUnit ? "-Wno-experimental-header-units": "" ,
             cppOutput,
             inFile.Flags,
-            isModule? "-c -o":"-o", 
-            objOutput).clean()
+            objOutput)
         };
         
         if(cmdJson != nullptr && !isModule) { 
@@ -1410,18 +1434,18 @@ class Project
         
         int ret {};
         if (recompile) {
-            std::cout << fmt("{} {}","recompiling"_fmt.color(fmt::Bold_Green) , f_cmd) << "\n" ;
-            ret = cmd << f_cmd >> "Error compiling "_fmt.color(fmt::Bold_Red);
+            std::cout << sformat("{} {}\n",addColors("recompiling",strColors::Bold_Green) , f_cmd);
+            ret = cmd << f_cmd >> sformat("{}",addColors("Error compiling",strColors::Bold_Red));
             
         } else if (!fs::exists(objOutput))
         {
-            std::cout << fmt("{} {}","compiling "_fmt.color(fmt::Bold_Green) , f_cmd) << "\n" ;
-            ret = cmd << f_cmd >> "Error compiling "_fmt.color(fmt::Bold_Red);
+            std::cout << sformat("{} {}",addColors("compiling",strColors::Bold_Green) , f_cmd) << "\n" ;
+            ret = cmd << f_cmd >> sformat("{}",addColors("Error compiling",strColors::Bold_Red));
             
         } else if (fs::last_write_time(inFile.Path) > fs::last_write_time(objOutput))
         {
-            std::cout << fmt("{} {}","updated "_fmt.color(fmt::Bold_Green) , f_cmd) << "\n" ;
-            ret = cmd << f_cmd >> "Error compiling "_fmt.color(fmt::Bold_Red);
+            std::cout << sformat("{} {}",addColors("Updating",strColors::Bold_Green) , f_cmd) << "\n" ;
+            ret = cmd << f_cmd >> sformat("{}",addColors("Error compiling",strColors::Bold_Red));
         }
         inFile.compiled = (ret == 0 ? true : false);
         return ret; 
@@ -1433,11 +1457,11 @@ class Project
         const bool isExecutable {outFile == Project::exe};
         const bool hasDependencies {!inPath.dependencies.empty()};
         const std::string f_targetOut {
-            fmt("{}{}", (isStaticLib ? OutPath->buildPath.string() : (OutPath->exePath / inPath.Name).string()), (isStaticLib ? fileUtil::libFile : fileUtil::executable))
+            sformat("{}{}", (isStaticLib ? OutPath->buildPath.string() : (OutPath->exePath / inPath.Name).string()), (isStaticLib ? fileUtil::libFile : fileUtil::executable))
         };
         const std::string f_Output    { isStaticLib ?
             f_targetOut :
-            fmt("-o {}", f_targetOut) 
+            sformat("-o {}", f_targetOut) 
         };
         
         const std::string makeFlags = [&]{ 
@@ -1451,7 +1475,7 @@ class Project
                 temp += I.objectPath;
             }
             return (hasDependencies && !isStaticLib ?
-            fmt( "{} -fprebuilt-module-path={}",temp,(OutPath->modulePath / ".").string()) :
+            sformat( "{} -fprebuilt-module-path={}",temp,(OutPath->modulePath / ".").string()) :
             temp);
         }();
 
@@ -1459,37 +1483,37 @@ class Project
             outputName = f_targetOut;
         } else if (isExecutable) {
             if (fs::exists(f_targetOut)) {
-                fs::rename(f_targetOut, fmt("{}{}",f_targetOut, ".old").sv());
+                fs::rename(f_targetOut, sformat("{}.old",f_targetOut));
             }
         }
         const std::string typeCmd {isStaticLib ? 
-            fmt("{} {}",fileUtil::libTool,"rcs") : 
-            fmt("{} {} {}",Compiler,Options,LdOptions)
+            sformat("{} {}",fileUtil::libTool,"rcs") : 
+            sformat("{} {} {}",Compiler,Options,LdOptions)
         };
         const std::string f_cmd { isStaticLib ?
-            fmt("{} {} {}",typeCmd,f_Output,makeFlags) :
-            fmt("{} {} {}",typeCmd,makeFlags,f_Output) 
+            sformat("{} {} {}",typeCmd,f_Output,makeFlags) :
+            sformat("{} {} {}",typeCmd,makeFlags,f_Output) 
         };
 
         if (!ResPath.empty() && fs::exists(getMainPath() / ResPath)) {
             if (!fs::exists(OutPath->exePath/ResPath)) {
-                std::cout << fmt("Copying from: {} to: {}", (getMainPath() / ResPath).string(),(OutPath->exePath/ResPath).string()) << "\n"; 
+                std::cout << sformat("Copying from: {} to: {}", (getMainPath() / ResPath).string(),(OutPath->exePath/ResPath).string()) << "\n"; 
                 fs::copy(getMainPath() / ResPath,OutPath->exePath/ResPath,fs::copy_options::recursive | fs::copy_options::skip_existing);
             }
         }
-        std::cout << "Linking "_fmt.color(fmt::Bold_Green) << f_cmd << "\n";
-        cmd << f_cmd >> "linking error"_fmt.color(fmt::Bold_Red);
+        std::cout << sformat("{} {}\n", addColors("Linking",strColors::Bold_Green), f_cmd);
+        cmd << f_cmd >> sformat("{}",addColors("linking error",strColors::Bold_Red));
     }
 
     auto dumpProject() -> Project& {
         
-        std::cout << "Dump project"_fmt.color(fmt::Yellow).endl();
+        std::cout << sformat("{}\n",addColors("Dump project",strColors::Yellow));
         for (const auto& [K,V]: ProjectFile) {
             const bool isSource = V.fileType == File::Source;
             const bool isModule = V.fileType == File::Module;
             const bool isSystemHeader = V.fileType == File::SystemHeader;
             const bool isModuleImpl = V.fileType == File::ModuleImpl;
-            std::cout << fmt("File: {}\n Name: {}\n Path: {}\n Type: {}\n OutPath: {}\n",
+            std::cout << sformat("File: {}\n Name: {}\n Path: {}\n Type: {}\n OutPath: {}\n",
             K , 
             V.Name , 
             V.Path ,
@@ -1497,31 +1521,26 @@ class Project
             V.objectPath);
         }
 
-        std::cout << "\nDump Include"_fmt.color(fmt::Yellow).endl();
+        std::cout << sformat("\n{}\n",addColors("Dump Include",strColors::Yellow));
         // ProjectFile.testHeader();
         for (const auto& [K,V]: ProjectFile.headerContainer()) {
             std::cout << "Include Dir: " << K;
             for (const auto& Header : V) {
                 const bool flagsEmpty = Header.flags.empty();
-                std::cout << fmt(
-                    flagsEmpty ? "\nFile: {} Path: {}" :
-                    "\nFile: {} Path: {} {}: {}"
-                    ,Header.Name 
-                    ,Header.Path 
-                    ,(flagsEmpty ? "" : "\ndependency ")
-                    ,(flagsEmpty ? "" : Header.flags));
+                std::cout << (flagsEmpty ? sformat("\nFile: {} Path: {}",Header.Name,Header.Path) 
+                : sformat("\nFile: {} Path: {} \ndependency: {}",Header.Name,Header.Path,Header.flags));
             }
             std::cout << "\n";
         }
 
-        std::cout << "\nDump Module"_fmt.color(fmt::Yellow).endl(); 
+        std::cout << sformat("\n{}\n",addColors("Dump Module",strColors::Yellow)); 
         for (const auto&  [K,V]: ProjectFile) {
             if (V.fileType != File::Module) {continue;}
-            std::cout << fmt("Module: {} Name: {}\n",K,V.Name);
+            std::cout << sformat("Module: {} Name: {}\n",K,V.Name);
         }
         
 
-        std::cout << "\nDump Dependencies"_fmt.color(fmt::Yellow).endl();
+        std::cout << sformat("\n{}\n",addColors("Dump Dependencies",strColors::Yellow));
         for (const auto& [K,V] : ProjectFile) {
             if (V.dependencies.empty()){continue;}
 
@@ -1535,7 +1554,7 @@ class Project
             // }
             std::cout << "\n";
         }
-        std::cout << "\nDump File Flags"_fmt.color(fmt::Yellow).endl();
+        std::cout << sformat("\n{}\n",addColors("Dump File Flags",strColors::Yellow));
         for (const auto& [K,V] : ProjectFile) {
             if (V.Flags.empty() && V.ldFlags.empty()){continue;}
 

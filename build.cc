@@ -59,7 +59,7 @@
 
 int test()
 { 
-    std::cout << "compile test"_fmt.color(fmt::Bold_Green).endl();
+    std::cout << sformat("{}\n",addColors("compile test",strColors::Bold_Green));
     const fs::path rootPath = fs::current_path();
     const fs::path exePath = rootPath / "bin";
     const fs::path outBuildPath = rootPath / ".build";
@@ -90,7 +90,7 @@ int test()
 
 int selfCompile(bool recompile)
 {
-    std::cout << "compile self"_fmt.color(fmt::Bold_Green).endl();
+    std::cout << sformat("{}\n",addColors("compile self",strColors::Bold_Green));
     const fs::path rootPath = fs::current_path();
     const fs::path exePath = rootPath / "bin";
     const fs::path outBuildPath = rootPath / ".build";
@@ -116,16 +116,16 @@ int selfCompile(bool recompile)
     rebuild.link(rebuild.ProjectFile.getMain());
     return 0;
 }
-int CompileFile(const std::string_view Name,const std::string_view From,std::span<const std::string_view> src,bool recompile)
+int CompileFile(const std::string_view Name,const std::string_view From,std::span<const std::string_view> src,std::span<const std::string_view> libraryList,bool recompile)
 {
-    std::cout << fmt("Compiling {}\nFrom: {}\n" ,Name,From);
+    std::cout << sformat("Compiling {}\nFrom: {}\n" ,Name,From);
     const fs::path rootPath = fs::current_path();
     const fs::path exePath = rootPath / "bin";
     const fs::path outBuildPath = rootPath / ".build";
     const fs::path outProjectPath = rootPath / ".build" / Name;
     outputPath outPath;
     outPath.setRootPath(rootPath)
-    .setExePath(rootPath)
+    .setExePath(exePath)
     .setBuildfolder(outBuildPath)
     .setOutpath(outProjectPath);
     
@@ -137,6 +137,7 @@ int CompileFile(const std::string_view Name,const std::string_view From,std::spa
     .setProjectPath(rootPath)
     .addSourcePath(From)
     .addSource(From,src)
+    .LinkLibrary(src[0], libraryList)
     .setMain(src[0]).scanHeader().scanModule()
     .configureModuleFlags()
     .dumpProject()
@@ -310,7 +311,7 @@ struct argsParse {
 
 auto main(int argc, const char* argv[]) -> int 
 {
-    std::cout << "CPP BUILD \n"_fmt.color(fmt::Bold_Purple);
+    std::cout << sformat("{}\n",addColors("CPP BUILD",strColors::Bold_Purple));
     std::atexit(exitImpl);
     auto makeOptions = Options()
     .addOptions({{"-C","-compile"}})
@@ -340,10 +341,6 @@ auto main(int argc, const char* argv[]) -> int
             return 0;
         }
         if (inputLine == "-self") {
-            selfCompile(false); 
-            return 0;
-        }
-        if (inputLine == "-recompileself") {
             selfCompile(true); 
             return 0;
         }
@@ -351,20 +348,28 @@ auto main(int argc, const char* argv[]) -> int
             test(); 
             return 0;
         }
-        else {
-            const auto compile = std::ranges::find_if(cmd.args,[](auto& s) {
-                return s == "-c"; 
+        if (inputLine == "-P") {
+            const auto [ProjectNameIdx,sourcePathIdx,sourceListIdx,libraryListidx] = [&]{
+                struct ret {std::size_t ProjectName,sourcePathIdx,sourceListIdx,libraryList;} retv;
+                std::size_t idx {0};
+                for (std::string_view& s : cmd.args) {
+                    if(s == "-C") retv.sourceListIdx = idx + 1;
+                    if(s == "-P") retv.ProjectName = idx + 1;
+                    if(s == "-S") retv.sourcePathIdx = idx + 1;
+                    if(s == "-L") retv.libraryList = idx + 1;
+                    ++idx;
+                }
+                return retv;
+            }();
+            auto& ProjectName = cmd.args[ProjectNameIdx];
+            auto& sourceLocation = cmd.args[sourcePathIdx];
+            auto srcList = cmd.args | std::views::drop(sourceListIdx) | std::views::take_while([](std::string_view s) { 
+                return !s.empty() && s[0] != '-'; 
             });
-            const auto sourcePath = std::ranges::find_if(cmd.args,[](auto& s) {
-                return s == "-S"; 
+            auto libraryList = cmd.args | std::views::drop(libraryListidx) | std::views::take_while([](std::string_view s) { 
+                return !s.empty() && s[0] != '-'; 
             });
-            const std::size_t Pathidx {static_cast<std::size_t>(std::distance(cmd.args.begin(), sourcePath)) + 1};
-            const std::size_t compileidx {static_cast<std::size_t>(std::distance(cmd.args.begin(), compile)) + 1};
-            auto& Name = cmd.args[0];
-            auto& sourceLocation = cmd.args[Pathidx];
-            // std::span<const char*> srcList {argv + sourceidx, static_cast<std::size_t>(argc) - sourceidx};
-            auto srcRange = cmd.args | std::views::drop(compileidx);
-            CompileFile(Name,sourceLocation,srcRange,true);
+            CompileFile(ProjectName,sourceLocation,srcList,libraryList,true);
             return 0;
         };    
     }
