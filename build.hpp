@@ -2,8 +2,6 @@
 #define BUILD_PP
 
 #include <cstddef>
-#include <cstdlib>
-#include <concepts>
 #include <filesystem>
 #include <vector>
 #include <string_view>
@@ -27,35 +25,38 @@
 
 namespace  fs = std::filesystem;
 using namespace std::string_view_literals;
-
 template<size_t N>
 struct formatString {
     static constexpr size_t NPlaceholder {N * 2};
+    struct posArray {
+        size_t data[NPlaceholder];
+    };
     std::string_view sv;
-    size_t posArray[NPlaceholder];
+    posArray Array;
     template<size_t I>
     consteval formatString(const char (&str)[I]) noexcept
-        : sv{str,I - 1} {getPosSize(sv);}
+        : sv{str,I - 1} , Array(getPosSize(sv)) {}
     constexpr formatString(std::string_view inSv) noexcept
-        : sv{inSv} { getPosSize(sv); }
+        : sv{inSv} , Array(getPosSize(sv)) {}
     constexpr formatString(const std::string& inSv) noexcept
-        : sv{inSv} { getPosSize(sv); }
+        : sv{inSv} , Array(getPosSize(sv)) {}
 
     constexpr formatString(formatString&& str) noexcept
-        : sv{str.sv}
+        : sv{str.sv} , Array(str.Array)
     {
-        size_t idx {0}; 
-        for (size_t s : str.posArray) posArray[idx++] = s; 
+        // size_t idx {0}; 
+        // for (size_t s : str.posArray) posArray[idx++] = s; 
     }
     constexpr formatString(const formatString& str) noexcept
-        : sv{str.sv}
+        : sv{str.sv}, Array(str.Array)
     {
-        size_t idx {0}; 
-        for (size_t s : str.posArray) posArray[idx++] = s; 
+        // size_t idx {0}; 
+        // for (size_t s : str.posArray) posArray[idx++] = s; 
     }
 
 
-    constexpr size_t getPosSize(std::string_view str) noexcept {
+    constexpr auto getPosSize(std::string_view str) noexcept -> posArray {
+        posArray temp;
         bool open = false;
         size_t slot = 0,idx = 0, openidx = 0;
         for (char c : str) {
@@ -64,14 +65,14 @@ struct formatString {
                 openidx = idx;
                 open = true;
             } else if (c == '}' && open) {
-                posArray[slot] = openidx;
-                posArray[slot + 1] = (idx + 1) - openidx;
+                temp.data[slot] = openidx;
+                temp.data[slot + 1] = (idx + 1) - openidx;
                 slot += 2;
                 open = false;
             }
             ++idx;
         }
-        return str.size();
+        return temp;
     }
 };
 
@@ -125,12 +126,24 @@ struct strColors {
 
 struct addColors {
     static constexpr std::string_view notcolor = strColors::getColor(strColors::Not_color);
-    std::string_view str[3];
-    constexpr addColors(std::string_view str,const strColors::colors c) noexcept
-    :str{strColors::getColor(c),str,notcolor} {}
-    std::string_view* begin() noexcept {return str;}
-    std::string_view* end()   noexcept {return str + 3;}
-};
+    const std::string_view str[3];
+    const std::size_t len;
+    template<size_t N>
+    consteval addColors(const char (&in)[N],const strColors::colors c) noexcept
+    :str{strColors::getColor(c),{in,N - 1},notcolor} , len(getLen()) {}
+    constexpr addColors(std::string_view in,const strColors::colors c) noexcept
+    :str{strColors::getColor(c),in,notcolor} , len(getLen()) {}
+    const std::string_view* begin() const noexcept {return str;}
+    const std::string_view* end()   const noexcept {return str + 3;}
+    constexpr operator std::string() const noexcept {
+        std::string temp; temp.reserve(len);
+        for (const auto& sv : str) temp += sv;
+        return temp;
+    }
+    constexpr auto getLen() noexcept -> size_t {
+        return size_t{str[0].size() + str[1].size() + str[2].size()};
+    }
+}; 
 
 // template<typename T> 
 // struct converter {
@@ -175,10 +188,7 @@ constexpr auto appendArg(T&& arg,std::string& str, std::ptrdiff_t& offset, const
     const size_t actualStart = static_cast<size_t>(static_cast<std::ptrdiff_t>(start) + offset);
 
     if constexpr (std::is_same_v<Raw, addColors>) {
-        std::string temp;
-        for (std::string_view sv : arg) {
-            temp += sv;
-        }
+        const std::string temp{arg};
         str.replace(actualStart, len, temp);
         offset += static_cast<std::ptrdiff_t>(temp.size()) - static_cast<std::ptrdiff_t>(len);
     } else {
@@ -189,9 +199,20 @@ constexpr auto appendArg(T&& arg,std::string& str, std::ptrdiff_t& offset, const
             str.replace(actualStart, len, argStr);
         } else if constexpr (std::integral<Raw> || std::floating_point<Raw>) {
             char digit[64];
-            auto [ptr, ec] = std::to_chars(digit, digit + sizeof(digit), arg);
+            auto [ptr, ec] = std::to_chars(digit, digit + sizeof(digit),arg);
             argStr = std::string_view(digit, static_cast<size_t>(ptr - digit));
             str.replace(actualStart, len, argStr);
+        } else if constexpr (std::is_pointer_v<Raw>) {
+            // Option 1: Formatting the pointee value (dereferencing)
+            using Pointee = std::remove_pointer_t<Raw>;
+            if constexpr (std::integral<Pointee> || std::floating_point<Pointee>) {
+                char digit[64];
+                auto [ptr, ec] = std::to_chars(digit, digit + sizeof(digit), *arg);
+                if (ec == std::errc{}) {
+                    argStr = std::string_view(digit, static_cast<size_t>(ptr - digit));
+                    str.replace(actualStart, len, argStr);
+                }
+            }
         }
         // 3. Accumulate delta into offset for the next replacement
         offset += static_cast<std::ptrdiff_t>(argStr.size()) - static_cast<std::ptrdiff_t>(len);
@@ -204,14 +225,13 @@ template<typename... Args>
 constexpr auto sformat(formatString<sizeof...(Args)> fmtStr,Args&&... args) noexcept -> std::string {
     std::string str {fmtStr.sv};
     if constexpr (sizeof...(Args) > 0) {
-        size_t* posArray = fmtStr.posArray;
+        size_t* posArray = fmtStr.Array.data;
         size_t lastPos = 0;
         std::ptrdiff_t offset = 0;
         ((appendArg(std::forward<Args>(args),str,offset,posArray[lastPos]),lastPos += 2), ...);
     }
     return str;
 }
-
 // constexpr auto operator""_fmt(const char* str,size_t) -> fmt { return fmt(str);}
 
 class cmdImpl {
@@ -264,7 +284,7 @@ inline cmdImpl cmd;
 struct outputPath {
     private:
     auto err (bool e = false,std::string_view msg = "",std::source_location fn = std::source_location::current()) -> outputPath& {
-        if (e) {std::cout << sformat("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name()); std::exit(1);} 
+        if (e) {std::cerr << sformat("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name()); std::exit(1);} 
         return *this;
     }
     public:
@@ -453,7 +473,7 @@ struct File {
     // using IDx = std::size_t;
     auto err(bool cnd = false,std::string_view msg = "",std::source_location fn = std::source_location::current()) const -> const File& {
         if (cnd) {
-            std::cout << sformat("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name()); 
+            std::cerr << sformat("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name()); 
             std::exit(1);
         } 
         return *this;
@@ -530,7 +550,7 @@ class FileManager {
 
     auto err(bool cnd = false,std::string_view msg = "",std::source_location fn = std::source_location::current()) -> FileManager& {
         if (cnd) {
-            std::cout << sformat("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name());
+            std::cerr << sformat("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name());
             std::exit(1);
         } 
         return *this;
@@ -662,7 +682,7 @@ class Project
     std::string outputName      {};
     
     constexpr auto err(bool cnd = false,std::string_view msg = "",std::source_location fn = std::source_location::current()) -> Project& {
-        if (cnd) {std::cout << sformat("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name()); std::exit(1);} 
+        if (cnd) {std::cerr << sformat("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name()); std::exit(1);} 
         return *this;
     }
     
@@ -740,23 +760,22 @@ class Project
     constexpr auto addIncludePathList (std::span<const std::string_view> ListPath) -> Project& {
         if(ListPath.empty()) return *this;
         for (auto& in : ListPath) {
-            const fs::path temp {Path / in};
-            err(!fs::exists(temp),sformat("{} Include path: {}  does not exist",addColors("Error:",strColors::Red),temp.string()));
-            ProjectFile.setHeaderPath(temp.string()); 
+            addIncludePath(in);
         }
         return *this;
     }
-    constexpr auto addIncludePathList (std::initializer_list<std::string_view> ListPath) -> Project& {
-        for (auto& in : ListPath) {
-            const fs::path temp {Path / in};
-            err(!fs::exists(temp),sformat("{} Include path: {}  does not exist",addColors("Error:",strColors::Red),temp.string()));
-            ProjectFile.setHeaderPath(temp.string()); 
-        }
-        return *this;
+    constexpr auto addIncludePathList (std::initializer_list<const std::string_view> ListPath) -> Project& {
+        return addIncludePathList({ListPath.begin(),ListPath.end()});
     }
     
-    constexpr auto getMainPath () const -> const std::string& {return *SourcePath.begin();}
+    constexpr auto getMainPath () const -> const std::string&    {return *SourcePath.begin();}
     constexpr auto getCompileCommand () const -> compileCommand* {return cmdJson;}
+
+    constexpr auto addCompileCommand(compileCommand* cmd) -> Project&
+    {
+        cmdJson = cmd;
+        return *this;
+    }
     
     constexpr auto addSource(std::string_view from,std::string_view file) -> Project& {
         const fs::path fromPath {Path / from};
@@ -792,13 +811,6 @@ class Project
     
         return *this;
     }
-    constexpr auto addSource(const std::string_view from,std::initializer_list<const std::string_view> ListFiles) -> Project& {
-        err(ListFiles.size() == 0,sformat("{} Please add atleast one file to compile",addColors("Error:",strColors::Bold_Red)));
-        for (const auto& i : ListFiles) {
-            addSource(from,i);
-        }
-        return *this;
-    }
     constexpr auto addSource(const std::string_view from,std::span<const std::string_view> ListFiles) -> Project& {
         err(ListFiles.empty(),sformat("{} Please add atleast one file to compile",addColors("Error:",strColors::Bold_Red)));
         for (const auto& i : ListFiles) {
@@ -806,11 +818,8 @@ class Project
         }
         return *this;
     }
-
-    auto addCompileCommand(compileCommand* cmd) -> Project&
-    {
-        cmdJson = cmd;
-        return *this;
+    constexpr auto addSource(const std::string_view from,std::initializer_list<const std::string_view> ListFiles) -> Project& {
+        return addSource(from,{ListFiles.begin(),ListFiles.end()});
     }
 
     auto getLib(Project&& other) -> Project&
@@ -832,61 +841,35 @@ class Project
     auto LinkLibrary(const std::string_view inFile, std::span<const std::string_view> ListDeps) -> Project&
     {
         if(ListDeps.empty()) return *this;
-        // auto Deps = inDeps | std::views::split(','); 
-        const auto rangeFile = ProjectFile | std::views::keys ;
-        const auto finds = std::ranges::find(rangeFile,inFile);
-        
-        if (finds != rangeFile.end()) {
-            std::string_view f_file = *finds;
-            auto& File = *ProjectFile[f_file]; 
-            for (auto&& d : ListDeps) {
-                std::string_view dep {d};
-                if(dep.empty()) continue;
-                while (!dep.empty() && dep.front() == ' ') dep.remove_prefix(1);
-                while (!dep.empty() && dep.back() == ' ') dep.remove_suffix(1);
-                File.ldFlags += " -l";
-                File.ldFlags +=  dep;
-            }
+        auto& File = *ProjectFile[inFile];
+        for (auto&& d : ListDeps) {
+            std::string_view dep {d};
+            if(dep.empty()) continue;
+            while (!dep.empty() && dep.front() == ' ') dep.remove_prefix(1);
+            while (!dep.empty() && dep.back() == ' ') dep.remove_suffix(1);
+            File.ldFlags += " -l";
+            File.ldFlags +=  dep;
         }
         return *this;
     }
     auto LinkLibrary(const std::string_view inFile, std::initializer_list<const std::string_view> ListDeps) -> Project&
     {
-        // auto Deps = inDeps | std::views::split(','); 
-        const auto rangeFile = ProjectFile | std::views::keys ;
-        const auto finds = std::ranges::find(rangeFile,inFile);
-        
-        if (finds != rangeFile.end()) {
-            std::string_view f_file = *finds;
-            auto& File = *ProjectFile[f_file]; 
-            for (auto&& d : ListDeps) {
-                std::string_view dep {d};
-                if(dep.empty()) continue;
-                while (!dep.empty() && dep.front() == ' ') dep.remove_prefix(1);
-                while (!dep.empty() && dep.back() == ' ') dep.remove_suffix(1);
-                File.ldFlags += " -l";
-                File.ldFlags +=  dep;
-            }
+        return LinkLibrary(inFile,{ListDeps.begin(),ListDeps.end()});
+    }
+
+    auto addCompileFlags(const std::string_view inFile,std::span<const std::string_view> ListFlags) -> Project&
+    {
+        auto& File = *ProjectFile[inFile];
+        for (auto&& dep : ListFlags) {
+            if(dep.empty()) continue;
+            File.Flags += " ";
+            File.Flags += dep;
         }
         return *this;
     }
-
     auto addCompileFlags(const std::string_view inFile,std::initializer_list<const std::string_view> ListFlags) -> Project&
     {
-        const auto rangeFile = ProjectFile | std::views::keys;
-        const auto finds = std::ranges::find(rangeFile,inFile);
-
-        if (finds != rangeFile.end()) {
-            const std::string_view f_file {*finds};
-            auto& File = *ProjectFile[f_file]; 
-            for (auto&& dep : ListFlags) {
-                if(dep.empty()) continue;
-                File.Flags += " ";
-                File.Flags += dep;
-            }
-        }
-        
-        return *this;
+        return addCompileFlags(inFile,{ListFlags.begin(),ListFlags.end()});
     }
 
     auto trim(std::string_view str) -> std::string_view 
@@ -938,34 +921,63 @@ class Project
         return false;
     };
 
-    auto containsToken(std::string_view str,std::string_view target) -> bool 
+   constexpr auto containsToken(std::string_view str,const std::string_view target) noexcept -> bool 
     {
-        auto filter = str | std::views::split(' ')
-        | std::views::filter([](auto&& f) { return !f.empty();})
-        | std::views::transform([](auto&& f) { 
-            return std::string_view(f.data(),f.size());
-        });
-        return std::ranges::find(filter,target) != filter.end();
+        size_t startidx{0};
+        for (size_t endidx = 0; endidx <= str.size(); ++endidx) {
+            if (endidx == str.size() || str[endidx] == ' ') {
+                const size_t token_len = endidx - startidx;
+                if (token_len > 0) {
+                    if (std::string_view(str.data() + startidx, token_len) == target) {
+                        return true;
+                    }
+                }
+                startidx = endidx + 1;
+            }
+        }
+        return false;
     }
+
 
     auto getRawHeaderName(const std::string_view in) {
         struct out {
-            const std::string_view str;
+            const std::string_view sv;
             const bool startNpos;
             const bool endNpos;
         };
-        const std::size_t startPos = in.find_first_of("\"<");
-        // Determine the required closing delimiter based on the opening one
-        const char openChar = in[startPos];
-        const char closeChar = (openChar == '<') ? '>' : '"';
-        // Search forward from the opening delimiter for its matching pair
-        const std::size_t endPos = in.find(closeChar, startPos + 1);
+        const char* data = in.data();
+        std::size_t startPos {std::string_view::npos};
+        std::size_t endPos   {std::string_view::npos};
+        char closeChar       {'\0'};
+
+        for (; data != in.end(); ++data) {
+            const bool quote = *data == '\"';
+            const bool bracket = *data == '<';
+            if (quote || bracket) {
+                closeChar = (bracket) ? '>' : '\"'; 
+                startPos = data - in.begin();
+                break;
+            }
+        }
+
+        for (++data; data != in.end(); ++data) {
+            if (*data == closeChar) {
+                endPos = data - in.begin();
+                break;
+            }
+        }
+
+        const bool startFound = (startPos != std::string_view::npos);
+        const bool endFound   = (endPos != std::string_view::npos);
+
         return out{
-            in.substr(startPos + 1, endPos - (startPos + 1)),
-            startPos == std::string_view::npos,
-            endPos == std::string_view::npos,
+            (startFound && endFound && endPos > startPos) 
+                ? in.substr(startPos + 1, endPos - startPos - 1) 
+                : std::string_view{},
+            !startFound,
+            !endFound,
         };
-    };
+    }
     
     auto solveHeaderDependencies(HeaderFile& Header) -> void 
     {
@@ -982,23 +994,25 @@ class Project
             if(singleLineComment(line, &ipos)) {continue;}
             if (ipos != std::string::npos) { 
                 const size_t searchStart = ipos + fileUtil::includeToken.length();
-                const auto [headerName,start,end] = getRawHeaderName(std::string_view{line}.substr(searchStart));
-                if (start || end) { continue; }
+                const auto [headerName,startNpos,endNpos] = getRawHeaderName(std::string_view{line}.substr(searchStart));
+                if (startNpos || endNpos) { continue; }
                 
                 for (const auto& [K,V] : ProjectFile.headerContainer()) {
                     if (K.empty()) continue;
-                    const bool foundMatch = std::ranges::find(V,headerName,&HeaderFile::Name) != V.end();
+                    // const bool foundMatch = std::ranges::find(V,headerName,&HeaderFile::Name) != V.end();
                     // std::cout << fmt("is header path "_fmt.color(fmt::Bold_Blue) , headerName , " in " , Header.Name ).endl();
-                    if (foundMatch) {
-                        std::string flags {sformat("-I{}",K)};
-                        const bool alreadyAdded = containsToken(Header.flags, flags);
-                        const bool notSamePath = (Header.Path != K);
-                        if (!alreadyAdded && notSamePath) {
-                            std::cout << sformat("{} {} to {}\n",addColors("Add dependencies",strColors::Bold_Blue) , K , Header.Name );
-                            if (!Header.flags.empty()) {
-                                Header.flags += " ";
+                    for (const auto& HN : V) {
+                        if (HN.Name == headerName) {
+                            std::string flags {sformat("-I{}",K)};
+                            const bool alreadyAdded = containsToken(Header.flags, flags);
+                            const bool notSamePath = (Header.Path != K);
+                            if (!alreadyAdded && notSamePath) {
+                                std::cout << sformat("{} {} to {}\n",addColors("Add dependencies",strColors::Bold_Blue) , K , Header.Name );
+                                if (!Header.flags.empty()) {
+                                    Header.flags += " ";
+                                }
+                                Header.flags += flags;
                             }
-                            Header.flags += flags;
                         }
                     }
                 }
@@ -1020,8 +1034,8 @@ class Project
             }
         }
         
-        for (auto& Header: ProjectFile.headerContainer() | std::views::values | std::views::join ) {
-            solveHeaderDependencies(Header);
+        for (auto& [Path,Header]: ProjectFile.headerContainer()) {
+            for (auto& H : Header) solveHeaderDependencies(H);
         }
         return *this;
     } 
