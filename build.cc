@@ -265,37 +265,39 @@ void exitImpl() {
     current->~Project();
     std::cout << sformat("{} forced Exit\n",addColors("Error:",strColors::Bold_Red));
 }
-
-template<typename T,std::size_t N>
-constexpr std::array<T, N> appendArray(std::array<T,( N < 1 ? 0 : N - 1)>&& from,T&& add) {
-    std::size_t idx {0};
-    std::array<T,N> temp;
-    for (auto& F : from) {
-        *(temp.data() + idx) = std::move(F); ++idx;
-    }
-    temp[idx] = std::move(add);
-    return temp;
-}
-
-template<std::size_t N = 0>
-struct Options{
+template <std::size_t N = 0>
+struct Options {
     std::array<std::vector<std::string_view>, N> options;
-    Options() requires (N == 0) {}
-    Options(Options&& other) requires (N > 0) : options(other.options) {}
-    Options(Options<N < 1 ? 0 : N - 1>&& other,std::vector<std::string_view>&& value) : options(appendArray<std::vector<std::string_view>,N>(std::move(other.options), std::forward<std::vector<std::string_view>>(value))) {
-    }
-    constexpr Options<N + 1> addOptions(std::vector<std::string_view>&& opt) && {
-        return Options<N + 1>(std::move(*this),std::forward<std::vector<std::string_view>>(opt));
-    }
-    constexpr bool operator ==(std::string_view other) {
-        return [&,this]{ 
-            for (const auto& O : options) { for(const auto& SV : O) if (SV == other) {return true;}}
-            return false;
-        }();
+
+    Options() = default;
+    explicit Options(std::array<std::vector<std::string_view>, N> opts) 
+        : options(std::move(opts)) {}
+
+    template <std::size_t... Is>
+    auto append_impl(std::vector<std::string_view>&& new_opt, std::index_sequence<Is...>) {
+        return Options<N + 1>{
+            std::array<std::vector<std::string_view>, N + 1>{
+                std::move(options[Is])..., 
+                std::move(new_opt)
+            }
+        };
     }
 
-    auto* begin() {return options.begin();}
-    auto* end() {return options.end();}
+    [[nodiscard]] Options<N + 1> addOptions(std::vector<std::string_view> opt) && {
+        return append_impl(std::move(opt), std::make_index_sequence<N>{});
+    }
+
+    bool operator==(std::string_view target) const {
+        for (const auto& group : options) {
+            for (const auto& sv : group) {
+                if (sv == target) return true;
+            }
+        }
+        return false;
+    }
+
+    auto begin() { return options.begin(); }
+    auto end() { return options.end(); }
 };
 
 struct ParsedArgs {
@@ -366,7 +368,7 @@ template<std::size_t N = 0>
 struct argsParse {
     std::vector<std::string_view> args;
     Options<N> options;
-    argsParse(std::size_t argc, const char* argv[],Options<N>&& other) : options(std::forward<Options<N>>(other)) 
+    argsParse(std::size_t argc, const char* argv[],Options<N>&& other) : options(std::move(other)) 
     {
         args.reserve(argc);
         for(auto sv : std::span<const char*>{argv + 1,argc - 1}) args.push_back(std::string_view{sv});
