@@ -1,62 +1,70 @@
-#include <cstddef>
+
 #include <type_traits>
 #include <string_view>
 #include <string>
 #include <charconv>
 #include <iostream>
 
+using size_t = decltype(sizeof(0));
+using ptrdiff_t = decltype((char*)(nullptr) - (char*)(nullptr));
+
 template<size_t N>
 struct formatString {
-    static constexpr size_t NPlaceholder {N * 2};
-    std::string_view sv;
-    size_t posArray[NPlaceholder];
-    template<size_t I>
-    consteval formatString(const char (&str)[I]) noexcept
-        : sv{str,I - 1} {getPosSize(sv);}
-    constexpr formatString(const char* inSv) noexcept
-        : sv{inSv} { getPosSize(sv); }
-    constexpr formatString(std::string_view inSv) noexcept
-        : sv{inSv} { getPosSize(sv); }
-    constexpr formatString(const std::string& inSv) noexcept
-        : sv{inSv} { getPosSize(sv); }
+    using size_type = size_t;
+    static constexpr size_type NPlaceholder {N * 2};
+    using char_array_type = const char*;
+    using PosArray_type = size_type[NPlaceholder];
 
-    constexpr formatString(formatString&& str) noexcept
-        : sv{str.sv}
-    {
-        size_t idx {0}; 
-        for (size_t s : str.posArray) posArray[idx++] = s; 
-    }
-    constexpr formatString(const formatString& str) noexcept
-        : sv{str.sv}
-    {
-        size_t idx {0}; 
-        for (size_t s : str.posArray) posArray[idx++] = s; 
-    }
+    struct posArray {
+        PosArray_type data;
+    };
+    const std::string_view sv;
+    // const posArray Array;
+    posArray Array;
+    constexpr formatString(char_array_type str) noexcept
+        : sv{str,strlen(str)} , Array(getPosSize(sv)) {}
+    constexpr formatString(std::string_view inSv) noexcept : 
+    sv{inSv}, Array(getPosSize(sv)) {}
+    constexpr formatString(const std::string& inSv) noexcept: 
+    sv{inSv} , Array(getPosSize(sv)) {}
 
-
-    constexpr size_t getPosSize(std::string_view str) noexcept {
+    constexpr formatString(formatString&& str) noexcept : 
+    sv{str.sv} , Array(str.Array) {}
+    constexpr formatString(const formatString& str) noexcept : 
+    sv{str.sv}, Array(str.Array) {}
+    
+    constexpr auto getArray() noexcept -> PosArray_type& { return Array.data;}
+    constexpr auto begin() noexcept -> size_type* { return Array.data;}
+    constexpr auto end() noexcept -> size_type* { return Array.data + NPlaceholder;}
+    constexpr auto getPosSize(std::string_view str) noexcept -> posArray {
+        posArray temp;
+        const char* data = str.data();
+        const size_type strlen = str.size();
         bool open = false;
-        size_t slot = 0,idx = 0, openidx = 0;
-        for (char c : str) {
-            if (slot > NPlaceholder) break;
-            if (c == '{') {
+        size_type slot = 0,idx = 0, openidx = 0;
+        for (;(idx < strlen) && (slot < NPlaceholder);++idx) {
+            if (*(data + idx) == '{') {
                 openidx = idx;
                 open = true;
-            } else if (c == '}' && open) {
-                posArray[slot] = openidx;
-                posArray[slot + 1] = (idx + 1) - openidx;
+            } else if (*(data + idx) == '}' && open) {
+                temp.data[slot] = openidx;
+                temp.data[slot + 1] = (idx + 1) - openidx;
                 slot += 2;
                 open = false;
             }
-            ++idx;
         }
-        return str.size();
+        return temp;
+    }
+    consteval auto strlen(char_array_type str) noexcept -> size_type {
+        size_type temp{};
+        for(;*str++ != '\0';temp++);
+        return temp;
     }
 };
 
-
-
 struct strColors {
+    using view_type = std::string_view;
+    using size_type = size_t;
     enum colors {
         Not_color = 0,
         Black     = 1,     Bold_Black = 9,      High_Black = 17,
@@ -68,7 +76,13 @@ struct strColors {
         Cyan      = 7,      Bold_Cyan = 15,      High_Cyan = 23,
         White     = 8,     Bold_White = 16,     High_White = 24,
     };
-    static constexpr std::string_view colorTable[] {
+    const view_type current[3];
+    const size_type len;
+    constexpr strColors(const view_type str,colors c) : 
+    current(colorTable[static_cast<size_type>(c)],str,colorTable[0]),
+    len(getLen()) {}
+
+    static constexpr view_type colorTable[26] {
         "\033[0m",    //Not_color 
         "\033[0;30m", //Black
         "\033[0;31m", //Red
@@ -99,67 +113,93 @@ struct strColors {
     static constexpr auto getColor(colors color) noexcept -> std::string_view {
         return colorTable[static_cast<std::size_t>(color)];
     }
+    constexpr auto getLen() noexcept -> size_type {
+        return size_type{current[0].size() + current[1].size() + current[2].size()};
+    }
 };
 
 
 struct addColors {
-    static constexpr std::string_view notcolor = strColors::getColor(strColors::Not_color);
-    std::string_view str[3];
-    constexpr addColors(std::string_view str,const strColors::colors c) noexcept
-    :str{strColors::getColor(c),str,notcolor} {}
-    std::string_view* begin() noexcept {return str;}
-    std::string_view* end()   noexcept {return str + 3;}
+    using string_type = std::string;
+    using view_type = std::string_view;
+    using size_type = size_t;
+    strColors coloredstr;
+    
+    template<size_type N>
+    consteval addColors(const char (&in)[N],const strColors::colors c) noexcept
+    :coloredstr{{in,N - 1},c} {}
+    constexpr addColors(const view_type in,const strColors::colors c) noexcept
+    :coloredstr{in,c} {}
+    constexpr operator string_type() const noexcept {
+        return string();
+    }
+    constexpr auto string() const noexcept -> string_type {
+        auto& [sv,len] = coloredstr;
+        std::string temp(len,'\0');
+        const std::string_view* idx = sv;
+        char* data = temp.data();
+        char* dend = temp.data() + len;
+        const char* start = idx->begin();
+        const char* end = idx->end();
+        for (;data < dend;) {
+            if(start == end) {idx++;start = idx->begin();end = idx->end();}
+            *data++ = *start++;
+        }
+        return temp;
+    }
+}; 
+
+template<typename T>
+struct formatter {
+    // Custom types specialize this struct and implement format(val, ctx)
+    static_assert(!sizeof(T*), "Type does not have a custom_formatter specialization!");
 };
 
-// template<typename T> 
-// struct converter {
-//     converter(T&&) {}
+// Specialization: String Views / C-Strings
+template<>
+struct formatter<std::string_view> {
+    static constexpr auto format(std::string_view val) -> std::string {
+        return std::string{val};
+    }
+};
 
-// };
-// template<> 
-// struct converter<const char*> {
-//     std::string_view sv;
-//     converter(const char* str) : sv(str) {}
-//     converter(const char* str,size_t count) : sv(str,count) {}
-//     template<size_t N>
-//     converter(const char (&str)[N]) : sv(str,N) {}
-//     constexpr auto appendArg(std::string& str,std::size_t offset,const std::size_t& Pos) -> std::size_t {
-//         const size_t start = Pos;
-//         const size_t len = *(&Pos + 1);
-//         const size_t actualStart = static_cast<size_t>(static_cast<std::ptrdiff_t>(start) + offset);
-//         str.replace(actualStart, len, sv);
-//         return static_cast<std::ptrdiff_t>(sv.size()) - static_cast<std::ptrdiff_t>(len);
-//     } 
-// };
-// template<> 
-// struct converter<std::size_t> {
-//     char digit[64];
-//     size_t len;
-//     converter(std::size_t arg) : len(std::to_chars(digit, digit + sizeof(digit), arg).ptr - digit) {}
-//     constexpr auto appendArg(std::string& str,std::size_t offset,const std::size_t& Pos) -> std::size_t {
-//         const size_t start = Pos;
-//         const size_t len = *(&Pos + 1);
-//         const size_t actualStart = static_cast<size_t>(static_cast<std::ptrdiff_t>(start) + offset);
-//         std::string_view sv {digit, len};
-//         str.replace(actualStart, len, sv);
-//         return static_cast<std::ptrdiff_t>(sv.size()) - static_cast<std::ptrdiff_t>(len);
-//     } 
-// };
+template<size_t N>
+struct formatter<char[N]> {
+    static constexpr auto format(const char* val) -> std::string {
+        return std::string{val,N - 1};
+    }
+};
+
+template<>
+struct formatter<const char*> {
+    static constexpr auto format(const char* val) -> std::string {
+        return std::string{val};
+    }
+};
+
+// Specialization: Integral Types
+template<typename T> requires (std::is_integral_v<T> || std::is_floating_point_v<T>)
+struct formatter<T> {
+    static constexpr auto format(T val) -> std::string {
+        char buffer[64];
+        auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), val);
+        return std::string{buffer, static_cast<size_t>(ptr - buffer)};
+    }
+};
+
 template <typename T>
-constexpr auto appendArg(T&& arg,std::string& str, std::ptrdiff_t& offset, const size_t& pos) noexcept -> void {
+constexpr auto appendArg(T&& arg,std::string& str, std::size_t* offset, const size_t* pos) noexcept -> void {
     using Raw = std::remove_cvref_t<T>;
-    const size_t start = pos;
-    const size_t len = (&pos)[1];
+    const size_t start = *pos;
+    const size_t len = *(pos + 1);
     // 1. Calculate shifted start position
-    const size_t actualStart = static_cast<size_t>(static_cast<std::ptrdiff_t>(start) + offset);
+    const size_t actualStart = start + *offset;
 
     if constexpr (std::is_same_v<Raw, addColors>) {
-        std::string temp;
-        for (std::string_view sv : arg) {
-            temp += sv;
-        }
-        str.replace(actualStart, len, temp);
-        offset += static_cast<std::ptrdiff_t>(temp.size()) - static_cast<std::ptrdiff_t>(len);
+        const size_t current = str.size() - 2;
+        str.replace(actualStart, len, arg);
+        const size_t diff = str.size() - current;
+        *offset += diff - len;
     } else {
         std::string_view argStr;
         if constexpr (std::is_convertible_v<Raw, std::string_view>) {
@@ -168,12 +208,23 @@ constexpr auto appendArg(T&& arg,std::string& str, std::ptrdiff_t& offset, const
             str.replace(actualStart, len, argStr);
         } else if constexpr (std::integral<Raw> || std::floating_point<Raw>) {
             char digit[64];
-            auto [ptr, ec] = std::to_chars(digit, digit + sizeof(digit), arg);
+            auto [ptr, ec] = std::to_chars(digit, digit + sizeof(digit),arg);
             argStr = std::string_view(digit, static_cast<size_t>(ptr - digit));
             str.replace(actualStart, len, argStr);
+        } else if constexpr (std::is_pointer_v<Raw>) {
+            // Option 1: Formatting the pointee value (dereferencing)
+            using Pointee = std::remove_pointer_t<Raw>;
+            if constexpr (std::integral<Pointee> || std::floating_point<Pointee>) {
+                char digit[64];
+                auto [ptr, ec] = std::to_chars(digit, digit + sizeof(digit), *arg);
+                if (ec == std::errc{}) {
+                    argStr = std::string_view(digit, static_cast<size_t>(ptr - digit));
+                    str.replace(actualStart, len, argStr);
+                }
+            }
         }
         // 3. Accumulate delta into offset for the next replacement
-        offset += static_cast<std::ptrdiff_t>(argStr.size()) - static_cast<std::ptrdiff_t>(len);
+        *offset += argStr.size() - len;
 
     }
 
@@ -183,10 +234,34 @@ template<typename... Args>
 constexpr auto sformat(formatString<sizeof...(Args)> fmtStr,Args&&... args) noexcept -> std::string {
     std::string str {fmtStr.sv};
     if constexpr (sizeof...(Args) > 0) {
-        size_t* posArray = fmtStr.posArray;
-        size_t lastPos = 0;
-        std::ptrdiff_t offset = 0;
-        ((appendArg(std::forward<Args>(args),str,offset,posArray[lastPos]),lastPos += 2), ...);
+        auto posArray = fmtStr.begin();
+        size_t offset = 0;
+        ((appendArg(std::forward<Args>(args),str,&offset,(posArray)),(posArray) += 2), ...);
+    }
+    return str;
+}
+template<typename... Args>
+constexpr auto snformat(formatString<sizeof...(Args)> fmtStr,Args&&... args) noexcept -> std::string {
+    std::string str {};
+    if constexpr (sizeof...(Args) > 0) {
+        auto data = fmtStr.sv.data();
+        auto posArray = fmtStr.begin();
+        auto format_arg = [&]<typename T>(const T& arg) {
+            using Decayed = std::decay_t<T>;
+            if constexpr (std::is_convertible_v<Decayed, std::string_view>) {
+                return formatter<std::string_view>::format(std::string_view(arg));
+            } else {
+                return formatter<Decayed>::format(arg);
+            }
+        };
+        std::string fargs[sizeof...(Args)] {(format_arg(args),...)};
+        size_t begin = 0;
+        for(size_t idx{0};idx < sizeof...(Args);++idx) {
+            str += std::string_view(data + begin,*posArray);
+            str += fargs[idx];
+            begin = *(posArray + 1);
+            posArray += 2;
+        };
     }
     return str;
 }
@@ -216,6 +291,7 @@ int main()
     const std::string makeOptions6 = sformat(makeOptions5,1,2,3);
     const std::string makeOptions7 = sformat(fstr,1,2);
     const std::string makeOptions8 = sformat(fstr,1.213,435.f);
+    const std::string makeOptions10 = snformat("using snformat {} {}",1.213,435.f);
 
     std::cout << makeOptions;
     std::cout << makeOptions2;
@@ -226,6 +302,7 @@ int main()
     std::cout << makeOptions7;
     std::cout << makeOptions8;
     std::cout << makeOptions9;
+    std::cout << makeOptions10;
     
     return 0; 
 }

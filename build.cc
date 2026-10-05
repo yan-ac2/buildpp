@@ -60,14 +60,11 @@ int selfCompile(bool recompile)
 {
     std::cout << sformat("{}\n",addColors("compile self",strColors::Bold_Green));
     const fs::path rootPath = fs::current_path();
-    const fs::path exePath = rootPath / "bin";
-    const fs::path outBuildPath = rootPath / ".build";
-    const fs::path outProjectPath = rootPath / ".build" / "self";
     outputPath outPath;
     outPath.setRootPath(rootPath)
-    .setExePath(rootPath)
-    .setBuildfolder(outBuildPath)
-    .setOutpath(outProjectPath);
+    .setExePath("")
+    .setBuildfolder(".build")
+    .setOutpath("self");
     
     Project rebuild("build",outPath,Project::exe,recompile);
     current = &rebuild;
@@ -84,19 +81,17 @@ int selfCompile(bool recompile)
     rebuild.link(rebuild.ProjectFile.getMain());
     return 0;
 }
+
 int CompileFile(const std::string_view Name,const std::string_view From,const std::string_view oPath,Project::projectType type,std::span<const std::string_view> options,std::span<const std::string_view> ldoptions,
     std::span<const std::string_view> IncludePath,std::span<const std::string_view> src,const std::span<const std::string_view> libraryList,bool recompile)
 {
     std::cout << sformat("Compiling {}\nFrom: {}\n" ,Name,From);
     const fs::path rootPath = fs::current_path();
-    const fs::path exePath = rootPath / (oPath.empty() ? "" : oPath);
-    const fs::path outBuildPath = rootPath / ".build";
-    const fs::path outProjectPath = rootPath / ".build" / Name;
     outputPath outPath;
     outPath.setRootPath(rootPath)
-    .setExePath(exePath)
-    .setBuildfolder(outBuildPath)
-    .setOutpath(outProjectPath);
+    .setExePath(oPath)
+    .setBuildfolder(".build")
+    .setOutpath(Name);
     
     Project compile("build",outPath,type,recompile);
     current = &compile;
@@ -149,12 +144,9 @@ int CompileFile(const std::string_view Name,const std::string_view From,const st
 int compileProject(bool recompile)
 {
     const fs::path rootPath = fs::current_path();
-    const fs::path exePath = rootPath / "bin";
-    const fs::path outBuildPath = rootPath / ".build";
-    const fs::path outProjectPath = rootPath / ".build" / "Project";
     compileCommand cmdJson;
     outputPath outPath;
-    outPath.setRootPath(rootPath).setExePath(exePath).setBuildfolder(outBuildPath).setOutpath(outProjectPath);
+    outPath.setRootPath(rootPath).setExePath("bin").setBuildfolder(".build").setOutpath("Project");
     Project compile("Main",outPath,Project::exe,recompile);
     current = &compile;
     compile.setCompiler("clang++")
