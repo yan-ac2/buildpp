@@ -56,38 +56,6 @@
 //     bool stop_ = false;
 // };
 
-
-int test()
-{ 
-    std::cout << sformat("{}\n",addColors("compile test",strColors::Bold_Green));
-    const fs::path rootPath = fs::current_path();
-    const fs::path exePath = rootPath / "bin";
-    const fs::path outBuildPath = rootPath / ".build";
-    const fs::path outProjectPath = rootPath / ".build" / "test";
-
-    outputPath outPath;
-    outPath.setRootPath(rootPath)
-    .setExePath(exePath)
-    .setBuildfolder(outBuildPath)
-    .setOutpath(outProjectPath);
-
-    Project test("test",outPath,Project::exe,true);
-    current = &test;
-    test.setCompiler("clang++")
-    .addOptions("-O2 -Wall -Wextra -Wpedantic -Werror -std=c++20 -fno-rtti")
-    .addLdOptions("-s ")
-    .setProjectPath(rootPath.string())
-    .addSourcePath("testlib")
-    .addSource("testlib","match_test.cc")
-    .setMain("match_test.cc");
-    test.compileCpp(test.ProjectFile.getMain());
-
-    test.link(test.ProjectFile.getMain());
-    return 0;
-    
-}
-
-
 int selfCompile(bool recompile)
 {
     std::cout << sformat("{}\n",addColors("compile self",strColors::Bold_Green));
@@ -384,8 +352,8 @@ auto main(int argc, const char* argv[]) -> int
     std::cout << sformat("{}\n",addColors("CPP BUILD",strColors::Bold_Purple));
     std::atexit(exitImpl);
     auto makeOptions = Options()
-    .addOptions({{"-C","-compile"}})
-    .addOptions({{"-S"}});
+    .addOptions({"-C","-compile"})
+    .addOptions({"-S"});
     auto cmd = argsParse(argc,argv,std::move(makeOptions));
     for(const auto& c : cmd.options) {
         for(const auto& cc : c) {
@@ -412,10 +380,6 @@ auto main(int argc, const char* argv[]) -> int
         }
         if (inputLine == "-self") {
             selfCompile(true); 
-            return 0;
-        }
-        if (inputLine == "-test") {
-            test(); 
             return 0;
         }
         if (inputLine == "-P") {
