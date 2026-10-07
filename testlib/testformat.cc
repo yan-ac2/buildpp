@@ -158,85 +158,120 @@ struct formatter {
 // Specialization: String Views / C-Strings
 template<>
 struct formatter<std::string_view> {
-    static constexpr auto format(std::string_view val) -> std::string {
-        return std::string{val};
+    static constexpr auto format(std::string_view val) -> std::string_view {
+        return std::string_view{val};
     }
 };
 
 template<size_t N>
 struct formatter<char[N]> {
-    static constexpr auto format(const char* val) -> std::string {
-        return std::string{val,N - 1};
+    static constexpr auto format(const char* val) -> std::string_view {
+        return std::string_view(val,N - 1);
     }
 };
 
 template<>
 struct formatter<const char*> {
-    static constexpr auto format(const char* val) -> std::string {
-        return std::string{val};
+    static constexpr auto format(const char* val) -> std::string_view {
+        return std::string_view{val};
     }
 };
 
 // Specialization: Integral Types
 template<typename T> requires (std::is_integral_v<T> || std::is_floating_point_v<T>)
 struct formatter<T> {
-    static constexpr auto format(T val) -> std::string {
+    static constexpr auto format(T val) -> std::string_view {
         char buffer[64];
         auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), val);
-        return std::string{buffer, static_cast<size_t>(ptr - buffer)};
+        return std::string_view{buffer, static_cast<size_t>(ptr - buffer)};
     }
 };
 
 template <typename T>
-constexpr auto appendArg(T&& arg,std::string& str, std::size_t* offset, const size_t* pos) noexcept -> void {
+constexpr auto appendArg(T&& arg) noexcept -> std::string {
     using Raw = std::remove_cvref_t<T>;
-    const size_t start = *pos;
-    const size_t len = *(pos + 1);
-    // 1. Calculate shifted start position
-    const size_t actualStart = start + *offset;
+    // const size_t start = *pos;
+    // const size_t len = *(pos + 1);
+    // // 1. Calculate shifted start position
+    // const size_t actualStart = start + *offset;
 
     if constexpr (std::is_same_v<Raw, addColors>) {
-        const size_t current = str.size() - 2;
-        str.replace(actualStart, len, arg);
-        const size_t diff = str.size() - current;
-        *offset += diff - len;
+        // const size_t current = str.size() - 2;
+        // str.replace(actualStart, len, arg);
+        // const size_t diff = str.size() - current;
+        // *offset += diff - len;
+        return std::string(arg);
     } else {
-        std::string_view argStr;
+        // std::string_view argStr;
         if constexpr (std::is_convertible_v<Raw, std::string_view>) {
-            argStr = std::string_view(arg);
-            // 2. Replace only the placeholder length (Pos.len)
-            str.replace(actualStart, len, argStr);
+            return std::string(arg);
+            // argStr = std::string_view(arg);
+            // // 2. Replace only the placeholder length (Pos.len)
+            // str.replace(actualStart, len, argStr);
         } else if constexpr (std::integral<Raw> || std::floating_point<Raw>) {
             char digit[64];
             auto [ptr, ec] = std::to_chars(digit, digit + sizeof(digit),arg);
-            argStr = std::string_view(digit, static_cast<size_t>(ptr - digit));
-            str.replace(actualStart, len, argStr);
+            // argStr = std::string_view(digit, static_cast<size_t>(ptr - digit));
+            // str.replace(actualStart, len, argStr);
+            return std::string(digit, static_cast<size_t>(ptr - digit));
         } else if constexpr (std::is_pointer_v<Raw>) {
             // Option 1: Formatting the pointee value (dereferencing)
             using Pointee = std::remove_pointer_t<Raw>;
             if constexpr (std::integral<Pointee> || std::floating_point<Pointee>) {
                 char digit[64];
                 auto [ptr, ec] = std::to_chars(digit, digit + sizeof(digit), *arg);
-                if (ec == std::errc{}) {
-                    argStr = std::string_view(digit, static_cast<size_t>(ptr - digit));
-                    str.replace(actualStart, len, argStr);
-                }
+                // if (ec == std::errc{}) {
+                //     argStr = std::string_view(digit, static_cast<size_t>(ptr - digit));
+                //     str.replace(actualStart, len, argStr);
+                // }
+                return std::string(digit, static_cast<size_t>(ptr - digit));
             }
         }
         // 3. Accumulate delta into offset for the next replacement
-        *offset += argStr.size() - len;
+        // *offset += argStr.size() - len;
 
     }
 
 };
 
+
 template<typename... Args>
 constexpr auto sformat(formatString<sizeof...(Args)> fmtStr,Args&&... args) noexcept -> std::string {
-    std::string str {fmtStr.sv};
-    if constexpr (sizeof...(Args) > 0) {
+    constexpr size_t argsSize = sizeof...(Args);
+    std::string str;
+    if constexpr (argsSize > 0) {
+        auto& data = fmtStr.sv;
         auto posArray = fmtStr.begin();
-        size_t offset = 0;
-        ((appendArg(std::forward<Args>(args),str,&offset,(posArray)),(posArray) += 2), ...);
+        auto format_arg = [&]<typename T>(T& arg) {
+            using Decayed = std::decay_t<T>;
+            if constexpr (std::is_convertible_v<Decayed, std::string_view>) {
+                return formatter<std::string_view>::format(std::string_view(arg));
+            } else {
+                return formatter<Decayed>::format(arg);
+            }
+        };
+        std::string_view fargs[argsSize] {format_arg(args)...};
+        // std::cout << "\n";
+        // for (size_t idx{0};idx < argsSize;++idx) std::cout << fargs[idx] << " ";
+        // std::cout << "\n";
+        size_t begin = 0;
+        size_t argsidx = 0;
+        for (size_t idx{0};idx < data.size();++idx) {
+            const size_t start = *posArray;
+            const size_t len   = start + *(posArray + 1);
+            if (idx == start) {
+                std::string_view& strref = *(fargs + argsidx);
+                std::string_view temp (data.data() + begin, idx - begin);
+                str += temp;
+                str += strref;
+            }
+            if(idx == len) {
+                begin = len;
+                ++argsidx; 
+                posArray += 2;
+
+            }
+        }
     }
     return str;
 }
@@ -244,9 +279,9 @@ template<typename... Args>
 constexpr auto snformat(formatString<sizeof...(Args)> fmtStr,Args&&... args) noexcept -> std::string {
     std::string str {};
     if constexpr (sizeof...(Args) > 0) {
-        auto data = fmtStr.sv.data();
-        auto posArray = fmtStr.begin();
-        auto format_arg = [&]<typename T>(const T& arg) {
+        auto* data = fmtStr.sv.data();
+        auto* posArray = fmtStr.begin();
+        auto format_arg = [&]<typename T>(T& arg) {
             using Decayed = std::decay_t<T>;
             if constexpr (std::is_convertible_v<Decayed, std::string_view>) {
                 return formatter<std::string_view>::format(std::string_view(arg));
@@ -255,11 +290,15 @@ constexpr auto snformat(formatString<sizeof...(Args)> fmtStr,Args&&... args) noe
             }
         };
         std::string fargs[sizeof...(Args)] {(format_arg(args),...)};
+        // size_t offset = 0;
         size_t begin = 0;
+        std::cout << "\n";
+        for (size_t idx{0};idx < sizeof...(Args) * 2;++idx) std::cout << posArray[idx] << " ";
+        std::cout << "\n";
         for(size_t idx{0};idx < sizeof...(Args);++idx) {
-            str += std::string_view(data + begin,*posArray);
-            str += fargs[idx];
-            begin = *(posArray + 1);
+            str += std::string_view(data + begin,*posArray - begin);
+            str += *(fargs + idx);
+            begin = *(posArray) + *(posArray + 1);
             posArray += 2;
         };
     }
@@ -268,41 +307,40 @@ constexpr auto snformat(formatString<sizeof...(Args)> fmtStr,Args&&... args) noe
 
 int main()
 {
-    struct test {
-        const char* str;
-        size_t num;
-    };
-    constexpr size_t num1 {1};
+    // struct test {
+    //     const char* str;
+    //     size_t num;
+    // };
+    // constexpr size_t num1 {1};
     constexpr size_t num2 {10};
     constexpr size_t num3 {11};
-    const std::string makeOptions {sformat("{{{}}} {} {}\n", num1,num2,num3)};
-    const std::string makeOptions9 {sformat("{{{}}} {} {}\n", num1,num2,num3)};
-    const std::string makeOptions2 = sformat("{} {}\n",addColors("hello world",strColors::Red),12);
-    const std::string makeOptions3 = sformat("hello {}\n",2);
-    std::string makeOptions4;
-    for (auto s : {test{"hello",5},test{"world",15},test{"num",65}}) {
-        makeOptions4 += sformat("{} {} ",s.str,s.num);
-    }
-    std::string makeOptions5;
-    for (auto s : {"{}","{}","{}","\n"}) {
-        makeOptions5 += s;
-    }
-    constexpr formatString<2> fstr {"{} {}\n"};
-    const std::string makeOptions6 = sformat(makeOptions5,1,2,3);
-    const std::string makeOptions7 = sformat(fstr,1,2);
-    const std::string makeOptions8 = sformat(fstr,1.213,435.f);
-    const std::string makeOptions10 = snformat("using snformat {} {}",1.213,435.f);
-
+    const std::string makeOptions {sformat("{{{}}} {} {} {}\n", 123,"hello",num3,num2)};
+    // const std::string makeOptions9 {sformat("{{{}}} {} {}\n", num1,num2,num3)};
+    // const std::string makeOptions2 = sformat("{} {}\n",addColors("hello world",strColors::Red),12);
+    // const std::string makeOptions3 = sformat("hello {}\n",2);
+    // std::string makeOptions4;
+    // for (auto s : {test{"hello",5},test{"world",15},test{"num",65}}) {
+    //     makeOptions4 += sformat("{} {} ",s.str,s.num);
+    // }
+    // std::string makeOptions5;
+    // for (auto s : {"{}","{}","{}","\n"}) {
+    //     makeOptions5 += s;
+    // }
+    // constexpr formatString<2> fstr {"{} {}\n"};
+    // const std::string makeOptions6 = sformat(makeOptions5,1,2,3);
+    // const std::string makeOptions7 = sformat(fstr,1,2);
+    // const std::string makeOptions8 = sformat(fstr,1.213,435.f);
+    // const std::string makeOptions10 = snformat("using snformat 2 {} {} {}","hello",2.23f,3);
     std::cout << makeOptions;
-    std::cout << makeOptions2;
-    std::cout << makeOptions3;
-    std::cout << makeOptions4 << "\n";
-    std::cout << makeOptions5;
-    std::cout << makeOptions6;
-    std::cout << makeOptions7;
-    std::cout << makeOptions8;
-    std::cout << makeOptions9;
-    std::cout << makeOptions10;
+    // std::cout << makeOptions2;
+    // std::cout << makeOptions3;
+    // std::cout << makeOptions4 << "\n";
+    // std::cout << makeOptions5;
+    // std::cout << makeOptions6;
+    // std::cout << makeOptions7;
+    // std::cout << makeOptions8;
+    // std::cout << makeOptions9;
+    // std::cout << makeOptions10;
     
     return 0; 
 }

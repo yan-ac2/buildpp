@@ -319,53 +319,53 @@ class string {
     size_t len;
 };
 
-class strView{
-    const char* _str;
-    size_t _len;
-    public:
-    constexpr strView(const char* str,size_t size) : _str(str), _len(size) {}
-    constexpr strView(const char* str) : _str(str),_len(0){ for (;str[_len] != '\n';_len++); }
-    constexpr strView(string sstr) : _str(sstr.data()), _len(sstr.size()) {}
+// class strView{
+//     const char* _str;
+//     size_t _len;
+//     public:
+//     constexpr strView(const char* str,size_t size) : _str(str), _len(size) {}
+//     constexpr strView(const char* str) : _str(str),_len(0){ for (;str[_len] != '\n';_len++); }
+//     constexpr strView(string sstr) : _str(sstr.data()), _len(sstr.size()) {}
 
-    constexpr operator const char*() const { return _str;}
-    constexpr operator string() const { return {_str,_len};};
-    constexpr size_t size() const { return _len;}
-    constexpr const char* data() const { return _str;}
-    constexpr bool empty()const {return _len == 0;}
-};
+//     constexpr operator const char*() const { return _str;}
+//     constexpr operator string() const { return {_str,_len};};
+//     constexpr size_t size() const { return _len;}
+//     constexpr const char* data() const { return _str;}
+//     constexpr bool empty()const {return _len == 0;}
+// };
 
-inline struct implPrint
-{
-    constexpr implPrint& operator <<(const char* in) {
-        std::printf("%s",in);
-        return *this;
-    }
-    constexpr implPrint& operator <<(strView in) {
-        std::printf("%s",in.data());
-        return *this;
-    }
-    constexpr implPrint& operator <<(string in) {
-        std::printf("%s",in.data());
-        return *this;
-    }
-    constexpr implPrint& operator ,(const char* in) {
-        std::printf("%s",in);
-        return *this;
-    }
-    constexpr implPrint& operator ,(string in) {
-        std::printf("%s",in.data());
-        return *this;
-    }
-    constexpr implPrint& operator ,(std::string in) {
-        std::printf("%s",in.c_str());
-        return *this;
-    }
-    constexpr implPrint& operator ,(double in) {
-        std::printf("%f",in);
-        return *this;
-    }
-    constexpr void operator <<(implPrint& f) {f = *this;}
-}print;
+// inline struct implPrint
+// {
+//     constexpr implPrint& operator <<(const char* in) {
+//         std::printf("%s",in);
+//         return *this;
+//     }
+//     constexpr implPrint& operator <<(strView in) {
+//         std::printf("%s",in.data());
+//         return *this;
+//     }
+//     constexpr implPrint& operator <<(string in) {
+//         std::printf("%s",in.data());
+//         return *this;
+//     }
+//     constexpr implPrint& operator ,(const char* in) {
+//         std::printf("%s",in);
+//         return *this;
+//     }
+//     constexpr implPrint& operator ,(string in) {
+//         std::printf("%s",in.data());
+//         return *this;
+//     }
+//     constexpr implPrint& operator ,(std::string in) {
+//         std::printf("%s",in.c_str());
+//         return *this;
+//     }
+//     constexpr implPrint& operator ,(double in) {
+//         std::printf("%f",in);
+//         return *this;
+//     }
+//     constexpr void operator <<(implPrint& f) {f = *this;}
+// }print;
 
 void Ftoa(double value, char* buf, int precision) {
     char temp[16];
@@ -573,7 +573,7 @@ struct strColors {
 };
 
 constexpr auto addColors(std::string_view str,strColors::colors c) noexcept -> std::string {
-    static constexpr std::string_view notcolor = strColors::getColor(strColors::Not_color);
+    constexpr std::string_view notcolor = strColors::getColor(strColors::Not_color);
     const std::string_view color = strColors::getColor(c);
     const std::size_t len = str.size() + notcolor.size() + color.size();
     std::string temp;
@@ -598,36 +598,95 @@ void intconv(size_t i,char* buff) {
 };
 
 
-constexpr std::string fm {fmt("Hello {}",2)};
+// constexpr std::string fm {fmt("Hello {}",2)};
+struct taggedPointer {
+    size_t active{0};
 
-int main ()
-{
-    std::cout << fm;
-    sPtr<int> sptr(new int(5));
-    const char* test1 = "53412.23123";
-    const char* test2 = test1;
-    float test = 53412.23123;
-    for (int i = 0; i < 10; i++) {
-        printf("printf %f %llu \n",test, char_trait::len(test2));
-        std::cout << addColors( "convert ",strColors::Red) << test << "\n";
-        test *= 2.0f;
+    constexpr operator size_t() const {
+        return active;
     }
-    // int te = 0x0003E174;
-    // print << "convert ", te,"\n";
-    // fn f(&test);
-    print << *sptr," sizeof ptr ", sizeof(sptr), "\n";
-    print << "use count ", sptr.use_count(),"\n";
-    int i = *sptr;
-    string test3;
-    test3 = "use count 2 asdasdasdasdasdasdasd "; 
-    print << test3 , sptr.use_count(),"\n";
-    print << i,"\n";
-    *sptr = 10; 
-    sPtr<int> sptr2 = sptr;
-    print <<"use count 3 ", sptr.use_count(),"\n";
-    print << *sptr2," ",sptr2.use_count(),"\n";
-    int s = *sptr;
-    print <<"use count 4 ", sptr.use_count(),"\n";
-    print << s,"\n";
-    return 0;
+};
+
+template <int N,typename T>
+struct taggedStorage {
+    size_t active{0}; // Set active to true when initialized/used
+    T stored{};
+
+    // Custom copy/move assignment operators preserve standard-layout 
+    // as long as they don't break standard layout constraints.
+    taggedStorage& operator=(const T& rhs) {
+        stored = rhs;
+        active = N;
+        return *this;
+    }
+
+    constexpr operator T() const {
+        return stored;
+    }
+};
+
+int main() {
+    // Explicit initialization solves the non-trivial union default constructor error
+    union TaggedUnion {
+        
+        size_t active{0};
+        taggedStorage<0,int> storage1;
+        taggedStorage<1,float> storage2;
+        taggedStorage<2,std::string> storage3;
+
+        TaggedUnion() {}
+        ~TaggedUnion() {}
+    } u;
+
+    // Activate and write to storage1
+    u.storage2 = 42.f;
+
+    // Standard-layout types sharing a common initial sequence allow reading 'active'
+    auto is_active = u.active; 
+    std::cout << "Active: " << is_active << "\n"; // Output: true
+    std::cout << "Value: " << u.storage2 << "\n";  // Output: 42
+    u.storage1 = 10;
+    is_active = u.active; 
+    std::cout << "Active: " << is_active << "\n"; // Output: true
+    std::cout << "Value: " << u.storage1 << "\n";  // Output: 42
 }
+
+// int main ()
+// {
+//     union {
+//         taggedPointer ptr;
+//         taggedStorage<int> storage1;
+//         taggedStorage<float> storage2;
+//     };
+
+//     storage1 = 1;
+//     unsigned int ssw = ptr;
+//     std::cout << ssw;
+//     // sPtr<int> sptr(new int(5));
+//     // const char* test1 = "53412.23123";
+//     // const char* test2 = test1;
+//     // float test = 53412.23123;
+//     // for (int i = 0; i < 10; i++) {
+//     //     printf("printf %f %llu \n",test, char_trait::len(test2));
+//     //     std::cout << addColors( "convert ",strColors::Red) << test << "\n";
+//     //     test *= 2.0f;
+//     // }
+//     // // int te = 0x0003E174;
+//     // // print << "convert ", te,"\n";
+//     // // fn f(&test);
+//     // print << *sptr," sizeof ptr ", sizeof(sptr), "\n";
+//     // print << "use count ", sptr.use_count(),"\n";
+//     // int i = *sptr;
+//     // string test3;
+//     // test3 = "use count 2 asdasdasdasdasdasdasd "; 
+//     // print << test3 , sptr.use_count(),"\n";
+//     // print << i,"\n";
+//     // *sptr = 10; 
+//     // sPtr<int> sptr2 = sptr;
+//     // print <<"use count 3 ", sptr.use_count(),"\n";
+//     // print << *sptr2," ",sptr2.use_count(),"\n";
+//     // int s = *sptr;
+//     // print <<"use count 4 ", sptr.use_count(),"\n";
+//     // print << s,"\n";
+//     return 0;
+// }

@@ -237,6 +237,30 @@ namespace used_std {
         }
 
         template <typename TargetType, typename Tuple, used_std::size_t TargetOccurrence, 
+        used_std::size_t CurrentIdx = 0>
+        constexpr used_std::size_t find_matching_context_index() {
+            constexpr used_std::size_t TupleSize = used_std::tuple_size_v<Tuple>;
+            
+            if constexpr (CurrentIdx >= TupleSize) {
+                return static_cast<used_std::size_t>(-1);
+            } 
+            else {
+                using ElementType = used_std::remove_cvref_t<used_std::tuple_element_t<CurrentIdx, Tuple>>;
+                
+                if constexpr (used_std::is_same_v<TargetType, ElementType>) {
+                    // if constexpr (FoundCount == TargetOccurrence) {
+                        return CurrentIdx; // FOUND MATCH
+                    // } else {
+                    //     return find_matching_context_index<
+                    //         TargetType, Tuple, TargetOccurrence, CurrentIdx + 1>();
+                    // }
+                } else {
+                    return find_matching_context_index<
+                        TargetType, Tuple, TargetOccurrence, CurrentIdx + 1>();
+                }
+            }
+        }
+        template <typename TargetType, typename Tuple, used_std::size_t TargetOccurrence, 
         used_std::size_t CurrentIdx = 0, used_std::size_t FoundCount = 0>
         constexpr used_std::size_t find_nth_matching_context_index() {
             constexpr used_std::size_t TupleSize = used_std::tuple_size_v<Tuple>;
@@ -284,9 +308,36 @@ namespace used_std {
 
             }(used_std::make_index_sequence<SizeA>{});
         }
+        template <typename TupleA, typename TupleB>
+        constexpr auto cross_index_type2() {
+            constexpr used_std::size_t SizeA = used_std::tuple_size_v<TupleA>;
+
+            return []<used_std::size_t... IsA>(used_std::index_sequence<IsA...>) {
+                
+                auto map_parameter = []<used_std::size_t IdxA>() {
+                    using CleanTypeA = used_std::remove_cvref_t<used_std::tuple_element_t<IdxA, TupleA>>;
+                    
+                    // Determine occurrence index for duplicate parameters in TupleA
+                    // constexpr used_std::size_t Occurrence = count_previous_occurrences<CleanTypeA, TupleA, IdxA>();
+                    constexpr used_std::size_t MatchedIdxB = find_matching_context_index<CleanTypeA, TupleB, IdxA>();
+                    // static_assert(MatchedIdxB != static_cast<used_std::size_t>(-1), "Out of bound" );
+                    return used_std::conditional_t<
+                    MatchedIdxB != static_cast<used_std::size_t>(-1), 
+                    used_std::index_sequence<MatchedIdxB>, 
+                    used_std::index_sequence<>>{};
+                };
+
+                return (map_parameter.template operator()<IsA>() + ... + used_std::index_sequence<>{});
+ 
+            }(used_std::make_index_sequence<SizeA>{});
+        }
     }
 
     // Public alias template
+    template <typename TupleA, typename TupleB>
+    using get_matching_indices2_t = decltype(
+        detail::cross_index_type2<TupleA, TupleB>()
+    );
     template <typename TupleA, typename TupleB>
     using get_matching_indices_t = decltype(
         detail::cross_index_type<TupleA, TupleB>()
@@ -299,10 +350,10 @@ namespace used_std {
     constexpr bool is_one_matching_index_t = (count_total_matches_t<TupleA, TupleB> == 1);
 
     
-    using Tuple1 = used_std::tuple<int, short, char, float, double,short>;
-    using Tuple2 = used_std::tuple<short,double,short>;
+    using Tuple1 = used_std::tuple<int, short, char, float, double,short,int>;
+    using Tuple2 = used_std::tuple<int>;
     using test_matchCoord = get_matching_indices_t<Tuple2,Tuple1>;
-    static_assert(used_std::is_same_v<test_matchCoord, used_std::index_sequence<1,4,5>>,"");
+    static_assert(used_std::is_same_v<test_matchCoord, used_std::index_sequence<0>>,"");
 
     template <auto Accessor, auto Value, typename Tuple>
     constexpr used_std::size_t find_index_v = []<used_std::size_t... Is>(used_std::index_sequence<Is...>) {

@@ -4,6 +4,7 @@
 // #include <mutex>
 // #include <thread>
 #include <queue>
+#include <cstdint>
 
 
 [[maybe_unused]] inline Project* current {nullptr};
