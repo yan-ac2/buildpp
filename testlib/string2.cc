@@ -238,25 +238,21 @@ public:
     constexpr string& reserve(size_t newLen) {
         if (newLen <= capacity()) return *this;
 
-        // char* newBuffer = new char[newLen + 1];
-        char* oldData = Large.str;
-        Large.str = nullptr;
-        const size_t currentLen = size();
-        // const bool wereOnHeap = (stored.type == HEAP);
-        Large.type = HEAP,
-        Large.len = static_cast<unsigned char>(currentLen),
-        Large.str = new char[newLen + 1],
-        Large.cap = newLen;
-        // Large.str = new char[newLen + 1];
-        // Large.len = static_cast<unsigned int>(currentLen);
-        // Large.cap = newLen;
+        const size_t currentLen = Large.len;
+        char* newBuffer = new char[newLen + 1];
 
         // Copy existing data into the new buffer
-        if (oldData != nullptr && currentLen > 0) {
-            stringView(oldData,currentLen).copy(Large.str, currentLen);
-            // delete[] oldData;
+        if (data() != nullptr && currentLen > 0) {
+            copy(newBuffer, currentLen);
         }
-        Large.str[currentLen] = '\0';
+        newBuffer[currentLen] = '\0';
+        deallocate();
+        // Explicitly retain 'len' and active 'type'
+        stored.type = HEAP;
+        Large.len = static_cast<unsigned int>(currentLen);
+        Large.str = newBuffer;
+        Large.cap = newLen;
+        newBuffer = nullptr;
         return *this;
     }
 
@@ -266,10 +262,8 @@ public:
         const bool needExpand = inLen > capacity();
         if (fitSSO) {
             // CASE 1: Fits in Small SSO buffer
-            if (stored.type == HEAP) {
-                delete[] Large.str;
-            } 
-            const size_t end = inStr.copy(Small.str, inStr.size());
+            deallocate();
+            const size_t end = inStr.copy(Small.str, inLen);
             stored.type = SBO;
             stored.len = static_cast<unsigned int>(end);
             Small.str[end] = '\0';
@@ -301,8 +295,7 @@ public:
             if (stored.type == CStr) {
                 stringView oldLiteral{sliteral.str, sliteral.len};
                 stored.type = SBO;
-                Small.len = 0;
-                oldLiteral.copy(Small.str, currentLen);
+                Small.len = oldLiteral.copy(Small.str, currentLen);
             }
             in.copy(Small.str + currentLen, inlen);
             Small.str[totalLen] = '\0';
@@ -338,6 +331,7 @@ public:
 
     constexpr string& operator=(const char* in)  { return assign(stringView(in)); }
 
+    constexpr auto deallocate() -> void {if (stored.type == HEAP) {delete[] Large.str;}}
     constexpr size_t size() const noexcept { return stored.len;}
     constexpr size_t length() const noexcept  { return size(); }
     constexpr unsigned int mode() const noexcept { return stored.type; }
