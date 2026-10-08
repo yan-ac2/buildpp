@@ -66,6 +66,7 @@ int selfCompile(bool recompile)
     .setExePath("")
     .setBuildfolder(".build")
     .setOutpath("self");
+    outPath.ensurePath();
     
     Project rebuild("build",outPath,Project::exe,recompile);
     current = &rebuild;
@@ -93,6 +94,7 @@ int CompileFile(const std::string_view Name,const std::string_view From,const st
     .setExePath(oPath)
     .setBuildfolder(".build")
     .setOutpath(Name);
+    outPath.ensurePath();
     
     Project compile("build",outPath,type,recompile);
     current = &compile;
@@ -148,6 +150,7 @@ int compileProject(bool recompile)
     compileCommand cmdJson;
     outputPath outPath;
     outPath.setRootPath(rootPath).setExePath("bin").setBuildfolder(".build").setOutpath("Project");
+    outPath.ensurePath();
     Project compile("Main",outPath,Project::exe,recompile);
     current = &compile;
     compile.setCompiler("clang++")

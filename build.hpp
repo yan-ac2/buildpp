@@ -342,6 +342,23 @@ struct outputPath {
         modulePath = buildPath / folder / "module";
         stdPath = modulePath / folder / "std";
     }
+    auto ensurePath() -> void {
+        if((exePath != rootPath) && !fs::exists(exePath)) {
+            fs::create_directories(exePath);
+        }
+        if(!fs::exists(buildPath)) {
+            fs::create_directories(buildPath);
+        }
+        if(!fs::exists(modulePath)) {
+            fs::create_directories(modulePath);
+        }
+        if(!fs::exists(objPath)) {
+            fs::create_directories(objPath);
+        }
+        if(!fs::exists(stdPath)) {
+            fs::create_directories(stdPath);
+        }
+    }
 };
 
 struct fileUtil
