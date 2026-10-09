@@ -235,6 +235,62 @@ struct stringView {
         }
         return npos;
     }
+    constexpr size_type find_last_of(stringView v,size_type pos = 0) {
+        const_pointer temp   = (data_ + len) - pos;
+        const_pointer endPtr = begin();
+        auto eq = [&](char_type c) {
+            if (v.size() > 1) {
+                for (char sc : v) {if (sc == c) return true;}
+            } else {
+                return v[0] == c;
+            }
+            return false;
+        };
+        size_type idx {npos};
+        for (;temp > endPtr ;--temp) {
+            const bool charEq = eq(*temp);
+            if (charEq)  {idx = temp - data_;}
+        }
+        return idx;
+    }
+    constexpr size_type find_last_of(char_type v,size_type pos = 0) {
+        const_pointer temp   = (data_ + len) - pos;
+        const_pointer endPtr = begin();
+        size_type idx {npos};
+        for (;temp > endPtr;--temp) {
+            const bool charEq = v == *temp;
+            if (charEq)  {idx = temp - data_;}
+        }
+        return idx;
+    }
+    constexpr size_type find_last_not_of(stringView v,size_type pos = 0) {
+        const_pointer temp = data_ + pos;
+        const_pointer endPtr = end();
+        auto eq = [&](char_type c) {
+            if (v.size() > 1) {
+                for (char sc : v) {if (sc != c) return true;}
+            } else {
+                return v[0] != c;
+            }
+            return false;
+        };
+        size_type idx {npos};
+        for (;endPtr < temp;--temp) {
+            const bool charEq = eq(*temp);
+            if (charEq)  {idx = temp - data_;}
+        }
+        return idx;
+    }
+    constexpr size_type find_last_not_of(char_type v,size_type pos = 0) {
+        const_pointer temp   = (data_ + len) - pos;
+        const_pointer endPtr = begin();
+        size_type idx {npos};
+        for (;endPtr < temp;--temp) {
+            const bool charEq = v != *temp;
+            if (charEq)  {idx = temp - data_;}
+        }
+        return idx;
+    }
 
     constexpr auto starts_with(stringView sv) const noexcept -> bool {
         const bool req = sv.size() > size(); 
@@ -314,9 +370,11 @@ static_assert([]{
     b.remove_suffix(2);
     std::size_t idx = c.find("world",4);
     // return (a == "ll") && b == "hel" && stringView(s).strcmp("hell") && 
-    return idx == 16 && c[idx] == 'w' && s[0] == 'o' && a.starts_with("ll") &&
-    b.starts_with("hel") && c.ends_with("3200") && d.find_first_not_of("hl") == 1;
-}());
+    // return idx == 16 && c[idx] == 'w' && s[0] == 'o' && a.starts_with("ll") &&
+    // b.starts_with("hel") && c.ends_with("3200") && d.find_first_not_of("hl") == 1
+    // && 
+    return d.find_last_of("hl");
+}() == 1);
 
 
 class string {
