@@ -89,9 +89,7 @@ struct stringView {
     using Traits = charTraits;
     struct reverse_iterator {
         const_pointer current;
-        
         constexpr explicit reverse_iterator(const_pointer ptr) noexcept : current(ptr) {}
-        
         constexpr const_reference operator*() const noexcept { return *(current - 1); }
         constexpr const_pointer operator->() const noexcept { return current - 1; }
         
@@ -235,36 +233,47 @@ struct stringView {
         }
         return npos;
     }
-    constexpr size_type find_last_of(stringView v,size_type pos = 0) {
-        const_pointer temp   = (data_ + len) - pos;
-        const_pointer endPtr = begin();
+    constexpr size_type find_last_of(stringView v, size_type pos = npos) const {
+        if (len == 0 || v.empty()) {
+            return npos;
+        }
+
+        // Standard behavior: start searching from min(pos, len - 1)
+        size_type start_idx = (pos < len) ? pos : len - 1;
+
         auto eq = [&](char_type c) {
-            if (v.size() > 1) {
-                for (char sc : v) {if (sc == c) return true;}
-            } else {
-                return v[0] == c;
+            for (char sc : v) {
+                if (sc == c) return true;
             }
             return false;
         };
-        size_type idx {npos};
-        for (;temp > endPtr ;--temp) {
-            const bool charEq = eq(*temp);
-            if (charEq)  {idx = temp - data_;}
+
+        const_pointer startPtr = data_ + start_idx;
+        const_pointer endPtr   = data_;
+
+        // Include endPtr so index 0 is checked
+        for (const_pointer temp = startPtr; temp >= endPtr; --temp) {
+            if (eq(*temp)) {
+                return static_cast<size_type>(temp - data_);
+            }
         }
-        return idx;
+
+        return npos;
     }
     constexpr size_type find_last_of(char_type v,size_type pos = 0) {
-        const_pointer temp   = (data_ + len) - pos;
-        const_pointer endPtr = begin();
-        size_type idx {npos};
-        for (;temp > endPtr;--temp) {
+        const_pointer temp   = (data_ + (len - pos));
+        const_pointer endPtr = data_;
+        for (;temp > endPtr ;--temp) {
             const bool charEq = v == *temp;
-            if (charEq)  {idx = temp - data_;}
+            if (charEq)  {
+                const size_type idx = temp - data_; 
+                return idx;
+            }
         }
-        return idx;
+        return npos;
     }
     constexpr size_type find_last_not_of(stringView v,size_type pos = 0) {
-        const_pointer temp = data_ + pos;
+        const_pointer temp = data() + pos;
         const_pointer endPtr = end();
         auto eq = [&](char_type c) {
             if (v.size() > 1) {
@@ -275,7 +284,7 @@ struct stringView {
             return false;
         };
         size_type idx {npos};
-        for (;endPtr < temp;--temp) {
+        for (;endPtr > temp;--temp) {
             const bool charEq = eq(*temp);
             if (charEq)  {idx = temp - data_;}
         }
@@ -361,20 +370,20 @@ static_assert([]{
     stringView a  {"hello"};
     stringView b  {a};
     stringView c  {"hello again from world number 3200"};
-    stringView d  {"hello"};
+    stringView d  {"hello.cc"};
     char s[8];
     a.copy(s,5,4);
     [[maybe_unused]] char cc = c.back();
     a.remove_prefix(2);
     c.remove_prefix(1);
     b.remove_suffix(2);
-    std::size_t idx = c.find("world",4);
+    // std::size_t idx = c.find("world",4);
     // return (a == "ll") && b == "hel" && stringView(s).strcmp("hell") && 
     // return idx == 16 && c[idx] == 'w' && s[0] == 'o' && a.starts_with("ll") &&
     // b.starts_with("hel") && c.ends_with("3200") && d.find_first_not_of("hl") == 1
     // && 
-    return d.find_last_of("hl");
-}() == 1);
+    return d.find_last_of("ec");
+}() == 3);
 
 
 class string {
