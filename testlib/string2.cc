@@ -2,137 +2,158 @@
 #include <cstdio>
 #include <string_view>
 
+template<typename T>
 struct char_traits {
-    using char_type = char;
+    using char_type = T;
     using reference = char_type&;
     using const_reference = const char_type&;
     using pointer = char_type*;
     using const_pointer = const char_type*;
+
+    using int_type = int;
     using size_type = std::size_t;
     using difference_t = std::ptrdiff_t;
 
     static constexpr auto assign(reference c1,reference c2) noexcept -> void { c1 = c2;}
-    static constexpr auto assign(pointer ptr, size_type count,char_type c2) noexcept -> pointer { 
+    [[nodiscard]] static constexpr auto assign(pointer ptr, size_type count,char_type c2) noexcept -> pointer { 
         const_pointer end = ptr + count;
         for (;ptr++ < end; *ptr = c2);
         return ptr;
     }
-    static constexpr auto eq(char_type a,char_type b) noexcept -> bool {
+    [[nodiscard]] static constexpr auto eq(char_type a,char_type b) noexcept -> bool {
         return a == b;
     }
-    static constexpr auto lt(char_type a,char_type b) noexcept -> bool {
+    [[nodiscard]] static constexpr auto lt(char_type a,char_type b) noexcept -> bool {
         return a < b;
     }
-    static constexpr auto move(pointer dest,const_pointer src,size_type count) noexcept -> pointer { 
+    [[nodiscard]] static constexpr auto move(pointer dest,const_pointer src,size_type count) noexcept -> pointer { 
         const_pointer end = src + count;
         for (;src != end;++src) {*dest++ = *src;}
         return dest;
     }
-    static constexpr auto copy(pointer dest,const_pointer src,size_type count) noexcept -> pointer { 
+    [[nodiscard]] static constexpr auto copy(pointer dest,const_pointer src,size_type count) noexcept -> pointer { 
         const_pointer end = src + count;
         for (;src != end;++src) {*dest++ = *src;}
         return dest;
     }
-    static constexpr auto compare(const_pointer s1,const_pointer s2,size_type count) noexcept -> bool { 
+    [[nodiscard]] static constexpr auto compare(const_pointer s1,const_pointer s2,size_type count) noexcept -> bool { 
         const_pointer end = s1 + count;
-        for (;s1 < end; ++s1) {if (*s1 != *s2++) {
+        for (;s1 != end; ++s1,++s2) {if (*s1 != *s2) {
             return false;
         }};
         return true;
     }
-    static constexpr auto length(const_pointer s) noexcept -> size_type {
+    [[nodiscard]] static constexpr auto length(const_pointer s) noexcept -> size_type {
         size_type idx {0};
         for (;s[idx] != '\0';) {++idx;}
         return idx;
     }
-    static constexpr auto find(const_pointer ptr,size_type count,const_reference ch) noexcept -> const_pointer {
+    [[nodiscard]] static constexpr auto find(const_pointer ptr,size_type count,const_reference ch) noexcept -> const_pointer {
         const_pointer begin = ptr + count;
         for (;*begin++ != ch;);
         return begin - 1;
     }
     [[__nodiscard__]] 
-    static constexpr auto to_char_type(int c) noexcept -> char_type {
+    static constexpr auto to_char_type(int_type c) noexcept -> char_type {
         return static_cast<char_type>(c);
     }
     [[__nodiscard__]] 
-    static constexpr auto to_int_type(char_type c) noexcept -> int {
-        return static_cast<int>(static_cast<unsigned char>(c));
+    static constexpr auto to_int_type(char_type c) noexcept -> int_type {
+        return static_cast<int_type>(static_cast<char_type>(c));
     }
     [[__nodiscard__]] 
-    static constexpr auto eq_int_type(int c1,int c2) noexcept -> bool {
+    static constexpr auto eq_int_type(int_type c1,int_type c2) noexcept -> bool {
         return c1 == c2;
     }
     [[__nodiscard__]] 
-    static constexpr auto eof() noexcept -> int { return static_cast<int>(EOF);}
+    static constexpr auto eof() noexcept -> int_type { return static_cast<int_type>(EOF);}
     [[__nodiscard__]] 
-    static constexpr auto not_eof(int c) noexcept -> int {
+    static constexpr auto not_eof(int_type c) noexcept -> int_type {
     return eq_int_type(c, eof()) ? ~eof() : c;
   }
-
 };
 
-static_assert([]{
-    char ss[] {"Hello"};
-    // int e = 101;
-    return char_traits::length(ss) == 5 && char_traits::find(ss, 0, 'e') == (ss + 1) && char_traits::to_int_type(ss[1]) == 101;
+// static_assert([]{
+//     auto ss[] = u"Hello";
+//     // int e = 101;
+//     return char_traits::length(ss) == 5 && char_traits::find(ss, 0, 'e') == (ss + 1) && char_traits::to_int_type(ss[1]) == 101;
 
-}());
+// }());
 
-struct string_view {
-    using char_type = char;
+template<typename T>
+struct reverse_iterator {
+    using value_type = T;
+    using reference = value_type&;
+    using pointer = value_type*;
+    using size_type = std::size_t;
+    using difference_t = std::ptrdiff_t;
+
+    pointer current;
+    constexpr explicit reverse_iterator(pointer ptr) noexcept : current(ptr) {}
+    constexpr auto operator*()  noexcept -> reference { return *(current - 1); }
+    constexpr auto operator->() noexcept -> pointer { return current - 1; } 
+    
+    constexpr auto operator++() noexcept -> reverse_iterator& {
+        --current;
+        return *this;
+    }
+    constexpr auto operator--() noexcept -> reverse_iterator& {
+        ++current;
+        return *this;
+    }
+    
+    constexpr auto operator++(int) noexcept -> reverse_iterator {
+        reverse_iterator temp = *this; --current;
+        return temp;
+    }
+    constexpr auto operator--(int) noexcept -> reverse_iterator {
+        reverse_iterator temp = *this;
+        ++current;
+        return temp;
+    }
+    constexpr bool operator==(const reverse_iterator& rhs) const noexcept {
+        return current == rhs.current;
+    };
+};
+
+template<typename cT = char>
+struct [[nodiscard]] string_view {
+    using char_type = cT;
+
     using const_reference = const char_type&;
     using pointer = char_type*;
     using const_pointer = const char_type*;
     using const_iterator = const_pointer;
     using iterator = const_iterator;
+    using r_iterator = reverse_iterator<const char_type>;
+
     using size_type = std::size_t;
     using difference_t = std::ptrdiff_t;
-    using Traits = char_traits;
-    struct reverse_iterator {
-        const_pointer current;
-        constexpr explicit reverse_iterator(const_pointer ptr) noexcept : current(ptr) {}
-        constexpr const_reference operator*() const noexcept { return *(current - 1); }
-        constexpr const_pointer operator->() const noexcept { return current - 1; }
-        
-        // Increment moves BACKWARD
-        constexpr reverse_iterator& operator++() noexcept {
-            --current;
-            return *this;
-        }
-        constexpr reverse_iterator operator++(int) noexcept {
-            reverse_iterator temp = *this;
-            --current;
-            return temp;
-        }
-        
-        constexpr reverse_iterator& operator--() noexcept {
-            ++current;
-            return *this;
-        }
-        constexpr reverse_iterator operator--(int) noexcept {
-            reverse_iterator temp = *this;
-            ++current;
-            return temp;
-        }
-        
-        constexpr bool operator==(const reverse_iterator& rhs) const noexcept = default;
-    };
-    
+    using Traits = char_traits<char_type>;
+    private:
+    template<typename T>
+    [[nodiscard]] static constexpr auto exchange(T& from , T&& val) noexcept {
+        T temp = static_cast<T&&>(from);
+        from = static_cast<T&&>(val);
+        return temp;
+    }
+    [[nodiscard]] static constexpr auto distance(const_pointer start , const_pointer current) noexcept -> size_type {
+        return current - start;
+    }
+    public:
     static constexpr size_type npos {size_type(-1)};
     const_pointer data_;
     size_type len;
 
+    //=========================================================================
+    //                    Constructors and assignment
+    //=========================================================================
     constexpr string_view() noexcept : data_(nullptr),len(0)  {}
-    constexpr string_view(const string_view& other) noexcept = default;
-
-    constexpr size_type strlen(const char* str) const noexcept {
-        return Traits::length(str);
-    }
-    constexpr size_t copy(pointer dest, size_type count, size_type pos = 0) const noexcept {
-        const size_type maxCount{(count + pos > size() ? size() - pos : count)};
-        const_pointer thisData = data() + pos;
-        return Traits::copy(dest,thisData, maxCount) - dest;
-    };
+    constexpr string_view(const string_view& other) noexcept : data_(other.data_),len(other.len) {};
+    constexpr string_view(string_view&& other) noexcept : 
+    data_(exchange<const_pointer>(other.data_,nullptr)),
+    len(exchange<size_type>(other.len,0)) 
+    {};
 
     template<size_type N>
     constexpr string_view(const char_type (&str)[N]) noexcept : data_(str),len(N - 1) {}
@@ -142,33 +163,51 @@ struct string_view {
     constexpr string_view(const_pointer str,size_type count) noexcept : data_(str),len(count) {}
     constexpr string_view(const_pointer str) noexcept : data_(str),len(strlen(str)) {}
 
-    constexpr auto operator =(const string_view& other) noexcept -> string_view& = default; 
-
-    constexpr auto begin  () const noexcept -> iterator {return data_;} 
-    constexpr auto end    () const noexcept -> iterator {return (data_ + len);} 
-    constexpr auto rbegin () const noexcept -> reverse_iterator {return reverse_iterator{end()};}  
-    constexpr auto rend   () const noexcept -> reverse_iterator {return reverse_iterator{begin()};}  
-
-    constexpr auto operator[](size_type idx) const -> const_reference { return data_[idx];}
-    constexpr auto at        (size_type idx) const -> const_reference { return data_[idx];}
-
-    constexpr auto front () const -> const_reference { return *(data_);}
-    constexpr auto back  () const -> const_reference { return *(data_ + len - 1);}
-    constexpr auto data  () const -> const_pointer   { return data_;}
+    constexpr auto operator =(const string_view& other) noexcept -> string_view& {
+        return *this = {other.data(),other.size()};
+    }; 
+    constexpr auto operator =(string_view&& other) noexcept -> string_view& {
+        swap(other);
+        return *this;
+    };
+    //=========================================================================
+    //                              Iterators
+    //=========================================================================
     
-    constexpr auto size  () const -> size_type { return len;}
-    constexpr auto length() const -> size_type { return len;}
-    constexpr auto empty () const -> bool { return len == 0;}
-
-
-    constexpr auto substr(size_type pos,size_type count = npos) const noexcept -> string_view {
-        return {data_ + pos,count > len ? len : count};
-    }
-
+    constexpr auto begin   () const noexcept -> iterator         {return (data_);} 
+    constexpr auto end     () const noexcept -> iterator         {return (data_ + len);} 
+    constexpr auto cbegin  () const noexcept -> iterator         {return (data_);} 
+    constexpr auto cend    () const noexcept -> iterator         {return (data_ + len);} 
+    constexpr auto rbegin  () const noexcept -> r_iterator       {return r_iterator{end()};}  
+    constexpr auto rend    () const noexcept -> r_iterator       {return r_iterator{begin()};}  
+    constexpr auto crbegin () const noexcept -> r_iterator       {return r_iterator{end()};}  
+    constexpr auto crend   () const noexcept -> r_iterator       {return r_iterator{begin()};}  
+    
+    //=========================================================================
+    //                           Element access
+    //=========================================================================
+    
+    
+    [[nodiscard]] constexpr auto operator[](size_type idx) const -> const_reference { return data_[idx];}
+    [[nodiscard]] constexpr auto at        (size_type idx) const -> const_reference { return data_[idx];}
+    [[nodiscard]] constexpr auto front () const -> const_reference { return *(data_);}
+    [[nodiscard]] constexpr auto back  () const -> const_reference { return *(data_ + len - 1);}
+    [[nodiscard]] constexpr auto data  () const -> const_pointer   { return data_;}
+    //=========================================================================
+    //                              Capacity
+    //=========================================================================
+    
+    [[nodiscard]] constexpr auto size  () const -> size_type { return len;}
+    [[nodiscard]] constexpr auto length() const -> size_type { return len;}
+    [[nodiscard]] constexpr auto empty () const -> bool { return len == 0;}
+    
+    //=========================================================================
+    //                             Modifiers
+    //=========================================================================
     constexpr void remove_prefix(size_type n) { data_ = data_ + n; len -= n;}
     constexpr void remove_suffix(size_type n) { len -= n;}
-
-    constexpr void swap(string_view& other) { 
+    
+    constexpr void swap(string_view& other) noexcept { 
         string_view temp {*this}; 
         this->data_ = other.data_; 
         this->len   = other.len; 
@@ -176,37 +215,55 @@ struct string_view {
         other.len   = temp.len;
     }
     //=========================================================================
-    //                              Find
+    //                             Operations
     //=========================================================================
+    constexpr auto copy(pointer dest, size_type count, size_type pos = 0) const noexcept -> size_type {
+        const size_type maxCount{(count + pos > size() ? size() - pos : count)};
+        const_pointer thisData = data() + pos;
+        return distance(dest,Traits::copy(dest,thisData, maxCount));
+    };
+    
+    [[nodiscard]] constexpr auto substr(size_type pos,size_type count = npos) const noexcept -> string_view {
+        return {data_ + pos,count > len ? len : count};
+    }
+
+    [[nodiscard]] constexpr auto strlen(const_pointer str) const noexcept -> size_type {
+        return Traits::length(str);
+    }
+
+    [[nodiscard]] constexpr auto compare(const string_view& str) const noexcept -> bool {
+        return Traits::compare(str.data(), data(), size());
+    };
+
+    //============================< Find >======================================
+
     private:
-    constexpr auto find_impl(const_pointer src,size_type ssrc,const_pointer s,size_type ss,size_type pos) const noexcept -> size_type {
+    [[nodiscard]] static constexpr auto find_impl(const_pointer src,size_type ssrc,const_pointer s,size_type ss,size_type pos) noexcept -> size_type {
         const_pointer temp   = (src + pos);
         const_pointer endPtr = (src + ssrc);
         for (;temp != endPtr;++temp) {
             const bool firstEq = Traits::eq(*temp,*s);
             const bool strEq = string_view(temp,ss) == string_view(s,ss);
-            if (firstEq && strEq)  {return temp - data_;}
+            if (firstEq && strEq)  {return distance(src,temp);}
         }
         return npos;
     }
     public:
-    constexpr auto find(string_view sv,size_type pos = 0) const noexcept -> size_type {
+    [[nodiscard]] constexpr auto find(string_view sv,size_type pos = 0) const noexcept -> size_type {
         if(sv.size() > size()) return npos;
         return find_impl(data(),size(),sv.data(),sv.size(),pos);
     }
-    constexpr auto find(const_pointer s,size_type pos = 0) const noexcept -> size_type {
+    [[nodiscard]] constexpr auto find(const_pointer s,size_type pos = 0) const noexcept -> size_type {
         const size_type slen = Traits::length(s);
         if(slen > size()) return npos;
         return find_impl(data(),size(),s,slen,pos);
     }
-    constexpr auto find(char_type c,size_type pos = 0) const noexcept -> size_type {
+    [[nodiscard]] constexpr auto find(char_type c,size_type pos = 0) const noexcept -> size_type {
         return find_impl(data(),size(),&c,1,pos);
     }
-    //=========================================================================
-    //                           Find_First_Of
-    //=========================================================================
+    //==========================< Find_First_Of >================================
     private:
-    template<bool cnd>
+    template<bool cnd> [[nodiscard]]
     static constexpr auto find_first_of_impl(const_pointer src,size_type ssrc,const_pointer s,size_type ss,size_type pos) noexcept -> size_type {
         const_pointer temp   = (src + pos);
         const_pointer endPtr = (src + ssrc);
@@ -215,7 +272,7 @@ struct string_view {
             if constexpr (cnd) {
                 for(const_pointer p{s};p != send;++p) {
                     const bool charEq = Traits::eq(*p,*temp);
-                    if (charEq)  {return temp - src;}
+                    if (charEq)  {return distance(src,temp);}
                 }
             } else { 
                 bool match_found = false;
@@ -225,36 +282,36 @@ struct string_view {
                     }
                 }
                 if (!match_found) {
-                    return temp - src;
+                    return distance(src,temp);
                 }
             }
         }
         return npos;
     };
     public:
-    constexpr size_type find_first_of(string_view sv,size_type pos = 0) {
+    [[nodiscard]] constexpr size_type find_first_of(string_view sv,size_type pos = 0) {
         return find_first_of_impl<true>(data(), size(), sv.data(), sv.size(), pos);
     }
-    constexpr size_type find_first_of(char_type c,size_type pos = 0) {
+    [[nodiscard]] constexpr size_type find_first_of(char_type c,size_type pos = 0) {
         return find_first_of_impl<true>(data(), size(), &c, 1, pos);
     }
-    constexpr size_type find_first_not_of(string_view sv,size_type pos = 0) {
+    [[nodiscard]] constexpr size_type find_first_not_of(string_view sv,size_type pos = 0) {
         if (sv.size() == 0) return npos;
         return find_first_of_impl<false>(data(), size(), sv.data(), sv.size(), pos);
     }
-    constexpr size_type find_first_not_of(const_pointer s,size_type pos = 0) {
+    [[nodiscard]] constexpr size_type find_first_not_of(const_pointer s,size_type pos = 0) {
         const size_type len = Traits::length(s);
         if (s == 0) return npos;
         return find_first_of_impl<false>(data(), size(),s, len, pos);
     }
-    constexpr size_type find_first_not_of(char_type c,size_type pos = 0) {
+    [[nodiscard]] constexpr size_type find_first_not_of(char_type c,size_type pos = 0) {
         return find_first_of_impl<false>(data(), size(),&c, 1, pos);
     }
-    //=========================================================================
-    //                           Find_Last_Of
-    //=========================================================================
+
+    //===========================< Find_Last_Of >====================================
+
     private:
-    template<bool cnd>
+    template<bool cnd> [[nodiscard]]
     static constexpr auto find_last_of_impl(const_pointer src,size_type ssrc,const_pointer s,size_type ss,size_type pos) noexcept -> size_type {
         const_pointer temp    = (src + ssrc - pos - 1);
         const_pointer endPtr  = src;
@@ -264,7 +321,7 @@ struct string_view {
                 for (const_pointer p{s};p != send;++p) {
                     const bool charEq = Traits::eq(*p ,*temp);
                     if (charEq)  {
-                        return temp - src;
+                        return distance(src,temp);
                     }
                 }
             } else {
@@ -275,98 +332,97 @@ struct string_view {
                     }
                 }
                 if (!match_found) {
-                    return temp - src;
+                    return distance(src,temp);
                 }
             }
         }
         return npos;
     }
     public:
-    constexpr auto find_last_of(string_view sv,size_type pos = 0) const noexcept -> size_type {
+    [[nodiscard]] constexpr auto find_last_of(string_view sv,size_type pos = 0) const noexcept -> size_type {
         if(sv.empty()) return npos;
         return find_last_of_impl<true>(data(),size(),sv.data(),sv.size(),pos);
     }
-    constexpr auto find_last_of(const_pointer s,size_type pos = 0) const noexcept -> size_type {
+    [[nodiscard]] constexpr auto find_last_of(const_pointer s,size_type pos = 0) const noexcept -> size_type {
         const size_type slen = Traits::length(s);
         if(slen == 0) return npos;
         return find_last_of_impl<true>(data(),size(),s,slen,pos);
     }
-    constexpr auto find_last_of(char_type c,size_type pos = 0) const noexcept -> size_type {
+    [[nodiscard]] constexpr auto find_last_of(char_type c,size_type pos = 0) const noexcept -> size_type {
         return find_last_of_impl<true>(data(),size(),&c,1,pos);
     }
 
-    constexpr auto find_last_not_of(string_view sv,size_type pos = 0) const noexcept -> size_type {
+    [[nodiscard]] constexpr auto find_last_not_of(string_view sv,size_type pos = 0) const noexcept -> size_type {
         if(sv.empty()) return npos;
         return find_last_of_impl<false>(data(),size(),sv.data(),sv.size(),pos);
     }
-    constexpr auto find_last_not_of(const_pointer s,size_type pos = 0) const noexcept -> size_type {
+    [[nodiscard]] constexpr auto find_last_not_of(const_pointer s,size_type pos = 0) const noexcept -> size_type {
         const size_type slen = Traits::length(s);
         if (slen == 0) return npos;
         return find_last_of_impl<false>(data(),size(),s,slen,pos);
     }
-    constexpr auto find_last_not_of(char_type c,size_type pos = 0) const noexcept -> size_type {
+    [[nodiscard]] constexpr auto find_last_not_of(char_type c,size_type pos = 0) const noexcept -> size_type {
         return find_last_of_impl<false>(data(),size(),&c,1,pos);
     }
 
-    //==================================================================================
-    //                               Starts_With
-    //==================================================================================
-    constexpr auto starts_with(string_view sv) const noexcept -> bool {
+    //===============================< Starts_With >====================================
+
+    [[nodiscard]] constexpr auto starts_with(string_view sv) const noexcept -> bool {
         const bool req = sv.size() > size(); 
         if (req) {return false;}
         return string_view{data(),sv.size()} == sv;
     };
-    constexpr auto starts_with(const_pointer s) const noexcept -> bool {
+    [[nodiscard]] constexpr auto starts_with(const_pointer s) const noexcept -> bool {
         const string_view temp{s};
         const bool req = temp.size() > size(); 
         if (req) {return false;}
-        return string_view{data(),temp.size()} == temp;
+        const string_view ttemp{data(),temp.size()};
+        return ttemp == temp;
     };
-    constexpr auto starts_with(char_type c) const noexcept -> bool {
+
+    [[nodiscard]] constexpr auto starts_with(char_type c) const noexcept -> bool {
+        if (size() < 1) {return false;}
         return front() == c;
     };
     
-    //==================================================================================
-    //                               Ends_With
-    //==================================================================================
+    //==============================< Ends_With >=======================================
 
-    constexpr auto ends_with(string_view sv) const noexcept -> bool {
-        const bool req = sv.size() > size(); 
+    [[nodiscard]] constexpr auto ends_with(string_view sv) const noexcept -> bool {
+        const size_type ts = sv.size(); 
+        const size_type thisSize = size(); 
+        const bool req = ts > thisSize; 
         if (req) {return false;}
-        return string_view{end() - sv.size(),sv.size()} == sv;
+        const_pointer last = end() - ts;
+        return string_view{last,ts} == sv;
     };
-    constexpr auto ends_with(const_pointer s) const noexcept -> bool {
+    [[nodiscard]] constexpr auto ends_with(const_pointer s) const noexcept -> bool {
         const string_view temp{s};
         const size_type ts = temp.size(); 
         const size_type thisSize = size(); 
         const bool req = ts > thisSize; 
         if (req) {return false;}
-        const_pointer last = data() + thisSize - ts;
+        const_pointer last = end() - ts;
         return string_view{last,ts} == temp;
     };
-    constexpr auto ends_with(char_type c) const noexcept -> bool {
-        return *(end()) == c;
+    [[nodiscard]] constexpr auto ends_with(char_type c) const noexcept -> bool {
+        if (size() < 1) {return false;}
+        return back() == c;
     };
 
-    
-
     //==================================================================================
-    //                               Comparison
+    //                             Operator Overload
     //==================================================================================
-    constexpr bool strcmp(const string_view& str) const {
-        return Traits::compare(str.data(), data(), size());
-    };
-    constexpr bool operator==(const string_view& rhs) const {
-        return len != rhs.size() ? false : strcmp(rhs);
+    [[nodiscard]] constexpr bool operator==(const string_view& rhs) const {
+        return len != rhs.size() ? false : compare(rhs);
     }
-    template<size_type N>
+    template<size_type N> [[nodiscard]]
     constexpr bool operator==(const char_type (&rhs)[N]) {
         string_view temp(rhs,N - 1);
-        return len != temp.size() ? false : strcmp(rhs);
+        return len != temp.size() ? false : compare({rhs,N - 1});
     }
-    constexpr bool operator==(const_pointer rhs) {
+    [[nodiscard]] constexpr bool operator==(const_pointer rhs) {
         string_view temp(rhs);
-        return len != temp.size() ? false : strcmp(rhs);
+        return len != temp.size() ? false : compare(rhs);
     }
 };
 
@@ -386,28 +442,34 @@ static_assert([]{
     // return idx == 16 && c[idx] == 'w' && s[0] == 'o' && a.starts_with("ll") &&
     // b.starts_with("hel") && c.ends_with("3200") && d.find_first_not_of("hl") == 1
     // && 
-    return a == b && c.substr(c.find("again"),5) == "again";
+    return a == b && c.substr(c.find("again"),5) == "again" && a.starts_with("he");
     // return c.find("world");
 }());
 
-
+template<typename sT = char>
 class string {
 public:
-    using char_type = char;
+    using char_type = sT;
+
     using reference = char_type&;
     using const_reference = const char_type&;
+    
     using pointer = char_type*;
     using const_pointer = const char_type*;
+    
     using iterator = pointer;
     using const_iterator = const_pointer;
-    using size_type = std::size_t;
-    using uint_type = unsigned int;
-    using difference_t = std::ptrdiff_t;
-    using Traits = char_traits;
-    using view_type = string_view;
     
+    using Traits = char_traits<char_type>;
+    using view_type = string_view<char_type>;
+    
+    using size_type = std::size_t;
+    using difference_t = std::ptrdiff_t;
+    using uint_type = unsigned int;
 private:
-    enum Mode : unsigned int {
+    static constexpr size_type SSOSize =  (24 / sizeof(char_type)) - 1; // 23 bytes
+    static constexpr size_type sMaxStr =  (24 / sizeof(char_type)) - 1; // 23 bytes
+    enum Mode : uint_type {
         SBO   = 0,
         HEAP   = 1,
         NONE   = 2,
@@ -417,10 +479,9 @@ private:
         size_t cap = 0;
     };
     struct small {
-        char_type str[24]; // 23 usable chars + 1 null terminator
+        char_type str[SSOSize]; // 23 usable chars + 1 null terminator
     };
 
-    static constexpr size_type sMaxStr = sizeof(small::str) - 1; // 23 bytes
     union storage {
         small Small;
         large Large;
@@ -434,48 +495,48 @@ private:
     Mode type {NONE};
     uint_type len  {0};
     
-    
+    constexpr auto nullterminate(size_type at) noexcept -> void{
+        stored[type][at] = '\0'; 
+    }
 public:
-    constexpr size_t copy(pointer dest, size_type count, size_type pos = 0) const noexcept {
+    constexpr auto copy(pointer dest, size_type count, size_type pos = 0) const noexcept -> size_type {
         const size_type maxCount{(count + pos > size() ? size() - pos : count)};
-        pointer current = dest;
         const_pointer thisData = data() + pos;
-        const_pointer thisEnd  = data() + maxCount;
-        for (;thisData != thisEnd;++thisData,++current) {
-            *(current) = *(thisData);
-        }
-        return current - dest;
+        return Traits::copy(dest,thisData, maxCount) - dest;
     };
     // 1. Default constructor
     explicit constexpr string() noexcept : stored{.Small={}},type(SBO),len(0) {}
 
     constexpr string(view_type inStr) noexcept : 
     stored(inStr.size() < sMaxStr ? storage{.Small={}} : storage{.Large={
-        .str= new char[inStr.size() + 1],
+        .str= new char_type[inStr.size() + 1],
         .cap=inStr.size(),
     }}),
     type(inStr.size() < sMaxStr ? SBO : HEAP),
     len(inStr.copy(stored[type], inStr.size()))
     {}
+    
     template<size_type N>
     constexpr string(const char_type (&inStr)[N]) noexcept : string(view_type{inStr,N - 1}) 
     {}
+
     constexpr string(const string& other) : 
     stored(other.size() < sMaxStr ? storage{.Small={}} : storage{.Large={
-        .str= new char[other.stored.Large.cap + 1],
+        .str= new char_type[other.stored.Large.cap + 1],
         .cap=other.stored.Large.cap,
     }}), 
     type(other.size() < sMaxStr ? SBO : HEAP), 
     len(other.copy(stored[type], other.len))
     {}
+
     constexpr string(string&& other) noexcept : 
     stored(other.stored), 
     type(other.type), 
     len(other.len) 
     {
-        other.stored.Small.str[0] = '\0';
         other.type = SBO;
         other.len = 0;
+        other.nullterminate(0);
     }
     
     constexpr ~string() {
@@ -483,18 +544,18 @@ public:
     }
 
     constexpr auto allocateBuffer(view_type inStr) -> string& {
-        const size_t inSize = inStr.size();
+        const size_type inSize = inStr.size();
         const bool needExpand = inSize > capacity();
         auto& ptr = stored.Large;
         if (needExpand) {
             reserve(inSize);
             const size_t end = inStr.copy(ptr.str, inSize);
-            len = static_cast<size_t>(end);
-            ptr.str[end] = '\0';
+            len = static_cast<size_type>(end);
+            nullterminate(end);
         } else {
             const size_t end = inStr.copy(ptr.str, inSize);
-            len = static_cast<size_t>(end);
-            ptr.str[end] = '\0';
+            len = static_cast<size_type>(end);
+            nullterminate(end);
         }
         return *this;
     }
@@ -525,7 +586,7 @@ public:
             // type = SBO;
             const size_type end = inStr.copy(ptr.str, inLen);
             len = static_cast<uint_type>(end);
-            ptr.str[end] = '\0';
+            nullterminate(end);
         } else {
             const bool needExpand = inLen > capacity();
             auto& ptr = stored.Large;
@@ -535,8 +596,8 @@ public:
             } 
             const size_type end = inStr.copy(ptr.str, inLen);
             len = static_cast<uint_type>(end);
-            ptr.str[end] = '\0';
-        
+            nullterminate(end);
+            
         }
         return *this;
     }
@@ -553,7 +614,7 @@ public:
             // CASE 1: Fits in Small SSO buffer
             inStr.copy(ptr.str + currentLen, inLen);
             len = static_cast<uint_type>(totalLen);
-            ptr.str[totalLen] = '\0';
+            nullterminate(totalLen);
         } else {
             const bool needExpand = totalLen > capacity();
             auto& ptr = stored.Large;
@@ -561,10 +622,10 @@ public:
                 // CASE 2: Needs larger allocation
                 reserve(totalLen);
             } 
-            char* heapData = ptr.str + currentLen;
+            pointer heapData = ptr.str + currentLen;
             inStr.copy(heapData, inLen);
             len = static_cast<uint_type>(totalLen);
-            heapData[totalLen] = '\0';
+            nullterminate(totalLen);
         }
         return *this;
     }
@@ -594,9 +655,9 @@ public:
         return type == HEAP ? stored.Large.cap : sMaxStr;
     }
     
-    constexpr auto operator+=(const char* in) -> string& { return append(view_type(in)); }
+    constexpr auto operator+=(const_pointer in) -> string& { return append(view_type(in)); }
     constexpr auto operator+=(view_type in)  -> string& { return append(in); }
-    constexpr auto operator= (const char* in) -> string& { return assign(view_type(in)); }
+    constexpr auto operator= (const_pointer in) -> string& { return assign(view_type(in)); }
     constexpr auto operator= (view_type in)  -> string& { return assign(in); }
 
     constexpr auto deallocate() -> void {if (type == HEAP) {delete[] stored.Large.str;}}
@@ -604,6 +665,7 @@ public:
     constexpr auto length() const noexcept -> size_type  { return len;}
     constexpr auto mode()   const noexcept -> uint_type  { return type;}
 };
+
 
 int main()
 {
@@ -648,7 +710,7 @@ int main()
     // printf("%s %zu \n",s.data() , s.size());
     s = "aaa";
     printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
-    string ss = static_cast<string&&>(s);
+    string ss = static_cast<string<char>&&>(s);
     printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
     printf("%s len: %zu cap: %zu \n",ss.data() , ss.size(),ss.capacity());
     string_view r {"hello world"};
@@ -672,6 +734,6 @@ int main()
     t += " world is destroyed";
     printf("%s len: %zu cap: %zu \n",t.data() , t.size(),t.capacity());
     return idx == 16 && c[idx] == 'w' && sw[0] == 'o' && a.starts_with("ll") &&
-    b.starts_with("hel") && c.ends_with("3200") && d.find_first_not_of("hl") == 1;
+    c.starts_with("wo") && c.ends_with("3200") && d.find_first_not_of("hl") == 1;
     return 0; 
 }
