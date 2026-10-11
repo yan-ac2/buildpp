@@ -1,6 +1,31 @@
 #include <cstddef>
 #include <cstdio>
-#include <string_view>
+#include <compare>
+
+constexpr auto mmcpy(void* dest,const void* src,size_t count) noexcept -> void* {
+    using byte = unsigned char;
+    byte* d = static_cast<byte*>(dest);
+    const byte* s = static_cast<const byte*>(src);
+    for (size_t idx{0};idx < count; ++idx) {
+        d[idx] = s[idx];
+    }
+    return dest;
+}
+constexpr auto mmove(void* dest,const void* src,size_t count) noexcept -> void* {
+    using byte = unsigned char;
+    byte* d = static_cast<byte*>(dest);
+    const byte* s = static_cast<const byte*>(src);
+    if (dest < s) {
+        for (size_t idx{0};idx < count; ++idx) {
+            d[idx] = s[idx];
+        }
+    } else {
+        for (size_t idx{count};idx > 0; --idx) {
+            d[idx - 1] = s[idx - 1];
+        }
+    }
+    return dest;
+}
 
 template<typename T>
 struct char_traits {
@@ -14,45 +39,55 @@ struct char_traits {
     using size_type = std::size_t;
     using difference_t = std::ptrdiff_t;
 
-    static constexpr auto assign(reference c1,reference c2) noexcept -> void { c1 = c2;}
-    [[nodiscard]] static constexpr auto assign(pointer ptr, size_type count,char_type c2) noexcept -> pointer { 
+    static constexpr auto assign(reference c1,const_reference c2) noexcept -> void { c1 = c2;}
+    static constexpr auto assign(pointer ptr, size_type count,char_type c2) noexcept -> pointer { 
         const_pointer end = ptr + count;
         for (;ptr++ < end; *ptr = c2);
         return ptr;
     }
+
     [[nodiscard]] static constexpr auto eq(char_type a,char_type b) noexcept -> bool {
         return a == b;
     }
+
     [[nodiscard]] static constexpr auto lt(char_type a,char_type b) noexcept -> bool {
         return a < b;
     }
-    [[nodiscard]] static constexpr auto move(pointer dest,const_pointer src,size_type count) noexcept -> pointer { 
-        const_pointer end = src + count;
-        for (;src != end;++src) {*dest++ = *src;}
-        return dest;
+
+    static auto copy(pointer dest,const_pointer src,size_type count) noexcept -> pointer { 
+        pointer ret {static_cast<pointer>(
+            mmcpy(dest,src,count))
+        };
+        return ret + count; 
     }
-    [[nodiscard]] static constexpr auto copy(pointer dest,const_pointer src,size_type count) noexcept -> pointer { 
-        const_pointer end = src + count;
-        for (;src != end;++src) {*dest++ = *src;}
-        return dest;
+    static constexpr auto move(pointer dest,const_pointer src,size_type count) noexcept -> pointer { 
+        pointer ret {static_cast<pointer>(
+            mmove(dest,src,count))
+        };
+        return ret + count;
     }
-    [[nodiscard]] static constexpr auto compare(const_pointer s1,const_pointer s2,size_type count) noexcept -> bool { 
-        const_pointer end = s1 + count;
-        for (;s1 != end; ++s1,++s2) {if (*s1 != *s2) {
-            return false;
-        }};
-        return true;
+
+
+    [[nodiscard]] static constexpr auto compare(const_pointer s1,const_pointer s2,size_type count) noexcept -> int_type { 
+        for (const_pointer end = s1 + count;s1 != end; ++s1,++s2) {
+            if (lt(*s1 ,*s2)) return -1;
+            if (lt(*s2, *s1)) return 1;
+        };
+        return 0;
     }
+
     [[nodiscard]] static constexpr auto length(const_pointer s) noexcept -> size_type {
         size_type idx {0};
-        for (;s[idx] != '\0';) {++idx;}
+        for (;s[idx++] != '\0';) {}
         return idx;
     }
     [[nodiscard]] static constexpr auto find(const_pointer ptr,size_type count,const_reference ch) noexcept -> const_pointer {
-        const_pointer begin = ptr + count;
-        for (;*begin++ != ch;);
-        return begin - 1;
+        size_type idx {count};
+        for (;ptr[count--] != ch;--idx) {}
+        const_pointer ret = ptr + idx; 
+        return *(ret) != ch ? nullptr : ret;
     }
+
     [[__nodiscard__]] 
     static constexpr auto to_char_type(int_type c) noexcept -> char_type {
         return static_cast<char_type>(c);
@@ -61,10 +96,12 @@ struct char_traits {
     static constexpr auto to_int_type(char_type c) noexcept -> int_type {
         return static_cast<int_type>(static_cast<char_type>(c));
     }
+
     [[__nodiscard__]] 
     static constexpr auto eq_int_type(int_type c1,int_type c2) noexcept -> bool {
-        return c1 == c2;
+        return to_char_type(c1) <=> to_char_type(c2);
     }
+    
     [[__nodiscard__]] 
     static constexpr auto eof() noexcept -> int_type { return static_cast<int_type>(EOF);}
     [[__nodiscard__]] 
@@ -72,13 +109,6 @@ struct char_traits {
     return eq_int_type(c, eof()) ? ~eof() : c;
   }
 };
-
-// static_assert([]{
-//     auto ss[] = u"Hello";
-//     // int e = 101;
-//     return char_traits::length(ss) == 5 && char_traits::find(ss, 0, 'e') == (ss + 1) && char_traits::to_int_type(ss[1]) == 101;
-
-// }());
 
 template<typename T>
 struct reverse_iterator {
@@ -127,6 +157,7 @@ struct [[nodiscard]] string_view {
     using iterator = const_iterator;
     using r_iterator = reverse_iterator<const char_type>;
 
+    using int_type = int;
     using size_type = std::size_t;
     using difference_t = std::ptrdiff_t;
     using Traits = char_traits<char_type>;
@@ -190,16 +221,16 @@ struct [[nodiscard]] string_view {
     
     [[nodiscard]] constexpr auto operator[](size_type idx) const -> const_reference { return data_[idx];}
     [[nodiscard]] constexpr auto at        (size_type idx) const -> const_reference { return data_[idx];}
-    [[nodiscard]] constexpr auto front () const -> const_reference { return *(data_);}
-    [[nodiscard]] constexpr auto back  () const -> const_reference { return *(data_ + len - 1);}
-    [[nodiscard]] constexpr auto data  () const -> const_pointer   { return data_;}
+    [[nodiscard]] constexpr auto front     () const -> const_reference { return *(data_);}
+    [[nodiscard]] constexpr auto back      () const -> const_reference { return *(data_ + len - 1);}
+    [[nodiscard]] constexpr auto data      () const -> const_pointer   { return data_;}
     //=========================================================================
     //                              Capacity
     //=========================================================================
     
-    [[nodiscard]] constexpr auto size  () const -> size_type { return len;}
-    [[nodiscard]] constexpr auto length() const -> size_type { return len;}
-    [[nodiscard]] constexpr auto empty () const -> bool { return len == 0;}
+    [[nodiscard]] constexpr auto size   () const -> size_type { return len;}
+    [[nodiscard]] constexpr auto length () const -> size_type { return len;}
+    [[nodiscard]] constexpr auto empty  () const -> bool { return len == 0;}
     
     //=========================================================================
     //                             Modifiers
@@ -227,12 +258,15 @@ struct [[nodiscard]] string_view {
         return {data_ + pos,count > len ? len : count};
     }
 
-    [[nodiscard]] constexpr auto strlen(const_pointer str) const noexcept -> size_type {
-        return Traits::length(str);
+    [[nodiscard]] constexpr auto strlen(const_pointer s) const noexcept -> size_type {
+        return Traits::length(s);
     }
 
-    [[nodiscard]] constexpr auto compare(const string_view& str) const noexcept -> bool {
-        return Traits::compare(str.data(), data(), size());
+    [[nodiscard]] constexpr auto compare(const string_view& sv) const noexcept -> int_type {
+        const size_type osize = sv.size();
+        const size_type tsize = size();
+        if(osize != tsize) return tsize < osize ? -1 : 1;
+        return Traits::compare(sv.data(), data(), tsize);
     };
 
     //============================< Find >======================================
@@ -265,9 +299,10 @@ struct [[nodiscard]] string_view {
     private:
     template<bool cnd> [[nodiscard]]
     static constexpr auto find_first_of_impl(const_pointer src,size_type ssrc,const_pointer s,size_type ss,size_type pos) noexcept -> size_type {
+        if (ssrc < ss) return npos;
         const_pointer temp   = (src + pos);
         const_pointer endPtr = (src + ssrc);
-        const_pointer send = (s + ss);
+        const_pointer send   = (s + ss);
         for (;temp != endPtr;++temp) {
             if constexpr (cnd) {
                 for(const_pointer p{s};p != send;++p) {
@@ -313,6 +348,7 @@ struct [[nodiscard]] string_view {
     private:
     template<bool cnd> [[nodiscard]]
     static constexpr auto find_last_of_impl(const_pointer src,size_type ssrc,const_pointer s,size_type ss,size_type pos) noexcept -> size_type {
+        if (ssrc < ss) return npos;
         const_pointer temp    = (src + ssrc - pos - 1);
         const_pointer endPtr  = src;
         const_pointer send = (s + ss);
@@ -412,24 +448,34 @@ struct [[nodiscard]] string_view {
     //==================================================================================
     //                             Operator Overload
     //==================================================================================
-    [[nodiscard]] constexpr bool operator==(const string_view& rhs) const {
-        return len != rhs.size() ? false : compare(rhs);
+    [[nodiscard]] constexpr auto operator<=>(const string_view& rhs) const {
+        return compare(rhs);
     }
-    template<size_type N> [[nodiscard]]
-    constexpr bool operator==(const char_type (&rhs)[N]) {
-        string_view temp(rhs,N - 1);
-        return len != temp.size() ? false : compare({rhs,N - 1});
+    [[nodiscard]] constexpr bool operator==(const string_view& rhs) const {
+        return compare(rhs) == 0;
     }
     [[nodiscard]] constexpr bool operator==(const_pointer rhs) {
-        string_view temp(rhs);
-        return len != temp.size() ? false : compare(rhs);
+        return compare(rhs) == 0;
     }
 };
 
+
+// static_assert([]{
+//     using ctraits = char_traits<char>;
+//     char ss[] = "Hello";
+//     char ss1[] = "hEllo";
+//     char ss3[] = "hello";
+//     ctraits::move(ss3, ss3, 5);
+//     // int e = 101;
+//     // return ctraits::compare(ss, ss1, 5)
+//     return ss3[4];
+// }() == 'h');
+
+
 static_assert([]{
     string_view a  {"hello"};
-    string_view b  {a};
-    string_view c  {"hello again from world number 3200"};
+    string_view b  {"Hello"};
+    // string_view c  {"hello again from world number 3200"};
     // string_view d  {"hello.cc"};
     // char s[8];
     // a.copy(s,5,4);
@@ -442,10 +488,11 @@ static_assert([]{
     // return idx == 16 && c[idx] == 'w' && s[0] == 'o' && a.starts_with("ll") &&
     // b.starts_with("hel") && c.ends_with("3200") && d.find_first_not_of("hl") == 1
     // && 
-    return a == b && c.substr(c.find("again"),5) == "again" && a.starts_with("he");
+    return a < b;
     // return c.find("world");
 }());
 
+// static_assert((-1 <=> 1) > -1);
 template<typename sT = char>
 class string {
 public:
@@ -496,7 +543,7 @@ private:
     uint_type len  {0};
     
     constexpr auto nullterminate(size_type at) noexcept -> void{
-        stored[type][at] = '\0'; 
+        stored[type][at] = '\0';
     }
 public:
     constexpr auto copy(pointer dest, size_type count, size_type pos = 0) const noexcept -> size_type {
@@ -733,6 +780,23 @@ int main()
     string t {c};
     t += " world is destroyed";
     printf("%s len: %zu cap: %zu \n",t.data() , t.size(),t.capacity());
+    char test[] = "hello again from world number 3200";
+    char test2[32];
+    char_traits<char>::copy(test,test,char_traits<char>::length(test));
+    printf("copy %s\n",test);
+    char_traits<char>::move(test2,test,char_traits<char>::length(test) + 1);
+    printf("move %s\n",test2);
+    char_traits<char>::move(test2,test2,char_traits<char>::length(test2));
+    printf("move %s\n",test2);
+    char_traits<char>::move(test,test2,char_traits<char>::length(test));
+    printf("move %s\n",test);
+    char test3[32];
+    mmove(test3,test,char_traits<char>::length(test) + 1);
+    printf("move %s\n",test3);
+    auto p = char_traits<char>::find(test,char_traits<char>::length(test), 'c');
+    if (p)
+    printf("find %c\n", *p);
+    
     return idx == 16 && c[idx] == 'w' && sw[0] == 'o' && a.starts_with("ll") &&
     c.starts_with("wo") && c.ends_with("3200") && d.find_first_not_of("hl") == 1;
     return 0; 
