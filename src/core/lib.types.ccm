@@ -183,14 +183,15 @@ export
     
     struct RGBA {
         uint32 data {0};
+        using ar = uint8[sizeof(data)];
         constexpr RGBA (uint8 r,uint8 g,uint8 b,uint8 a) 
         : data((r << RGBA::r) | (g << RGBA::g) | (b << RGBA::b) | (a << RGBA::a)) {}
         
-        constexpr RGBA (std::span<const uint8> arr)
+        constexpr RGBA (const uint8* arr)
         : data((arr[0] << r) | (arr[1] << g) | (arr[2] << b) | (arr[3] << a)) {}
-        constexpr uint8 red() const   { return (data >> r) & 0xFF;}
+        constexpr uint8 red()   const { return (data >> r) & 0xFF;}
         constexpr uint8 green() const { return (data >> g) & 0xFF;}
-        constexpr uint8 blue() const  { return (data >> b) & 0xFF;}
+        constexpr uint8 blue()  const { return (data >> b) & 0xFF;}
         constexpr uint8 alpha() const { return (data >> a) & 0xFF;}
         constexpr std::array<uint8, sizeof(data)> to_array() {
             return std::array{red(),green(),blue(),alpha()};
@@ -221,6 +222,7 @@ export
                 return *this = static_cast<uint8_t>(*this - value);
             }
         };
+
         constexpr bitRef operator[](size_t index) {
             return {*this,get_col[index]};
         };
@@ -228,13 +230,13 @@ export
             return (data >> get_col[index]) & 0xFF;
         };
         
-        template<size_t count>
         constexpr size_t copy(uint8* to) {
-            constexpr auto seq = std::make_index_sequence<count>{};
-            return [to]<size_t... I>(const RGBA& col,std::index_sequence<I...>) {
-                ((*(to + I) = col[I]),...);
-                return count;
-            }(*this,seq);
+            const auto& t = *this;
+            to[0] = t[0];
+            to[1] = t[1];
+            to[2] = t[2];
+            to[3] = t[3];
+            return 3;
         };
 
         enum channel {
@@ -244,7 +246,7 @@ export
     };
 
     static_assert([] {
-        RGBA col {Vec4<uint8>{1,2,3,12}};
+        RGBA col {Vec4<uint8>{1,2,3,12}.data()};
         // auto [r,g,b,a] = RGBA{2,4,5,6}.to_array();
         return 12 == col[3];
     }(), "");

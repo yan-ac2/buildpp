@@ -2,7 +2,9 @@
 #include <type_traits>
 #include <string_view>
 #include <string>
+#include <source_location>
 #include <charconv>
+#include <cassert>
 #include <iostream>
 
 using size_t = decltype(sizeof(0));
@@ -158,32 +160,32 @@ struct formatter {
 // Specialization: String Views / C-Strings
 template<>
 struct formatter<std::string_view> {
-    static constexpr auto format(std::string_view val) -> std::string_view {
-        return std::string_view{val};
+    static constexpr auto format(std::string_view val) -> std::string {
+        return std::string{val};
     }
 };
 
 template<size_t N>
 struct formatter<char[N]> {
-    static constexpr auto format(const char* val) -> std::string_view {
-        return std::string_view(val,N - 1);
+    static constexpr auto format(const char* val) -> std::string {
+        return std::string(val,N - 1);
     }
 };
 
 template<>
 struct formatter<const char*> {
-    static constexpr auto format(const char* val) -> std::string_view {
-        return std::string_view{val};
+    static constexpr auto format(const char* val) -> std::string {
+        return std::string{val};
     }
 };
 
 // Specialization: Integral Types
 template<typename T> requires (std::is_integral_v<T> || std::is_floating_point_v<T>)
 struct formatter<T> {
-    static constexpr auto format(T val) -> std::string_view {
+    static constexpr auto format(T val) -> std::string {
         char buffer[64];
         auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), val);
-        return std::string_view{buffer, static_cast<size_t>(ptr - buffer)};
+        return std::string{buffer, static_cast<size_t>(ptr - buffer)};
     }
 };
 
@@ -250,7 +252,7 @@ constexpr auto sformat(formatString<sizeof...(Args)> fmtStr,Args&&... args) noex
                 return formatter<Decayed>::format(arg);
             }
         };
-        std::string_view fargs[argsSize] {format_arg(args)...};
+        std::string fargs[argsSize] {format_arg(args)...};
         // std::cout << "\n";
         // for (size_t idx{0};idx < argsSize;++idx) std::cout << fargs[idx] << " ";
         // std::cout << "\n";
@@ -260,7 +262,7 @@ constexpr auto sformat(formatString<sizeof...(Args)> fmtStr,Args&&... args) noex
             const size_t start = *posArray;
             const size_t len   = start + *(posArray + 1);
             if (idx == start) {
-                std::string_view& strref = *(fargs + argsidx);
+                std::string& strref = fargs[argsidx];
                 std::string_view temp (data.data() + begin, idx - begin);
                 str += temp;
                 str += strref;
@@ -269,9 +271,9 @@ constexpr auto sformat(formatString<sizeof...(Args)> fmtStr,Args&&... args) noex
                 begin = len;
                 ++argsidx; 
                 posArray += 2;
-
             }
         }
+        if (begin < data.size()) str += std::string_view{data.data() + begin,data.end()};
     }
     return str;
 }
@@ -305,42 +307,139 @@ constexpr auto snformat(formatString<sizeof...(Args)> fmtStr,Args&&... args) noe
     return str;
 }
 
+constexpr void errmsg(std::string_view msg,const std::source_location& loc) {
+    {
+        const std::string ret = sformat("{}:{}:{} {} \n",
+        loc.file_name(), loc.line(), loc.column(),msg);
+        std::cerr << ret;
+    }
+    std::abort();
+    __builtin_unreachable();
+}
+enum Op {
+    eq, neq, lt, gt, lte, gte
+};
+
+template <typename T>
+struct idx_t {
+    T v;
+    const std::source_location loc;
+    constexpr idx_t(T val , std::source_location s = std::source_location::current()) noexcept : 
+    v(val),loc(s) {}
+
+};
+
+template <typename T,Op op>
+struct index_guard {
+    static constexpr size_t dev {1};
+    bool c{false};
+    idx_t<T> storage;
+    constexpr index_guard(idx_t<T> val, T other) noexcept
+        : c(eval(val.v,other)), storage(val) {}
+
+    constexpr operator T() const noexcept(false) {
+        if constexpr (dev == 0) {
+            return storage.v;
+        } else {
+            if (c) {
+                return storage.v;
+            } else {
+                if constexpr (dev > 1) {
+                    errmsg("index error",storage.loc);
+                } else {
+                    std::abort();
+                }
+                __builtin_unreachable();
+            }
+        }
+    }
+
+    constexpr bool eval(T val,T other) const noexcept {
+        if constexpr (op == eq) {
+            return val == other;
+        } else if constexpr (op == neq) {
+            return val != other;
+        } else if constexpr (op == lt) {
+            return val < other;
+        } else if constexpr (op == lte) {
+            return val <= other;
+        } else if constexpr (op == gt) {
+            return val > other;
+        } else if constexpr (op == gte) {
+            return val >= other;
+        }
+        return false;
+    }
+};
+
+
+struct testArray {
+    char data[24];
+    
+    constexpr auto size() const -> size_t {
+        return sizeof(data) - 1; 
+    }
+    using index_type = index_guard<size_t,lte>;
+    constexpr char& operator[](idx_t<size_t> idx) {
+        return data[index_type(idx,size())];
+    };
+
+    constexpr char* begin() {
+        return data;
+    }
+    constexpr char* end() {
+        return &data[size()];
+    }
+};
+
 int main()
 {
-    // struct test {
-    //     const char* str;
-    //     size_t num;
-    // };
-    // constexpr size_t num1 {1};
-    constexpr size_t num2 {10};
-    constexpr size_t num3 {11};
-    const std::string makeOptions {sformat("{{{}}} {} {} {}\n", 123,"hello",num3,num2)};
-    // const std::string makeOptions9 {sformat("{{{}}} {} {}\n", num1,num2,num3)};
-    // const std::string makeOptions2 = sformat("{} {}\n",addColors("hello world",strColors::Red),12);
-    // const std::string makeOptions3 = sformat("hello {}\n",2);
-    // std::string makeOptions4;
-    // for (auto s : {test{"hello",5},test{"world",15},test{"num",65}}) {
-    //     makeOptions4 += sformat("{} {} ",s.str,s.num);
-    // }
-    // std::string makeOptions5;
-    // for (auto s : {"{}","{}","{}","\n"}) {
-    //     makeOptions5 += s;
-    // }
-    // constexpr formatString<2> fstr {"{} {}\n"};
-    // const std::string makeOptions6 = sformat(makeOptions5,1,2,3);
-    // const std::string makeOptions7 = sformat(fstr,1,2);
-    // const std::string makeOptions8 = sformat(fstr,1.213,435.f);
-    // const std::string makeOptions10 = snformat("using snformat 2 {} {} {}","hello",2.23f,3);
-    std::cout << makeOptions;
-    // std::cout << makeOptions2;
-    // std::cout << makeOptions3;
-    // std::cout << makeOptions4 << "\n";
-    // std::cout << makeOptions5;
-    // std::cout << makeOptions6;
-    // std::cout << makeOptions7;
-    // std::cout << makeOptions8;
-    // std::cout << makeOptions9;
-    // std::cout << makeOptions10;
+        // struct test {
+        //     const char* str;
+        //     size_t num;
+        // };
+        // constexpr size_t num1 {1};
+        // size_t num2 {11};
+        // size_t num3 {11};
+        // const std::string makeOptions {sformat("{{{}}} {} {} {}\n", 123,"hello",num3,num2)};
+        testArray d;
+        for (auto& c : d) {
+            c = 'a';
+        }
+        d[2] = 'c';
+        d[22] = 'c';
+        for (auto i : {1,2,3,4,5,7,8,9,15,24}) {
+            std::cout << d[i] << " ";
+        }
+        d[26] = 'c';
+        std::cout << '\n';
+        
+        // const std::string makeOptions9 {sformat("{{{}}} {} {}\n", num1,num2,num3)};
+        // const std::string makeOptions2 = sformat("{} {}\n",addColors("hello world",strColors::Red),12);
+        // const std::string makeOptions3 = sformat("hello {}\n",2);
+        // std::string makeOptions4;
+        // for (auto s : {test{"hello",5},test{"world",15},test{"num",65}}) {
+        //     makeOptions4 += sformat("{} {} ",s.str,s.num);
+        // }
+        // std::string makeOptions5;
+        // for (auto s : {"{}","{}","{}","\n"}) {
+        //     makeOptions5 += s;
+        // }
+        // constexpr formatString<2> fstr {"{} {}\n"};
+        // const std::string makeOptions6 = sformat(makeOptions5,1,2,3);
+        // const std::string makeOptions7 = sformat(fstr,1,2);
+        // const std::string makeOptions8 = sformat(fstr,1.213,435.f);
+        // const std::string makeOptions10 = snformat("using snformat 2 {} {} {}","hello",2.23f,3);
+        // std::cout << makeOptions;
+        // std::cout << makeOptions2;
+        // std::cout << makeOptions3;
+        // std::cout << makeOptions4 << "\n";
+        // std::cout << makeOptions5;
+        // std::cout << makeOptions6;
+        // std::cout << makeOptions7;
+        // std::cout << makeOptions8;
+        // std::cout << makeOptions9;
+        // std::cout << makeOptions10;
     
     return 0; 
 }
