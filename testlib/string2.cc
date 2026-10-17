@@ -17,10 +17,10 @@ struct char_traits {
 
     static constexpr auto assign(reference c1,const_reference c2) noexcept -> void { c1 = c2;}
     static constexpr auto assign(pointer dest, size_type count,char_type c) noexcept -> pointer {
-        const size_t end{count};
-        for (count = 0;count < end;) {
-            assign(dest[count] , c);
-            ++count;
+        size_t idx{0};
+        for (;count;) {
+            assign(dest[idx] , c);
+            ++idx ;--count;
         }
         return dest;
     }
@@ -34,21 +34,22 @@ struct char_traits {
     }
 
     static constexpr auto copy(pointer dest,const_pointer src,size_type count) noexcept -> pointer { 
-        const size_t end{count};
-        for (count = 0;count < end;) {
-            assign(dest[count] , src[count]);
-            ++count;
+        size_t idx{0};
+        for (;count;) {
+            assign(dest[idx] , src[idx]);
+            ++idx ;--count;
         }
         return dest;
     }
     static constexpr auto rcopy(pointer dest,const_pointer src,size_type count) noexcept -> pointer { 
-        for (;count > 0;) {
-            assign(dest[count] , src[count]);
+        for (;count;) {
+            assign(dest[count + 1] , src[count + 1]);
             --count;
         }
         return dest;
     }
     static constexpr auto move(pointer dest,const_pointer src,size_type count) noexcept -> pointer { 
+        if (count == 0 || dest == src) { return dest;}
         if (dest < src) {
             return copy(dest, src, count);
         } else {
@@ -306,28 +307,31 @@ struct string_view {
     //==========================< Find_First_Of >================================
     private:
     template<bool cnd> [[nodiscard]]
-    static constexpr auto find_first_of_impl(const_pointer src,size_type ssrc,const_pointer s,size_type ss,size_type pos) noexcept -> size_type {
+    static constexpr auto find_first_of_impl(const_pointer const src,size_type ssrc,const_pointer const s,size_type ss,size_type pos) noexcept -> size_type {
         if (ssrc < ss) return npos;
         const_pointer temp   = (src + pos);
-        const_pointer endPtr = (src + ssrc);
+        const_pointer endPtr = (src + ssrc - pos);
         const_pointer send   = (s + ss);
-        for (;temp > endPtr;++temp) {
+        for (;temp < endPtr;) {
             if constexpr (cnd) {
-                for(const_pointer p{s};p < send;++p) {
+                for(const_pointer p{s};p < send;) {
                     const bool charEq = Traits::eq(*p,*temp);
-                    if (charEq)  {return distance(src,temp);}
+                    if (charEq)  {return temp - src;}
+                    ++p;
                 }
             } else { 
                 bool match_found = false;
-                for (const_pointer p {s};p < send; ++p) {
+                for (const_pointer p {s};p < send;) {
                     if (Traits::eq(*p,*temp)) {
                         match_found = true; break;
                     }
+                    ++p;
                 }
                 if (!match_found) {
-                    return distance(src,temp);
+                    return temp - src;
                 }
             }
+            ++temp;
         }
         return npos;
     };
@@ -520,13 +524,14 @@ static_assert([]{
     // b.starts_with("hel") && c.ends_with("3200") && d.find_first_not_of("hl") == 1
     // && 
     // return a < b;
-    return c[c.find_last_not_of("world")] == '0';
-}());
+    return c.find_first_of('d') ;
+}() == 21);
 
 template<typename sT = char>
 class string {
 public:
     using char_type = sT;
+    using this_type = string<char_type>;
 
     using reference = char_type&;
     using const_reference = const char_type&;
@@ -543,7 +548,9 @@ public:
     using size_type = std::size_t;
     using difference_t = std::ptrdiff_t;
     using uint_type = unsigned int;
-private:
+    
+    static constexpr size_type npos {static_cast<size_type>(-1)};
+    private:
     static constexpr size_type SSOSize =  (24 / sizeof(char_type)); // 24 bytes
     static constexpr size_type SSOMaxStr =  SSOSize - 1; // 23 bytes
     enum Mode : size_type {
@@ -563,33 +570,36 @@ private:
     union storage {
         small Small;
         large Large;
-        constexpr auto operator[](Mode t) noexcept -> pointer {
+        constexpr auto operator[](size_type t) noexcept -> pointer {
             return t == HEAP ? Large.str : Small.str;
         }
-        constexpr auto operator[](Mode t) const noexcept -> const_pointer {
+        constexpr auto operator[](size_type t) const noexcept -> const_pointer {
             return t == HEAP ? Large.str : Small.str;
         }
     } stored; // 24 bytes -> Total sizeof(store) == 32 bytes
+
+    constexpr auto allocate(size_type n) -> char_type*  { return new char_type[n + 1];}
+    constexpr auto deallocate()          -> void        { return type == HEAP ? delete[] stored.Large.str : void(); }
     
     constexpr auto nullterminate(size_type at) noexcept -> size_type{
-        stored[static_cast<Mode>(type)][at] = '\0';
+        stored[type][at] = '\0';
         return at;
     }
     constexpr auto initSBO(const_pointer s,size_type size) noexcept  {
         small ret {};
-        Traits::copy(ret.str, s, size)[size + 1] = '\0';
+        size > 1 ? Traits::copy(ret.str, s, size)[size + 1] = '\0' : ret.str[size + 1] = '\0';
         return ret;
     }
     constexpr auto initHeap(const_pointer s,size_type size) noexcept  {
         large ret {
-            .str= new char_type[size + 1],
+            .str= allocate(size),
             .cap=size,
         };
-        Traits::copy(ret.str, s, size)[size + 1] = '\0';
+        size > 1 ? Traits::copy(ret.str, s, size)[size + 1] = '\0' : ret.str[size + 1] = '\0';
         return ret;
     }
 
-public:
+    public:
 //=========================================================================
 //                    Constructors and assignment
 //=========================================================================
@@ -612,7 +622,7 @@ public:
     stored(count < SSOMaxStr ? storage{.Small=initSBO(s,count)} : storage{.Large=initHeap(s,count)})
     {}
 
-    constexpr string(const string& other) : 
+    constexpr string(const this_type& other) : 
     len(other.len),
     type(other.type),
     stored(other.size() < SSOMaxStr ? 
@@ -620,7 +630,7 @@ public:
     storage{.Large=initHeap(other.data(),len)})
     {}
 
-    constexpr string(string&& other) noexcept : 
+    constexpr string(this_type&& other) noexcept : 
     len(other.len),
     type(other.type),
     stored(other.stored)
@@ -628,6 +638,15 @@ public:
         other.stored = storage{};
         other.type   = SBO;
         other.len    = 0;
+    }
+
+    constexpr auto operator= (const this_type other) -> string& { return *this = {other}; }
+    // constexpr auto operator= (this_type&& other)     -> string& {
+         
+    //     return *this; 
+    // }
+    constexpr ~string() {
+        deallocate();
     }
     //=========================================================================
     //                           Element access
@@ -666,9 +685,11 @@ public:
     constexpr auto operator[](std::size_t idx) const -> const_reference  {
         return stored[type][idx];
     }
-    
+    constexpr operator view_type() {
+        return {data(),size()}; 
+    }
     //=========================================================================
-    //                           Iterators
+    //                              Iterators
     //=========================================================================
     constexpr auto begin   () noexcept       -> pointer       {return data();} 
     constexpr auto cbegin  () const noexcept -> const_pointer {return data();} 
@@ -681,7 +702,7 @@ public:
     constexpr auto crend   ()   const noexcept -> const_pointer {return view_type{data(),size()}.crend();} 
     
     //=========================================================================
-    //                           Capacity
+    //                              Capacity
     //=========================================================================
     constexpr auto empty   () const noexcept -> bool      { return len == 0;}
     constexpr auto size    () const noexcept -> size_type { return len;}
@@ -705,7 +726,7 @@ public:
             if(oldBuffer != nullptr) delete [] oldBuffer;
         }
     }
-
+    
     constexpr auto reserve(size_type newLen) -> string& {
         const bool isSBO  = type == SBO;
         const bool ltCap  = newLen < SSOMaxStr;
@@ -717,12 +738,11 @@ public:
         }
         const size_type currentLen = size();
         auto& ptr = stored.Large;
-        pointer newBuffer = new char_type[newLen + 1];
+        pointer newBuffer = allocate(newLen);
         
         // Copy existing data into the new buffer
         if (data() != nullptr && currentLen > 0) {
             copy(newBuffer, currentLen);
-
             deallocate();
         }
         type = HEAP;
@@ -731,6 +751,76 @@ public:
         nullterminate(currentLen);
         return *this;
     }
+    //=========================================================================
+    //                              Modifiers
+    //=========================================================================
+    //==============================< Erase >===================================
+    private:
+    constexpr auto erase_impl(pointer dest,size_type pos,size_type len,size_type count,const_pointer end) -> size_type {
+            if (len == 0) return 0;
+            if (count == npos) return pos;
+            const size_type maxPos  {(pos > len ? len - pos : pos)};
+            const size_type maxCount{(count == npos || count + maxPos > len ? len - maxPos : count)};
+            pointer thisStart = dest + maxPos;
+            const_pointer startCopy = thisStart + maxCount;
+            const size_type copylen = (startCopy < end ? end - startCopy : 0);
+            Traits::copy(dest + maxPos, startCopy, copylen);
+            return pos + copylen;
+        }
+        
+        public:
+    constexpr auto erase(size_type pos = 0, size_type count = npos) -> this_type& {
+        len = nullterminate(erase_impl(data(), pos, size() ,count, end()));
+        return *this;
+    }
+    constexpr auto erase(const_pointer position) -> this_type& {
+        const size_type start { position == begin() ? 0 : static_cast<size_type>(position - begin()) };
+        len = nullterminate(erase_impl(data(), start , size() ,npos, end()));
+        return *this;
+    }
+    constexpr auto erase(const_pointer first,const_pointer last) -> this_type& {
+        const size_type pos   { static_cast<size_type>(first < data() ? data() - first : first - data()) };
+        const size_type count { static_cast<size_type>(first < last ? last - first : first - last) };
+        len = nullterminate(erase_impl(data(),  pos , size() ,count, end()));
+        return *this;
+    }
+    
+    //==============================<Push and Pop Back>===================================
+    constexpr auto push_back(char_type ch) -> void {
+        const bool gtCap {(len + 1) > capacity()};
+        if (gtCap) {
+            reserve(capacity() + 1);
+        } 
+        stored[type][len] = ch;
+        len = nullterminate(empty() ? 0 : len + 1);
+    }
+    
+    constexpr auto pop_back() -> void {
+        len = nullterminate(empty() ? 0 : len - 1); 
+    }
+    //==============================< Replace >===================================
+    private:
+    constexpr auto replace_impl(pointer dest,size_type pos,const_pointer src1,size_type count1,const_pointer src2,size_type count2) -> void {
+        pointer b {dest + pos};
+        Traits::copy(b + count1, src2, count2);
+        // Traits::copy(b, src1, count1);
+
+    }
+    public:
+    constexpr auto replace(size_type pos,size_type count,const this_type& str) -> this_type& {
+        const size_type replacepart  {(pos + count)};
+        const size_type diff {pos + count - str.size()}; 
+        printf("firstPart %zu\n", replacepart);
+        printf("diff %zu\n", diff);
+        if (diff + size() > capacity()) {
+            reserve(diff + size());
+        }
+        replace_impl(data(), pos, str.data(), str.size(), data() + replacepart,size() - diff);
+        // // const size_type enddiff = 
+        len = nullterminate(diff + size());
+        return *this;
+    }
+    
 
     constexpr auto copy(pointer dest, size_type count, size_type pos = 0) const noexcept -> size_type {
         const size_type maxCount{(count + pos > size() ? size() - pos : count)};
@@ -739,9 +829,7 @@ public:
         return maxCount;
     };
     
-    constexpr ~string() {
-        deallocate();
-    }
+    
 
     constexpr auto allocateBuffer(view_type inStr) -> string& {
         const size_type inSize = inStr.size();
@@ -778,7 +866,6 @@ public:
             } 
             const size_type end = inStr.copy(ptr.str, inLen);
             len = nullterminate(end);
-            
         }
         return *this;
     }
@@ -793,9 +880,9 @@ public:
         if (fitSSO) {
             auto& ptr = stored.Small;
             // CASE 1: Fits in Small SSO buffer
-            Traits::copy(ptr.str + currentLen,inStr.data(),inLen);
-            len = static_cast<uint_type>(totalLen);
-            nullterminate(totalLen);
+            pointer SSOData = ptr.str + currentLen;
+            Traits::copy(SSOData,inStr.data(),inLen);
+            len = nullterminate(totalLen);
         } else {
             const bool needExpand = totalLen > capacity();
             auto& ptr = stored.Large;
@@ -804,24 +891,22 @@ public:
                 reserve(totalLen);
             } 
             pointer heapData = ptr.str + currentLen;
-            inStr.copy(heapData, inLen);
-            len = static_cast<uint_type>(totalLen);
-            nullterminate(totalLen);
+            Traits::copy(heapData,inStr.data(), inLen);
+            len = nullterminate(totalLen);
         }
         return *this;
     }
-
-    
-    
-    
     constexpr auto operator+=(const_pointer in) -> string& { return append(view_type(in)); }
     constexpr auto operator+=(view_type in)     -> string& { return append(in); }
+    
+    
+    
+    
     constexpr auto operator= (const_pointer in) -> string& { return assign(view_type(in)); }
     constexpr auto operator= (view_type in)     -> string& { return assign(in); }
 
-    constexpr auto deallocate() -> void {if (type == HEAP) {delete[] stored.Large.str;}}
     
-    constexpr auto mode()   const noexcept -> uint_type  { return type;}
+    constexpr auto mode()   const noexcept -> size_type  { return type;}
 };
 
 template<size_t N>
@@ -831,7 +916,7 @@ struct idx_t {
     } storage;
 };
 static_assert(sizeof(string<char>) == 32);
-static_assert(string<char>{"hell0 world number 123"}.back() == '3');
+static_assert(string<char>{"hell0 world number 123"}.erase(0,6)[0] == 'w');
 static_assert(string<char>{"h"}.reserve(22).size() == 1);
 // static_assert(size_t i : 63 {-1} == 1);
 int main()
@@ -840,97 +925,112 @@ int main()
     printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
     s.reserve(35);
     printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
-    s.shrink_to_fit();
-    printf("%s len: %zu cap: %zu type: %s \n",s.data() , s.size(),s.capacity(),s.mode()== 0 ? "SSO" : "HEAP");
+    // s = "3w";
+    s.erase(&s[string_view<char>(s).find_first_of("w")],s.data() + string_view<char>(s).find_first_of("d"));
+    printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
+    // s.shrink_to_fit();
+    // printf("%s len: %zu cap: %zu type: %s \n",s.data() , s.size(),s.capacity(),s.mode()== 0 ? "SSO" : "HEAP");
     s.append(" new char");
     printf("%s len: %zu cap: %zu type: %s \n",s.data() , s.size(),s.capacity(),s.mode()== 0 ? "SSO" : "HEAP");
-    s.reserve(21);
-    // s.front() = 'f';
-    // s.back() = 's';
-    printf("%s len: %zu cap: %zu type: %s \n",s.data() , s.size(),s.capacity(),s.mode()== 0 ? "SSO" : "HEAP");
-    // s.reserve(50);
-    // s.append(" after append ");
-    s = "shit";
-    printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
-    // string c (s);
-    // c.append(" copy");
-    // printf("%s %zu \n",c.data() , c.size());
-    s.append ("hello world from world number");
-    printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
-    // printf("%s %zu \n",s.data() , s.size());
-    s = "hello world numbers 3200";
-    printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
-    // printf("%s %zu \n",s.data() , s.size());
-    s = "hello again from world number 3200 sadasdasdsaa";
-    printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
-    // printf("%s %zu \n",s.data() , s.size());
-    s = "small";
-    printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
-    // printf("%s %zu \n",s.data() , s.size());
-    s.append("append");
-    printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
-    s = "again";
-    // printf("%s %zu \n",s.data() , s.size());
-    s = "hello again from world number 4200";
-    // printf("%s %zu \n",s.data() , s.size());
-    s = "sssssssssssssssssssssssssssssssss";
-    // printf("%s %zu \n",s.data() , s.size());
-    s = "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww";
-    // printf("%s %zu \n",s.data() , s.size());
-    s = "wwwwwwwwwwwwwwwwwwwwww";
-    // printf("%s %zu \n",s.data() , s.size());
-    s = "aaa";
-    printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
-    string ss = static_cast<string<char>&&>(s);
-    printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
-    printf("%s len: %zu cap: %zu \n",ss.data() , ss.size(),ss.capacity());
-    // string_view r {"hello world"};
-    // for (auto i = r.end();--i >= r.begin();) {
-    //     putc(*i,stdout);
-    // }
-    // fflush(stdout);
-    printf("\n");
-    string_view a  {"hello"};
-    string_view b  {a};
-    string_view c  {"hello again from world number 3200"};
-    string_view d  {"hello"};
-    char sw[12];
-    c.copy(sw,3,4);
-    printf("copied %s\n",sw);
-    if (char_traits<char>::compare(a.data(),sw,a.size())) printf("same\n"); 
-    [[maybe_unused]] char cc = c.back();
-    a.remove_prefix(2);
-    c.remove_prefix(1);
-    b.remove_suffix(2);
-    std::size_t idx = c.find("world",4);
-    // return (a == "ll") && b == "hel" && stringView(s).strcmp("hell") && 
-    string t {c};
-    t += " world is destroyed";
-    printf("%s len: %zu cap: %zu \n",t.data() , t.size(),t.capacity());
-    char test[] = "hello again from world number 3200";
-    char test2[38];
-    char_traits<char>::copy(test2,test,char_traits<char>::length(test));
-    test2[char_traits<char>::length(test)] = '\0';
-    printf("copy %s\n",test2);
-    char_traits<char>::move(test2,test,char_traits<char>::length(test));
-    printf("move %s\n",test2);
-    char_traits<char>::move(test2 + 1,test2,char_traits<char>::length(test2));
-    printf("move %s\n",test2);
-    char_traits<char>::move(test,test2,char_traits<char>::length(test));
-    printf("move %s\n",test);
-    char test3[32];
-    char_traits<char>::move(test3,test,char_traits<char>::length(test));
-    printf("move %s\n",test3);
-    auto p = char_traits<char>::find(test2,8, 'w');
-    if (p) printf("find %c\n", *p);
-    char test4[32];
-    auto pt = char_traits<char>::assign(test4,31, 'w');
-    *(pt + 31) = '\0';
-    if (pt) printf("assign %s\n", test4);
+    string s1 ("test");
+    for (char c : "hello world HEAP number 35999") {
+        s1.push_back(c);
+    }
+    printf("%s len: %zu cap: %zu type: %s \n",s1.data() , s1.size(),s1.capacity(),s1.mode()== 0 ? "SSO" : "HEAP");
+    for (size_t i {0};i < 25; ) {
+        s1.pop_back(); ++i;
+    }
+    printf("%s len: %zu cap: %zu type: %s \n",s1.data() , s1.size(),s1.capacity(),s1.mode()== 0 ? "SSO" : "HEAP");
+    string s2 ("hello world before");
+    s2.replace(6, 5, "replace");
+    printf("%s len: %zu cap: %zu type: %s \n",s2.data() , s2.size(),s2.capacity(),s2.mode()== 0 ? "SSO" : "HEAP");
+    // s.reserve(21);
+    // // s.front() = 'f';
+    // // s.back() = 's';
+    // printf("%s len: %zu cap: %zu type: %s \n",s.data() , s.size(),s.capacity(),s.mode()== 0 ? "SSO" : "HEAP");
+    // // s.reserve(50);
+    // // s.append(" after append ");
+    // s = "shit";
+    // printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
+    // // string c (s);
+    // // c.append(" copy");
+    // // printf("%s %zu \n",c.data() , c.size());
+    // s.append ("hello world from world number");
+    // printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
+    // // printf("%s %zu \n",s.data() , s.size());
+    // s = "hello world numbers 3200";
+    // printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
+    // // printf("%s %zu \n",s.data() , s.size());
+    // s = "hello again from world number 3200 sadasdasdsaa";
+    // printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
+    // // printf("%s %zu \n",s.data() , s.size());
+    // s = "small";
+    // printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
+    // // printf("%s %zu \n",s.data() , s.size());
+    // s.append("append");
+    // printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
+    // s = "again";
+    // // printf("%s %zu \n",s.data() , s.size());
+    // s = "hello again from world number 4200";
+    // // printf("%s %zu \n",s.data() , s.size());
+    // s = "sssssssssssssssssssssssssssssssss";
+    // // printf("%s %zu \n",s.data() , s.size());
+    // s = "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww";
+    // // printf("%s %zu \n",s.data() , s.size());
+    // s = "wwwwwwwwwwwwwwwwwwwwww";
+    // // printf("%s %zu \n",s.data() , s.size());
+    // s = "aaa";
+    // printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
+    // string ss = static_cast<string<char>&&>(s);
+    // printf("%s len: %zu cap: %zu \n",s.data() , s.size(),s.capacity());
+    // printf("%s len: %zu cap: %zu \n",ss.data() , ss.size(),ss.capacity());
+    // // string_view r {"hello world"};
+    // // for (auto i = r.end();--i >= r.begin();) {
+    // //     putc(*i,stdout);
+    // // }
+    // // fflush(stdout);
+    // printf("\n");
+    // string_view a  {"hello"};
+    // string_view b  {a};
+    // string_view c  {"hello again from world number 3200"};
+    // string_view d  {"hello"};
+    // char sw[12];
+    // c.copy(sw,3,4);
+    // printf("copied %s\n",sw);
+    // if (char_traits<char>::compare(a.data(),sw,a.size())) printf("same\n"); 
+    // [[maybe_unused]] char cc = c.back();
+    // a.remove_prefix(2);
+    // c.remove_prefix(1);
+    // b.remove_suffix(2);
+    // std::size_t idx = c.find("world",4);
+    // // return (a == "ll") && b == "hel" && stringView(s).strcmp("hell") && 
+    // string t {c};
+    // t += " world is destroyed";
+    // printf("%s len: %zu cap: %zu \n",t.data() , t.size(),t.capacity());
+    // char test[] = "hello again from world number 3200";
+    // char test2[38];
+    // char_traits<char>::copy(test2,test,char_traits<char>::length(test));
+    // test2[char_traits<char>::length(test)] = '\0';
+    // printf("copy %s\n",test2);
+    // char_traits<char>::move(test2,test,char_traits<char>::length(test));
+    // printf("move %s\n",test2);
+    // char_traits<char>::move(test2 + 1,test2,char_traits<char>::length(test2));
+    // printf("move %s\n",test2);
+    // char_traits<char>::move(test,test2,char_traits<char>::length(test));
+    // printf("move %s\n",test);
+    // char test3[32];
+    // char_traits<char>::move(test3,test,char_traits<char>::length(test));
+    // printf("move %s\n",test3);
+    // auto p = char_traits<char>::find(test2,8, 'w');
+    // if (p) printf("find %c\n", *p);
+    // char test4[32];
+    // auto pt = char_traits<char>::assign(test4,31, 'w');
+    // *(pt + 31) = '\0';
+    // if (pt) printf("assign %s\n", test4);
 
     
     
-    return idx == 16 && c[idx] == 'w' && sw[0] == 'o' && a.starts_with("ll") &&
-    c.starts_with("wo") && c.ends_with("3200") && d.find_first_not_of("hl") == 1;
+    // return idx == 16 && c[idx] == 'w' && sw[0] == 'o' && a.starts_with("ll") &&
+    // c.starts_with("wo") && c.ends_with("3200") && d.find_first_not_of("hl") == 1;
     return 0; 
 }
