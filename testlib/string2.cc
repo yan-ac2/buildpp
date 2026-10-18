@@ -1,8 +1,11 @@
 #include <cstddef>
 #include <cstdio>
-#include <algorithm>
-// #include <cstring>
-
+// #include <algorithm>
+#include <string>
+template<typename T>
+constexpr auto abs(T val) -> T {
+    return val < 0 ? -val : val;
+}
 template<typename T>
 struct char_traits {
     using char_type = T;
@@ -35,15 +38,15 @@ struct char_traits {
 
     static constexpr auto copy(pointer dest,const_pointer src,size_type count) noexcept -> pointer { 
         size_t idx{0};
-        for (;count;) {
+        for (;count > 0;) {
             assign(dest[idx] , src[idx]);
             ++idx ;--count;
         }
         return dest;
     }
     static constexpr auto rcopy(pointer dest,const_pointer src,size_type count) noexcept -> pointer { 
-        for (;count;) {
-            assign(dest[count + 1] , src[count + 1]);
+        for (;count > 0;) {
+            assign(dest[count - 1] , src[count - 1]);
             --count;
         }
         return dest;
@@ -587,7 +590,7 @@ public:
     }
     constexpr auto initSBO(const_pointer s,size_type size) noexcept  {
         small ret {};
-        size > 1 ? Traits::copy(ret.str, s, size)[size + 1] = '\0' : ret.str[size + 1] = '\0';
+        Traits::copy(ret.str, s, size)[size + 1] = '\0';
         return ret;
     }
     constexpr auto initHeap(const_pointer s,size_type size) noexcept  {
@@ -674,13 +677,13 @@ public:
         return data()[size() - 1];
     }
     constexpr auto at(std::size_t idx) -> reference {
-        return stored[static_cast<Mode>(type)][idx];
+        return stored[type][idx];
     }
     constexpr auto at(std::size_t idx) const -> const_reference {
-        return stored[static_cast<Mode>(type)][idx];
+        return stored[type][idx];
     }
     constexpr auto operator[](std::size_t idx) -> reference {
-        return stored[static_cast<Mode>(type)][idx];
+        return stored[type][idx];
     }
     constexpr auto operator[](std::size_t idx) const -> const_reference  {
         return stored[type][idx];
@@ -737,17 +740,16 @@ public:
             return *this;
         }
         const size_type currentLen = size();
-        auto& ptr = stored.Large;
         pointer newBuffer = allocate(newLen);
         
         // Copy existing data into the new buffer
-        if (data() != nullptr && currentLen > 0) {
+        if (currentLen > 0) {
             copy(newBuffer, currentLen);
-            deallocate();
+            if(data() != nullptr) deallocate();
         }
         type = HEAP;
-        ptr.str = newBuffer;
-        ptr.cap = newLen;
+        stored.Large.str = newBuffer;
+        stored.Large.cap = newLen;
         nullterminate(currentLen);
         return *this;
     }
@@ -800,25 +802,50 @@ public:
     }
     //==============================< Replace >===================================
     private:
-    constexpr auto replace_impl(pointer dest,size_type pos,const_pointer src1,size_type count1,const_pointer src2,size_type count2) -> void {
-        pointer b {dest + pos};
-        Traits::copy(b + count1, src2, count2);
-        // Traits::copy(b, src1, count1);
-
+    constexpr auto replace_impl(pointer dest,size_type pos,const_pointer src,size_type count,size_type end,difference_t offset,size_type len) -> void {
+        pointer b  {dest + end};
+        pointer b2 {dest + end + offset};
+        Traits::move(b2, b, len + pos);
+        
+        Traits::copy(dest + pos, src , count);
     }
     public:
-    constexpr auto replace(size_type pos,size_type count,const this_type& str) -> this_type& {
-        const size_type replacepart  {(pos + count)};
-        const size_type diff {pos + count - str.size()}; 
+    constexpr auto replace(size_type pos,size_type count,const_pointer str,size_type count2) -> this_type& {
+        const size_type    replacepart { count + pos };
+        const difference_t lastLen     { abs(static_cast<difference_t>(replacepart) - static_cast<difference_t>(size())) }; 
+        const difference_t diff        { static_cast<difference_t>(count2) - static_cast<difference_t>(count) };
+        const size_type    finalLen    { diff + size() };
+        printf("pos %zu\n", pos);
         printf("firstPart %zu\n", replacepart);
-        printf("diff %zu\n", diff);
-        if (diff + size() > capacity()) {
-            reserve(diff + size());
+        printf("firstPart + lastLen %zu\n", replacepart + lastLen);
+        printf("diff %td\n", diff);
+        printf("lastLen %td\n", lastLen);
+        printf("finalLen %zu\n", finalLen);
+        if (finalLen > capacity()) {
+            reserve(finalLen);
         }
-        replace_impl(data(), pos, str.data(), str.size(), data() + replacepart,size() - diff);
-        // // const size_type enddiff = 
-        len = nullterminate(diff + size());
+        replace_impl(data(), pos, str, count2,replacepart,diff,lastLen);
+        len = nullterminate(finalLen);
         return *this;
+    }
+    constexpr auto replace(const_iterator first,const_iterator last,const_pointer s,size_type count2) -> this_type& {
+        const difference_t pos         { abs(first - data()) };
+        const difference_t replacepart { abs(last - data())  };
+        return replace(pos,abs(replacepart - pos), s , count2);
+    }
+
+    constexpr auto replace(size_type pos,size_type count,const this_type& str) -> this_type& {
+        return replace(pos,count,str.data(),str.size());
+    }
+    constexpr auto replace(size_type pos,size_type count,const this_type& str,size_type pos2,size_type count2 = npos) -> this_type& {
+        return replace(pos,count,str.data() + pos2,count2 == npos ? str.size() : count2);
+    }
+
+    constexpr auto replace(const_iterator first,const_iterator last,const this_type& str) -> this_type& {
+        return replace(first,last,str.data(),str.size());
+    }
+    constexpr auto replace(const_iterator first,const_iterator last,const this_type& str,size_type pos2,size_type count2 = npos) -> this_type& {
+        return replace(first,last,str.data() + pos2,count2 == npos ? str.size() : count2);
     }
     
 
@@ -940,10 +967,12 @@ int main()
     for (size_t i {0};i < 25; ) {
         s1.pop_back(); ++i;
     }
-    printf("%s len: %zu cap: %zu type: %s \n",s1.data() , s1.size(),s1.capacity(),s1.mode()== 0 ? "SSO" : "HEAP");
+    printf("%s len: %zu cap: %zu  \n",s1.data() , s1.size(),s1.capacity());
     string s2 ("hello world before");
-    s2.replace(6, 5, "replace");
-    printf("%s len: %zu cap: %zu type: %s \n",s2.data() , s2.size(),s2.capacity(),s2.mode()== 0 ? "SSO" : "HEAP");
+    printf("%s len: %zu cap: %zu  \n",s2.data() , s2.size(),s2.capacity());
+    // s2.replace(6,5, "rep",1,2);
+    s2.replace(s2.begin() + 6,s2.begin() + 11, "repl",2,2);
+    printf("%s len: %zu cap: %zu  \n",s2.data() , s2.size(),s2.capacity());
     // s.reserve(21);
     // // s.front() = 'f';
     // // s.back() = 's';
