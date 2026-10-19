@@ -6,6 +6,25 @@ template<typename T>
 constexpr auto abs(T val) -> T {
     return val < 0 ? -val : val;
 }
+template<class T>
+struct allocator {
+    using value_type = T;
+    using size_type = std::size_t;
+    using difference_t = std::ptrdiff_t;
+    //=========================< constructor >==============================
+    constexpr allocator() {}
+    constexpr allocator(const allocator& other) : allocator(other) {}
+    template<class U>
+    constexpr allocator(const allocator<U>& other) : allocator(other) {}
+    //=========================< destructor >==============================
+    constexpr ~allocator() {}
+    //=======================< Member Function >==============================
+    constexpr auto allocate(size_t n) -> T* {
+        void* ptr = ::operator new[](n,alignof(value_type));
+        return ptr;
+    }
+};
+
 template<typename T>
 struct char_traits {
     using char_type = T;
@@ -801,18 +820,9 @@ public:
         len = nullterminate(empty() ? 0 : len - 1); 
     }
     //==============================< Replace >===================================
-    private:
-    constexpr auto replace_impl(pointer dest,size_type pos,const_pointer src,size_type count,size_type end,difference_t offset,size_type len) -> void {
-        pointer b  {dest + end};
-        pointer b2 {dest + end + offset};
-        Traits::move(b2, b, len + pos);
-        
-        Traits::copy(dest + pos, src , count);
-    }
-    public:
-    constexpr auto replace(size_type pos,size_type count,const_pointer str,size_type count2) -> this_type& {
+    constexpr auto replace(size_type pos,size_type count,const_pointer s,size_type count2) -> this_type& {
         const size_type    replacepart { count + pos };
-        const difference_t lastLen     { abs(static_cast<difference_t>(replacepart) - static_cast<difference_t>(size())) }; 
+        const size_type    lastLen     { replacepart < size() ? size() - replacepart : 0 }; 
         const difference_t diff        { static_cast<difference_t>(count2) - static_cast<difference_t>(count) };
         const size_type    finalLen    { diff + size() };
         printf("pos %zu\n", pos);
@@ -824,14 +834,17 @@ public:
         if (finalLen > capacity()) {
             reserve(finalLen);
         }
-        replace_impl(data(), pos, str, count2,replacepart,diff,lastLen);
+        pointer thisData = data();
+        Traits::move(thisData + replacepart + diff, thisData + replacepart, lastLen + pos);
+        Traits::copy(thisData + pos, s , count2);
         len = nullterminate(finalLen);
         return *this;
     }
+
     constexpr auto replace(const_iterator first,const_iterator last,const_pointer s,size_type count2) -> this_type& {
-        const difference_t pos         { abs(first - data()) };
-        const difference_t replacepart { abs(last - data())  };
-        return replace(pos,abs(replacepart - pos), s , count2);
+        const size_type pos         { static_cast<size_type>(abs(first - data())) };
+        const size_type replacepart { static_cast<size_type>(abs(last - data()) ) };
+        return replace(pos,replacepart - pos, s , count2);
     }
 
     constexpr auto replace(size_type pos,size_type count,const this_type& str) -> this_type& {
@@ -971,7 +984,7 @@ int main()
     string s2 ("hello world before");
     printf("%s len: %zu cap: %zu  \n",s2.data() , s2.size(),s2.capacity());
     // s2.replace(6,5, "rep",1,2);
-    s2.replace(s2.begin() + 6,s2.begin() + 11, "repl",2,2);
+    s2.replace(s2.begin() + 12,s2.begin() + 18, "replace string",14);
     printf("%s len: %zu cap: %zu  \n",s2.data() , s2.size(),s2.capacity());
     // s.reserve(21);
     // // s.front() = 'f';
