@@ -356,16 +356,22 @@ struct index_guard {
 
     constexpr bool eval(T val,T other) const noexcept {
         if constexpr (op == eq) {
+            [[assume(val == other)]];
             return val == other;
         } else if constexpr (op == neq) {
+            [[assume(val != other)]];
             return val != other;
         } else if constexpr (op == lt) {
+            [[assume(val < other)]];
             return val < other;
         } else if constexpr (op == lte) {
+            [[assume(val <= other)]];
             return val <= other;
         } else if constexpr (op == gt) {
+            [[assume(val > other)]];
             return val > other;
         } else if constexpr (op == gte) {
+            [[assume(val >= other)]];
             return val >= other;
         }
         return false;

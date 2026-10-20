@@ -20,8 +20,7 @@ struct allocator {
     constexpr ~allocator() {}
     //=======================< Member Function >==============================
     constexpr auto allocate(size_t n) -> T* {
-        void* ptr = ::operator new[](n,alignof(value_type));
-        return ptr;
+        return ::new value_type[n,alignof(value_type)];
     }
 };
 
