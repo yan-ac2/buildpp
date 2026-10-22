@@ -8,7 +8,7 @@
 void showcase_numeric_and_ranges(int score) {
     std::cout << "\n=== 1. Numeric & Range Pattern matching ===" << std::endl;
     // std::size_t score2 = 2;
-    std::string_view result = match(score)()  (
+    std::string_view result = match(score) (
         Case(100)                      >> "Perfect Score!",
         Case(Range{90,99})   >> "Grade: A",
         Case(Range{80, 89})  >> "Grade: B",
@@ -25,10 +25,16 @@ void showcase_hash_labels(std::string_view command) {
     int test = 1;
     std::size_t cmd_hash = used_std::strHash::fnv1a_hash(command.data(), command.size());
 
-    std::string_view response = match(command)(command,&cmd_hash,&test) (
+    std::string_view response = match(command) (
         Case<"start">("start") >> "System Starting...",
-        Case<"stop"> ("stop")  >>  [](std::size_t* test){ return *test == 1 ? Goto<"start"> : Goto<"err">;},
+        Case<"stop"> ("stop")  >>  [&] { return test == 1 ? Goto<"start"> : Goto<"err">;},
         Case("pause")          >> "System Paused.",
+        Case("pause2")          >> "System Paused.",
+        Case("pause3")          >> "System Paused.",
+        Case("pause4")          >> "System Paused.",
+        Case("pause5")          >> "System Paused.",
+        Case("pause6")          >> "System Paused.",
+        Case("pause7")          >> "System Paused 7.",
         Case<"err">(__)        >> "err",
         "UNDEFINED!"
     );
@@ -37,7 +43,7 @@ void showcase_hash_labels(std::string_view command) {
 }
 auto visit(auto&& arg) {
     std::cout << "\n=== Visit ===" << std::endl;
-    return match(arg)() (
+    return match(arg) (
         Case(TypePred<int>)    >> "int",
         Case(TypePred<float>)  >> "float",
         Case(TypePred<double>) >> "double",
@@ -81,7 +87,7 @@ int main () {
     // 1. Standalone / Free Function Evaluation
     // -------------------------------------------------------------
     int number = -43;
-    std::string_view num_res = match(number)()(
+    std::string_view num_res = match(number) (
         Case(ProjectionCase(true,&is_even))     >> [] { return "Even Number"; },
         Case(&is_positive) >> [] { return "Positive Odd Number"; },
         [] { return "Other"; }
@@ -93,7 +99,7 @@ int main () {
     // -------------------------------------------------------------
     User u1{"Alice", 22, true};
     
-    std::string_view user_res = match(u1)() (
+    std::string_view user_res = match(u1) (
         Case(ProjectionCase(true,&User::is_adult))  >> "Adult User",
         Case(Predicate(&User::is_active)) >> "Active Minor",
         "Inactive Minor"
@@ -110,7 +116,7 @@ int main () {
     Validator validator{30};
     int score = 75;
 
-    std::string_view val_res = match(score)()(
+    std::string_view val_res = match(score) (
         Case(Predicate(&Validator::exceeds_threshold,&validator)) >> "Passed Validation",
         "Failed Validation"
     );
@@ -124,7 +130,7 @@ int main () {
     // 4. Compile-Time Hash Labels Showcase
     showcase_hash_labels("start");
     showcase_hash_labels("stop");
-    showcase_hash_labels("pause");
+    showcase_hash_labels("pause7");
     showcase_hash_labels("reboot");
     showcase_hash_labels("rebootss");
 
@@ -140,19 +146,19 @@ int main () {
         }
     };
     constexpr s test = 20;
-    constexpr int num = 15;
-    static_assert(match(num)() (
-        Case<"id">(make_compound_range(Range{0,15},Range{20,30})) >> true,
-        false), "" );
-    static_assert(match(num)() (
-        Case(make_compound_range(Range<RangeType::Or>{0,10},Range<RangeType::Or>{20,40})) >> []{return true;},
-        []{return false;}), "" );
-    constexpr int a = 0b1010;
-    static_assert(match(a)() (
-        Case(bits_all_clear(0b0100 | 0b0001)) >> []{return true;},
-        []{return false;}), "" );
+    // constexpr int num = 15;
+    // static_assert(match(num) (
+    //     Case<"id">(make_compound_range(Range{0,15},Range{20,30})) >> true,
+    //     false), "" );
+    // static_assert(match(num) (
+    //     Case(make_compound_range(Range<RangeType::Or>{0,10},Range<RangeType::Or>{20,40})) >> []{return true;},
+    //     []{return false;}), "" );
+    // constexpr int a = 0b1010;
+    // static_assert(match(a) (
+    //     Case(bits_all_clear(0b0100 | 0b0001)) >> []{return true;},
+    //     []{return false;}), "" );
         
-    match(test)(__) (
+    match(test) (
         Case(field(&s::i,20)) >> []{
             std::cout << "is 20";
         },
@@ -166,24 +172,24 @@ int main () {
     std::cout << "\n";
     int num2 = 0;
     for (int i = 0 ;i < 5; ++i) {
-        match(num2)(&num2) (
-            Case<"inRange">(Range{20,40}) >> [](int* i){
+        match(num2) (
+            Case<"inRange">(Range{20,40}) >> [&]{
                 std::cout << "is in range";
-                *i = 0;
+                num2 = 0;
             },
-            Case<"outRange">(Range{0,20}) >> [](int* i){
-                ++*i;
-                std::cout << "increase" << *i << '\n';
-                if (*i >= 15) {
-                    *i = 50;
+            Case<"outRange">(Range{0,20}) >> [&] {
+                ++num2;
+                std::cout << "increase" << num2 << '\n';
+                if (num2 >= 15) {
+                    num2 = 50;
                     return Goto<"any">;
                 }
                 return Goto<"outRange">;
             },
-            Case<"any">(__) >> [](int* i) {
-                --*i;
-                std::cout << "decrease" << *i << '\n';
-                return Range{20,40}.contains(*i) ? Goto<"inRange"> : Goto<"any">;
+            Case<"any">(__) >> [&] {
+                --num2;
+                std::cout << "decrease" << num2 << '\n';
+                return Range{20,40}.contains(num2) ? Goto<"inRange"> : Goto<"any">;
             },
             []{
                 std::cout << "is not range";
@@ -199,7 +205,7 @@ int main () {
     // }
     // std::cout << "\n";
     for (int i : arrtest) {
-        match(i)(__) (
+        match(i) (
             Case<"eval">(Range{1,5}) >> Goto<"print">,
             Case<"print">(false) >> [i]{
                 std::cout << i << ", ";

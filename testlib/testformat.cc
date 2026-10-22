@@ -6,6 +6,7 @@
 #include <charconv>
 #include <cassert>
 #include <iostream>
+#include <ranges>
 
 using size_t = decltype(sizeof(0));
 using ptrdiff_t = decltype((char*)(nullptr) - (char*)(nullptr));
