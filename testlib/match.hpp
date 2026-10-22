@@ -1364,7 +1364,7 @@ struct match {
             return {Is, current_state.current_target, false, false, {}};
         } else {
             auto& current_case = used_std::get<Is>(cases);
-            if (current_state.jump_signal or evaluate_match(current_state.current_target, current_case.key)) {
+            // if (current_state.jump_signal) {
                 // using RawActionResult = decltype(execute_action(current_case.action,__));
                 using RawActionResult = typename CoreReturnTypeHelper<true,decltype(current_case.action),StoreTarget>::type;
 
@@ -1413,10 +1413,10 @@ struct match {
                         return {Is, current_state.current_target, false, true,{}};
                     }
                 }
-            } else {
-                return {Is + 1, current_state.current_target, false, false,{}};
-                // return DispatchCase<Is + 1,TotalCases::value>(current_state);
-            }
+            // } else {
+            //     return {Is + 1, current_state.current_target, false, false,{}};
+            //     // return DispatchCase<Is + 1,TotalCases::value>(current_state);
+            // }
         }
     }
 
@@ -1446,18 +1446,29 @@ struct match {
         }
     }
     
-    constexpr used_std::size_t evalCase() {
-        return [] {
-            
-        }();
+    constexpr used_std::size_t evalCase(State& current_state) {
+        return [&]<size_t... I> (used_std::index_sequence<I...>) {
+            size_t idx {0};
+            auto v = [&]<size_t Idx> () {
+                auto& current_case = used_std::get<Idx>(cases);
+                if (evaluate_match(current_state.current_target, current_case.key)) {
+                    idx = Idx;
+                    return true;
+                }
+                return false; 
+            };
+            ((idx,v.template operator ()<I>()) || ...);
+            return idx;
+        }(used_std::make_index_sequence<LastCaseIndex>{});
     }
 
     constexpr ReturnType run() noexcept requires (is_configured) {
         State state{ 0 , target , false , false , {}};
 
         while (state.next_idx < LastCaseIndex) {
+            state.next_idx = evalCase(state);
             state = DispatchCase<0,LastCaseIndex>(state);
-            if (state.matched) break;
+            if (state.matched || state.next_idx == LastCaseIndex) break;
         }
         
         if constexpr (used_std::is_same_v<CleanReturnType, void> or used_std::is_same_v<CleanReturnType, Wildcard>) {
