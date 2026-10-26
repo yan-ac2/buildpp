@@ -146,13 +146,13 @@ namespace used_std {
     }(static_cast<used_std::remove_cvref_t<ContextTuple>*>(nullptr)));
 
     struct string_view {
-            const char* data_ptr = nullptr;
+            const char* data = nullptr;
             used_std::size_t len = 0;
             constexpr string_view() = default;
-            constexpr string_view(const char* str) noexcept : data_ptr(str) { while (str[len] != '\0') { ++len; } }
+            constexpr string_view(const char* str) noexcept : data(str) { while (str[len] != '\0') { ++len; } }
             constexpr bool operator==(const string_view& other) const noexcept {
                 if (len != other.len) return false;
-                for (used_std::size_t i = 0; i < len; ++i) { if (data_ptr[i] != other.data_ptr[i]) return false; }
+                for (used_std::size_t i = 0; i < len; ++i) { if (data[i] != other.data[i]) return false; }
                 return true;
             }
         };
@@ -381,7 +381,7 @@ namespace used_std {
                 return false;
             }
         };
-        (getWithLabel.template operator()<Is>() or ...);
+        (getWithLabel.template operator()<Is>() || ...);
         // ((Accessor.template operator()<used_std::remove_cvref_t<used_std::tuple_element_t<Is, CleanTuple>>>() == target_hash ? (found_index = Is) : 0) or ...);
         
         return found_index;
@@ -412,20 +412,31 @@ template <used_std::size_t N>
 StaticString(const char (&)[N]) -> StaticString<N>;
 
 struct StaticLabel {
-    unsigned int hash{0};
+    const unsigned int hash{0};
     
     // 1. String Literal Constructor (auto-hashes and stores string)
     template <used_std::size_t N>
-    constexpr StaticLabel(StaticString<N> string) noexcept 
-    : hash(used_std::strHash::fnv1a_hash(string.data, N)) 
+    constexpr StaticLabel(StaticString<N> ss) noexcept 
+    : hash(used_std::strHash::fnv1a_hash(ss.data, N)) 
+    {}
+    
+    template <used_std::size_t N>
+    constexpr StaticLabel(const char (&s)[N]) noexcept 
+    : hash(used_std::strHash::fnv1a_hash(s, N)) 
     {}
     template <used_std::size_t N>
-    constexpr StaticLabel(const char (&string)[N] ) noexcept 
-    : hash(used_std::strHash::fnv1a_hash(string, N)) 
+    constexpr StaticLabel(const StaticLabel& s) noexcept 
+    : hash(s.hash) 
     {}
 
     // 2. Integer Constructor (stores int value and hashes the int)
-    constexpr StaticLabel(int val) noexcept {
+    constexpr StaticLabel(int val) noexcept 
+    : hash(itoHash(val))
+    {}
+    
+    constexpr StaticLabel() = default;
+    constexpr auto itoHash(int val) noexcept -> unsigned int {
+        unsigned int ret;
         char digits[24];
         int len = 0;
         int temp = val < 0 ? -val : val;
@@ -441,11 +452,16 @@ struct StaticLabel {
         for (int i = 0; i < len; ++i) {
             buf[i] = digits[len - 1 - i];
         }
-        hash = used_std::strHash::fnv1a_hash(buf,static_cast<used_std::size_t>(len));
+        return ret  = used_std::strHash::fnv1a_hash(buf,static_cast<used_std::size_t>(len));
     }
-
-    constexpr StaticLabel() = default;
-
+    constexpr auto slen(const char* s) noexcept -> unsigned int {
+        size_t ret{0};
+        while (*s != '\0') {
+            ++ret;
+        }
+        return ret;
+    }
+    
     constexpr bool operator==(const StaticLabel& other) const noexcept {  
         return hash == other.hash;
     }
@@ -454,10 +470,6 @@ struct StaticLabel {
         return hash == other;
     }
 
-    constexpr StaticLabel& operator=(int val) noexcept {
-        *this = StaticLabel(val);
-        return *this;
-    }
 };
 
 // DSL range view builder for standard continuous iterators
@@ -701,18 +713,18 @@ struct is_projection_caseimpl<ProjectionCaseimpl<MemFn,ExpectedPattern>> : used_
 template <typename MemFn, typename ExpectedPattern>
 concept is_projection_case = is_projection_caseimpl<ProjectionCaseimpl<MemFn,ExpectedPattern>>::value;
 template<typename T>
-struct TypePredImpl {
+struct TypePred {
     using type = T;
 };
 
 template<typename T>
-inline constexpr auto TypePred = TypePredImpl<T>{};
+inline constexpr auto Type_is = TypePred<T>{};
 
 template <typename T>
 struct is_type_pred : used_std::false_type {};
 
 template <typename T>
-struct is_type_pred<TypePredImpl<T>> : used_std::true_type {};
+struct is_type_pred<TypePred<T>> : used_std::true_type {};
 
 template <typename T>
 concept isTypePred = is_type_pred<T>::value;
@@ -720,84 +732,198 @@ concept isTypePred = is_type_pred<T>::value;
 // ============================================================================
 // MATH INTERVAL DEFINITIONS
 // ============================================================================
-enum class RangeType  { Closed, Open, HalfOpenLeft, HalfOpenRight , Or , And };
+enum class RangeType { None, eq, neq, lt, lte, gt, gte, OneSize, Closed, Open, HalfOpenLeft, HalfOpenRight, Or, And };
 
-template <RangeType  iType = RangeType ::Closed,typename T = int> requires (used_std::is_arithmetic_v<T>)
-struct Range {
-    const T lhs;
-    const T rhs;
-    
+template <RangeType iType = RangeType::None, typename T = DefaultState> 
+requires (used_std::is_arithmetic_v<T> || used_std::is_same_v<T, DefaultState>)
+struct Range_t {
+    using enum RangeType;
+    static constexpr auto op = iType;
+    static constexpr used_std::size_t N = (op <= RangeType::OneSize) ? 1 : 2;  
+    T data[N];
+
+    constexpr Range_t() requires (N == 1) : data{} {}
+    constexpr Range_t(T val) requires (N == 1) : data{val} {}
+    constexpr Range_t(T lhs, T rhs) requires (N > 1) : data{lhs, rhs} {}
+
     template<typename Target>
     constexpr bool contains(Target target) const noexcept {
-        if constexpr (iType == RangeType::Closed) {
-            return (target >= lhs) && (target <= rhs);
+        if constexpr (op == None) {
+            return false;
+        }
+        else if constexpr (op == eq || op == OneSize) {
+            return target == data[0];
+        }
+        else if constexpr (op == neq) {
+            return target != data[0];
+        }
+        else if constexpr (op == lt) {
+            return target < data[0];
+        }
+        else if constexpr (op == lte) {
+            return target <= data[0];
+        }
+        else if constexpr (op == gt) {
+            return target > data[0];
+        }
+        else if constexpr (op == gte) {
+            return target >= data[0];
+        }
+        else if constexpr (op == Closed) {
+            return (target >= data[0]) && (target <= data[1]);
         } 
-        else if constexpr (iType == RangeType::Open) {
-            return (target > lhs) && (target < rhs);
+        else if constexpr (op == Open) {
+            return (target > data[0]) && (target < data[1]);
         }
-        else if constexpr (iType == RangeType::HalfOpenLeft) { // (min, max]
-            return (target > lhs) && (target <= rhs);
+        else if constexpr (op == HalfOpenLeft) { // (min, max]
+            return (target > data[0]) && (target <= data[1]);
         }
-        else if constexpr (iType == RangeType::HalfOpenRight) { // [min, max)
-            return (target >= lhs) && (target < rhs);
+        else if constexpr (op == HalfOpenRight) { // [min, max)
+            return (target >= data[0]) && (target < data[1]);
         }
-        else if constexpr (iType == RangeType::Or) { // Outside (min, max)
-            return (target < lhs) || (target > rhs);
+        else if constexpr (op == Or) { // Outside (min, max)
+            return (target < data[0]) || (target > data[1]);
         } 
         else {
             return false;
         }
     }
+
+    // Friend operators for initial left-hand bounds (e.g., 1 < x)
+    template<typename R> requires (used_std::is_arithmetic_v<R>)
+    friend constexpr auto operator <(R lhs, Range_t) noexcept {
+        return Range_t<RangeType::lt, R>(lhs);
+    }
+    template<typename R> requires (used_std::is_arithmetic_v<R>)
+    friend constexpr auto operator <=(R lhs, Range_t) noexcept {
+        return Range_t<RangeType::lte, R>(lhs);
+    }
+    template<typename R> requires (used_std::is_arithmetic_v<R>)
+    friend constexpr auto operator >(R lhs, Range_t) noexcept {
+        return Range_t<RangeType::gt, R>(lhs);
+    }
+    template<typename R> requires (used_std::is_arithmetic_v<R>)
+    friend constexpr auto operator >=(R lhs, Range_t) noexcept {
+        return Range_t<RangeType::gte, R>(lhs);
+    }
+    template<typename R> requires (used_std::is_arithmetic_v<R>)
+    friend constexpr auto operator ==(R lhs, Range_t) noexcept {
+        return Range_t<RangeType::eq, R>(lhs);
+    }
+    template<typename R> requires (used_std::is_arithmetic_v<R>)
+    friend constexpr auto operator !=(R lhs, Range_t) noexcept {
+        return Range_t<RangeType::neq, R>(lhs);
+    }
+
+    // Member operators for chaining ranges (e.g., 1 < x < 5)
+    constexpr auto operator <(T rhs) const noexcept {
+        if constexpr (op == None) {
+            return Range_t<RangeType::lt, T>(rhs);
+        } 
+        else if constexpr (op == gt || op == lt) {
+            return Range_t<RangeType::Open, T>(data[0], rhs);
+        }
+        else if constexpr (op == gte) {
+            return Range_t<RangeType::HalfOpenRight, T>(data[0], rhs);
+        }
+        else if constexpr (op == lte) {
+            return Range_t<RangeType::HalfOpenLeft, T>(data[0], rhs);
+        } else {
+            return Range_t<RangeType::Open, T>(data[0], rhs);
+        }
+    }
+
+    constexpr auto operator <=(T rhs) const noexcept {
+        if constexpr (op == None) {
+            return Range_t<RangeType::lte, T>(rhs);
+        }
+        else if constexpr (op == gt) {
+            return Range_t<RangeType::HalfOpenLeft, T>(data[0], rhs);
+        }
+        else if constexpr (op == gte && op == lte) {
+            return Range_t<RangeType::Closed, T>(data[0], rhs);
+        }
+        else if constexpr (op == lt) {
+            return Range_t<RangeType::HalfOpenRight, T>(data[0], rhs);
+        } 
+        else {
+            return Range_t<RangeType::Closed, T>(data[0], rhs);
+        }
+    }
+
+    constexpr auto operator >(T rhs) const noexcept requires (op == None) {
+        return Range_t<RangeType::gt, T>(rhs);
+    }
+
+    constexpr auto operator >=(T rhs) const noexcept requires (op == None) {
+        return Range_t<RangeType::gte, T>(rhs);
+    }
+
+    constexpr auto operator ==(T rhs) const noexcept {
+        return contains(rhs);
+    }
+
+    constexpr auto operator !=(T rhs) const noexcept {
+        return !contains(rhs);
+    }
 };
-template <RangeType  iType = RangeType ::Closed,typename T> requires (used_std::is_arithmetic_v<T>)
-Range(T,T) -> Range<iType,T>;
+
+template <RangeType iType = RangeType::Closed, typename T> 
+requires (used_std::is_arithmetic_v<T>)
+Range_t(T, T) -> Range_t<iType, T>;
 namespace concepts {
     template <typename T>
     struct is_range_inst : used_std::false_type {};
     
     template <RangeType iType,typename T>
-    struct is_range_inst<Range<iType,T>> : used_std::true_type {};
+    struct is_range_inst<Range_t<iType,T>> : used_std::true_type {};
     
     template <typename T>
     concept is_range_instance = is_range_inst<used_std::remove_cvref_t<T>>::value;
 }
 
-template <typename T,RangeType iType = RangeType::Closed> 
-constexpr auto make_range(T min, T max) noexcept { return Range<iType,T>{min, max}; }
+inline constexpr auto Range = Range_t{}; 
+template <used_std::size_t I, typename T>
+struct RangeNode {
+    T range;
+};
 
-template <typename T,RangeType iType = RangeType::Open> 
-constexpr auto make_range_exclusive(T min, T max) noexcept { return Range<iType,T>{min, max}; }
+// Helper implementation using index sequence expansion
+template <RangeType Op, typename IndexSeq, typename... Ranges>
+struct RangeCompoundImpl;
 
-template <typename T,RangeType iType = RangeType::HalfOpenLeft> 
-constexpr auto make_range_left_open(T min, T max) noexcept { return Range<iType,T>{min, max}; }
-
-template <typename T,RangeType iType = RangeType::HalfOpenRight> 
-constexpr auto make_range_right_open(T min, T max) noexcept { return Range<iType,T>{min, max}; }
-
-template <RangeType Op = RangeType::Or,typename... Ranges> requires (concepts::is_range_instance<Ranges> && ...)
-struct RangeCompound {
-    const used_std::tuple<const Ranges...> ranges;
-
-    constexpr explicit RangeCompound(Ranges... r) : ranges(used_std::move(r)...) {}
+template <RangeType Op, used_std::size_t... Is, typename... Ranges>
+struct RangeCompoundImpl<Op, used_std::index_sequence<Is...>, Ranges...> : private RangeNode<Is, Ranges>... {
+    
+    constexpr explicit RangeCompoundImpl(Ranges... r) 
+        : RangeNode<Is, Ranges>{used_std::move(r)}... {}
 
     template <typename Target>
     constexpr bool contains(Target target) const noexcept {
-        return used_std::apply([&target](const auto&... r) {
-            if constexpr (Op == RangeType::Or) {
-                // Short-circuits on the FIRST 'true'
-                return (r.contains(target) || ...); 
-            } else {
-                // Short-circuits on the FIRST 'false'
-                return (r.contains(target) && ...); 
-            }
-        }, ranges);
+        if constexpr (Op == RangeType::Or) {
+            // Short-circuits on the FIRST 'true'
+            return (RangeNode<Is, Ranges>::range.contains(target) || ...); 
+        } else {
+            // Short-circuits on the FIRST 'false'
+            return (RangeNode<Is, Ranges>::range.contains(target) && ...); 
+        }
     }
-    static_assert(Op == RangeType::Or || Op == RangeType::And,"Requires RangeType And / Or");
 };
 
-template <RangeType Op = RangeType::Or,typename... Ranges> 
+// Public user-facing struct inheriting from the implementation pack
+template <RangeType Op = RangeType::Or, typename... Ranges> 
 requires (concepts::is_range_instance<Ranges> && ...)
-RangeCompound(Ranges...) -> RangeCompound<Op,Ranges...>;
+struct RangeCompound : public RangeCompoundImpl<Op, used_std::make_index_sequence<sizeof...(Ranges)>, Ranges...> {
+    
+    using Base = RangeCompoundImpl<Op, used_std::make_index_sequence<sizeof...(Ranges)>, Ranges...>;
+    using Base::Base; // Inherit constructors
+
+    static_assert(Op == RangeType::Or || Op == RangeType::And, "Requires RangeType And / Or");
+};
+
+template <RangeType Op = RangeType::Or, typename... Ranges> 
+requires (concepts::is_range_instance<Ranges> && ...)
+RangeCompound(Ranges...) -> RangeCompound<Op, Ranges...>;
 
 template <RangeType Op = RangeType::Or,typename... Ranges>
 constexpr auto make_compound_range(Ranges&&... ranges) noexcept {
@@ -1057,7 +1183,7 @@ namespace concepts {
     using primitive_param_t = used_std::conditional_t<
         used_std::is_fundamental_v<used_std::decay_t<T>>, 
         used_std::decay_t<T>, 
-        const used_std::decay_t<T>&
+        used_std::decay_t<T>&
     >;
 }
 
@@ -1197,34 +1323,34 @@ struct baseCase {};
 
 template <typename KeyType = DefaultState, typename ActionType = DefaultState>
 struct ImplCase final : baseCase {
-    static constexpr bool isDefaultKey = used_std::is_same_v<KeyType, DefaultState>;
-    static constexpr bool isDefaultAction = used_std::is_same_v<ActionType, DefaultState>;
+    static constexpr bool isDefaultKey    = !used_std::is_same_v<KeyType, DefaultState>;
+    static constexpr bool isDefaultAction = !used_std::is_same_v<ActionType, DefaultState>;
 
     const KeyType key;
     const ActionType action;
     
     constexpr ImplCase() = delete;
 
-    constexpr ImplCase(const KeyType& k) noexcept requires (!isDefaultKey)
+    constexpr ImplCase(const KeyType& k) noexcept requires (isDefaultKey)
     : key(k), 
     action(DefaultState{}) 
     {}
-    constexpr ImplCase(KeyType&& k) noexcept requires (!isDefaultKey)
+    constexpr ImplCase(KeyType&& k) noexcept requires (isDefaultKey)
     : key(used_std::forward<KeyType>(k)),
     action(DefaultState{}) 
     {}
     
     template <typename K, typename A>
-    constexpr ImplCase(K k, A a) noexcept requires (!isDefaultKey)
-    : key(used_std::move(k)), action(used_std::move(a)) {}
+    constexpr ImplCase(K&& k, A&& a) noexcept requires (isDefaultKey)
+    : key(used_std::forward<K>(k)), action(used_std::forward<A>(a)) {}
 
     template <typename NewAction>
-    constexpr auto operator>>(NewAction&& new_action) noexcept requires (!isDefaultKey && isDefaultAction) 
+    constexpr auto operator>>(NewAction&& new_action) noexcept requires (isDefaultKey && !isDefaultAction) 
     {
         using Action_t = used_std::decay_t<NewAction>;
         return ImplCase<KeyType, Action_t>(
             used_std::move(key), 
-            used_std::forward<NewAction>(new_action)
+            used_std::forward<const Action_t>(new_action)
         );
     }
 };
@@ -1233,47 +1359,48 @@ ImplCase(Key) -> ImplCase<Key>;
 
 template <StaticLabel LabelID, typename KeyType = DefaultState, typename ActionType = DefaultState>
 struct ImplLabelCase final : baseCase {
-    static constexpr bool isDefaultKey = used_std::is_same_v<KeyType, DefaultState>;
-    static constexpr bool isDefaultAction = used_std::is_same_v<ActionType, DefaultState>;
+    static constexpr bool isDefaultKey = !used_std::is_same_v<KeyType, DefaultState>;
+    static constexpr bool isDefaultAction = !used_std::is_same_v<ActionType, DefaultState>;
 
     const KeyType key;
     const ActionType action;
     
     static constexpr auto label = LabelID;
     
-    constexpr ImplLabelCase(const KeyType& k) noexcept requires (!isDefaultKey)
+    constexpr ImplLabelCase(const KeyType& k) noexcept requires (isDefaultKey)
     : key(k),
     action(DefaultState{}) 
     {}
-    constexpr ImplLabelCase(KeyType&& k) noexcept requires (!isDefaultKey)
-    : key(used_std::move(k)), 
+    constexpr ImplLabelCase(KeyType&& k) noexcept requires (isDefaultKey)
+    : key(used_std::forward<KeyType>(k)), 
     action(DefaultState{}) 
     {}
     
     template <typename K, typename A>
-    constexpr ImplLabelCase(K k, A a) noexcept requires (!isDefaultKey)
-    : key(used_std::move(k)), action(used_std::move(a)) {}
+    constexpr ImplLabelCase(K&& k, A&& a) noexcept requires (isDefaultKey)
+    : key(used_std::forward<K>(k)), action(used_std::forward<A>(a)) {}
+
 
     template <typename NewAction>
-    constexpr auto operator>>(NewAction&& new_action) noexcept requires (!isDefaultKey && isDefaultAction)
+    constexpr auto operator>>(NewAction&& new_action) noexcept requires (isDefaultKey && !isDefaultAction)
     {
         using Action_t = used_std::decay_t<NewAction> ;
         return ImplLabelCase<LabelID,KeyType, Action_t>(
             used_std::move(key), 
-            used_std::forward<NewAction>(new_action)
+            used_std::forward<const Action_t>(new_action)
         );
     }
 };
 
 template <typename T> 
-inline constexpr auto Case(T&& val) noexcept {
+constexpr auto Case(T&& __val) noexcept {
     using Key_t = used_std::decay_t<T>;
-    return ImplCase<Key_t>(used_std::forward<T>(val)); 
+    return ImplCase<Key_t>(used_std::forward<T>(__val)); 
 }
 template <StaticLabel LabelID,typename T> 
-inline constexpr auto Case(T&& val) noexcept { 
+constexpr auto Case(T&& __val) noexcept { 
     using Key_t = used_std::decay_t<T>;
-    return ImplLabelCase<LabelID, Key_t>(used_std::forward<T>(val)); 
+    return ImplLabelCase<LabelID, Key_t>(used_std::forward<T>(__val)); 
 }
 
 template <typename T>
@@ -1327,16 +1454,18 @@ struct ReturnTypeHelper<true, CaseType, TargetType> {
 // ============================================================================
 //                               WRAPPERS 
 // ============================================================================
-template <typename TargetType, typename... Cases>
-struct match {
-    // static constexpr bool defaultContext = used_std::is_same_v<ContextTuple, DefaultState>;
+template <typename TargetType = DefaultState, typename... Cases>
+struct match_t {
     static constexpr used_std::size_t TotalCases    = sizeof...(Cases);
+    
+    static constexpr bool defaultTarget  = used_std::is_same_v<TargetType, DefaultState>;
     static constexpr bool defaultCases   = TotalCases == 0;
-    static constexpr bool is_configured  = !defaultCases;
+    static constexpr bool is_configured  = !defaultTarget && !defaultCases;
+
     static constexpr used_std::size_t TotalCasesIndex = is_configured ? TotalCases - 1 : 0;
     static constexpr used_std::size_t LastCaseIndex = TotalCasesIndex;
     
-    using StoreTarget = used_std::remove_cvref_t<concepts::primitive_param_t<TargetType>>;
+    using StoreTarget = TargetType;
     using StoreCases = used_std::conditional_t<is_configured, used_std::tuple<used_std::remove_cvref_t<Cases>...>, used_std::tuple<Wildcard>>;
     
     using CasesIndex = used_std::make_index_sequence<TotalCases>;
@@ -1348,60 +1477,58 @@ struct match {
     struct State {
         used_std::size_t next_idx;
         TargetType current_target;
-        bool eval;
         bool jump_signal;
         bool matched;
         CleanReturnType result;
     };
     
-    const StoreTarget target;
+    StoreTarget target;
     StoreCases cases;
-    constexpr match() noexcept requires (defaultCases) : target(__)
+    
+    constexpr match_t(StoreTarget t) noexcept : target(t) 
     {}
-
-    constexpr match(StoreTarget t) noexcept requires (defaultCases) : target(t) 
+    constexpr match_t() noexcept : target(DefaultState{})
     {}
-
-    constexpr match(const StoreTarget&& t,Cases&&... ca) noexcept requires (!defaultCases)
-        : target(used_std::forward<const StoreTarget>(t)),  
+    constexpr match_t(match_t&& other) noexcept 
+    : target(other.target),
+      cases(other.cases)
+    {}
+    constexpr match_t(StoreTarget&& t,Cases&&... ca) noexcept requires (is_configured)
+        : target(used_std::forward<StoreTarget>(t)),  
           cases(used_std::forward<Cases>(ca)...)
     {}
 
-    constexpr ReturnType operator()() noexcept requires (is_configured) {
-        return used_std::move(*this).run();
-    }
-
-    template <typename Element> requires (is_configured)
-    constexpr auto operator()(Element&& elem) noexcept {
-        this->target = used_std::forward<Element>(elem);
-        
-        if constexpr (used_std::is_same_v<CleanReturnType, bool>) {
-            return used_std::move(*this).run();
-        } else {
-            return static_cast<bool>(used_std::move(*this).run());
-        }
-    }
-
     template <typename cT>
     using case_t = used_std::decay_t<cT>;
-    template <typename... ContextArgs> requires (!is_configured)
-    constexpr auto operator()(ContextArgs&&... args) noexcept {
-        static_assert(sizeof...(ContextArgs) > 0, "operator() requires at least one argument (the default action).");
-        
-        return match<TargetType, case_t<ContextArgs>...>(
-            used_std::move(target),
-            used_std::forward<ContextArgs>(args)...
+    template <typename T> requires (defaultTarget)
+    constexpr auto operator()(T&& target) const noexcept {
+        // static_assert(sizeof...(ContextArgs) > 0, "operator() requires at least one argument (the default action).");
+        // static_assert( == sizeof(match), "eq size"); 
+        return match_t<used_std::remove_cvref_t<T>>(
+            used_std::forward<T>(target)
         );
     }
-
-    template<typename T>
-    constexpr operator T() noexcept requires (is_configured) {
-        return used_std::move(*this).run();
+    template <typename... ContextArgs> requires (!defaultTarget && defaultCases)
+    constexpr auto operator()(ContextArgs&&... args) && noexcept {
+        static_assert(sizeof...(ContextArgs) > 0, "operator() requires at least one argument (the default action).");
+        // static_assert( == sizeof(match), "eq size"); 
+        return match_t<TargetType, case_t<ContextArgs>...>(
+            used_std::move(target),
+            used_std::forward<ContextArgs>(args)...
+        ).run();
+    }
+    template <typename... ContextArgs> requires (!defaultTarget && defaultCases)
+    constexpr auto when(ContextArgs&&... args) && noexcept {
+        static_assert(sizeof...(ContextArgs) > 0, "operator() requires at least one argument (the default action).");
+        // static_assert( == sizeof(match), "eq size"); 
+        return match_t<TargetType, case_t<ContextArgs>...>(
+            used_std::move(target),
+            used_std::forward<ContextArgs>(args)...
+        ).to_fn();
     }
 
-    // template<used_std::size_t Is>
     constexpr void Dispatch(auto& action,State& current_state) noexcept requires(is_configured) {
-        auto& [next_idx, current_target,eval,jump_signal,matched,result] = current_state;
+        auto& [next_idx, current_target,jump_signal,matched,result] = current_state;
         
         using RawActionResult = typename ReturnTypeHelper<true,decltype(action),StoreTarget>::type;
 
@@ -1479,8 +1606,9 @@ struct match {
         constexpr used_std::size_t Range = High - Low;      
         #define DCASE(IDX) \
         case(Low + IDX):   \
-        if constexpr (Low + IDX < High) {   \
-            return evaluateCase<Low + IDX>(state); \
+        if constexpr (Low + IDX < High) {           \
+            return evaluateCase<Low + IDX>(state);  \
+            break;                                  \
         } else __builtin_unreachable();
         switch(state.next_idx) {
             DCASE(0)
@@ -1507,7 +1635,7 @@ struct match {
     }
 
     constexpr ReturnType run() noexcept requires (is_configured && TotalCases > 1) {
-        State state{.next_idx= 0 ,.current_target= target ,.eval=false,.jump_signal= false ,.matched= false,.result={}};
+        State state{.next_idx= 0 ,.current_target= target ,.jump_signal= false ,.matched= false,.result={}};
         while (state.next_idx < TotalCasesIndex) {
             DispatchCase<0,TotalCasesIndex>(state);
             if (state.matched) break;
@@ -1523,12 +1651,25 @@ struct match {
             execute_action(used_std::get<LastCaseIndex>(cases), target);
         }
     }
+    
     constexpr ReturnType run() noexcept requires (is_configured && TotalCases <= 1) {
             return used_std::is_same_v<CleanReturnType, void> || used_std::is_same_v<CleanReturnType, Wildcard> ? 
             ReturnType(0) : 
             execute_action(used_std::get<LastCaseIndex>(cases), target);
     }
     
+    constexpr auto to_fn() {
+        return [self = used_std::move(*this)](const StoreTarget& elem) mutable {
+            State state{.next_idx= 0 ,.current_target=elem ,.jump_signal= false ,.matched= false,.result={}};
+            while (state.next_idx < TotalCasesIndex) {
+                self.template DispatchCase<0,TotalCasesIndex>(state);
+                if (state.matched) break;
+            }
+            return state.matched ? 
+            state.result : 
+            execute_action(used_std::get<LastCaseIndex>(self.cases), self.target);
+        };
+    }
     // constexpr auto to_predicate() && requires (is_configured) {
     //     return [self = used_std::move(*this)](const auto& elem) mutable {
     //         constexpr auto is = used_std::make_index_sequence<TotalCases::value>{};
@@ -1558,7 +1699,10 @@ struct match {
     
 };
 template <typename TargetType>
-match(TargetType) -> match<TargetType>;
+match_t(TargetType) -> match_t<TargetType>;
+
+inline constexpr auto match = match_t();
+
 #endif
 // ============================================================================
 //                                GRAVEYARD

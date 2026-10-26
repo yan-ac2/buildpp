@@ -1,7 +1,8 @@
 
 #include <iostream>
 // #include <ranges>
-#include <variant>
+#include <span> 
+#include <ranges> 
 #include "match.hpp"
 
 // --- A. Numeric & Range matching ---
@@ -10,9 +11,9 @@ void showcase_numeric_and_ranges(int score) {
     // std::size_t score2 = 2;
     std::string_view result = match(score) (
         Case(100)                      >> "Perfect Score!",
-        Case(Range{90,99})   >> "Grade: A",
-        Case(Range{80, 89})  >> "Grade: B",
-        Case(Range{70, 79})  >> "Grade: C",
+        Case(90 >= Range < 99) >> "Grade: A",
+        Case(80 > Range < 89)  >> "Grade: B",
+        Case(70 > Range < 79)  >> "Grade: C",
         (score < 70 ? "Grade: Fail" : "Grade: Invalid")
     );
 
@@ -44,9 +45,9 @@ void showcase_hash_labels(std::string_view command) {
 auto visit(auto&& arg) {
     std::cout << "\n=== Visit ===" << std::endl;
     std::string_view ret = match(arg) (
-        Case(TypePred<int>)    >> "int",
-        Case(TypePred<float>)  >> "float",
-        Case(TypePred<double>) >> "double",
+        Case(Type_is<int>)    >> "int",
+        Case(Type_is<float>)  >> "float",
+        Case(Type_is<double>) >> "double",
         Case(__)               >> "err",
         "UNDEFINED!"
     );
@@ -147,9 +148,9 @@ int main () {
         }
     };
     constexpr s test = 20;
-    constexpr int num = 15;
+    constexpr int num = 29;
     static_assert(match(num) (
-        Case<"id">(make_compound_range(Range{0,15},Range{20,30})) >> true,
+        Case<"id">(make_compound_range(0 >= Range <= 15,20 > Range < 30)) >> true,
         false), "" );
     // static_assert(match(num) (
     //     Case(make_compound_range(Range<RangeType::Or>{0,10},Range<RangeType::Or>{20,40})) >> []{return true;},
@@ -169,16 +170,16 @@ int main () {
         []{
             std::cout << "Error";
         }
-    )();
+    );
     std::cout << "\n";
     int num2 = 0;
     for (int i = 0 ;i < 5; ++i) {
         match(num2) (
-            Case<"inRange">(Range{20,40}) >> [&]{
+            Case<"inRange">(20 >= Range <= 40) >> [&]{
                 std::cout << "is in range";
                 num2 = 0;
             },
-            Case<"outRange">(Range{0,20}) >> [&] {
+            Case<"outRange">(0 >= Range <= 20) >> [&] {
                 ++num2;
                 std::cout << "increase" << num2 << '\n';
                 if (num2 >= 15) {
@@ -190,16 +191,24 @@ int main () {
             Case<"any">(__) >> [&] {
                 --num2;
                 std::cout << "decrease" << num2 << '\n';
-                return Range{20,40}.contains(num2) ? Goto<"inRange"> : Goto<"any">;
+                return (20 >= Range <= 40) == num2 ? Goto<"inRange"> : Goto<"any">;
             },
             []{
                 std::cout << "is not range";
             }
-        )();
+        );
     }
 
     int arrtest[] {1,2,3,4,5,6,7,8};
-    // auto rangetest = arrtest | std::ranges::views::filter(match(int{})()(Case(Range{1,5}) >> true,false).to_predicate());
+    // auto rangetest = std::span{arrtest} | std::views::filter(
+    //     // [](auto& r) {
+    //     //     return r > 5 ? true : false;
+    //     // }
+    //     match(int{}).when(
+    //         Case(Range{1,5}) >> true
+    //         ,false
+    //     ) 
+    // );
 
     // for (int i : rangetest) {
     //     std::cout << i << ", ";
@@ -207,12 +216,12 @@ int main () {
     // std::cout << "\n";
     for (int i : arrtest) {
         match(i) (
-            Case<"eval">(Range{1,5}) >> Goto<"print">,
+            Case<"eval">(1 >= Range <= 5) >> Goto<"print">,
             Case<"print">(false) >> [i]{
                 std::cout << i << ", ";
             },
             false
-        )();
+        );
     }
     std::cout << "\n";
     return 1;
