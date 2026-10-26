@@ -53,56 +53,46 @@ namespace used_std {
     };
 
     // 1. Correct Primary Template (Single parameter T)
-    template <typename T>
-    struct function_traits;
-
-    // 2. Plain function signature: Ret(Args...)
-    template <typename Ret, typename... Args>
-    struct function_traits<Ret(Args...)> : function_traits_base<Ret, Args...> {
-        using fn_type = Ret(Args...);
-        static constexpr bool is_member   = false;
-        static constexpr bool is_noexcept = false;
+    template <typename T, typename = void>
+    struct function_traits : function_traits_base<T> {
+        static constexpr bool is_function          = false;
+        static constexpr bool is_member_function   = false;
+        static constexpr bool is_noexcept          = false;
     };
+    #define DEFINE_FUNCTION_TRAITS(ACCESSOR,QUALIFIERS,NOEXCEPT_VAL) \
+    template <typename Ret, typename... Args>                \
+    struct function_traits<Ret ACCESSOR (Args...) QUALIFIERS>\
+    : function_traits_base<Ret, Args...> {                   \
+        using fn_type = Ret ACCESSOR (Args...) QUALIFIERS ;  \
+        static constexpr bool is_function         = true;        \
+        static constexpr bool is_member_function  = false;       \
+        static constexpr bool is_noexcept         = NOEXCEPT_VAL;\
+    };                                                       
+    DEFINE_FUNCTION_TRAITS(,,false)
+    DEFINE_FUNCTION_TRAITS(,volatile,false)
+    DEFINE_FUNCTION_TRAITS(,noexcept,true)
+    // DEFINE_FUNCTION_TRAITS(,noexcept volatile,true)
 
-    template <typename Ret, typename... Args>
-    struct function_traits<Ret(Args...) noexcept> : function_traits_base<Ret, Args...> {
-        using fn_type = Ret(Args...) noexcept;
-        static constexpr bool is_member   = false;
-        static constexpr bool is_noexcept = true;
-    };
+    DEFINE_FUNCTION_TRAITS((*),,false)
+    DEFINE_FUNCTION_TRAITS((*),noexcept,true)
 
-    // 3. Function Pointers
-    template <typename Ret, typename... Args>
-    struct function_traits<Ret(*)(Args...)> : function_traits<Ret(Args...)> {
-        using fn_type = Ret(*)(Args...);
-    };
+    DEFINE_FUNCTION_TRAITS((&),,false)
+    DEFINE_FUNCTION_TRAITS((&),noexcept,true)
 
-    template <typename Ret, typename... Args>
-    struct function_traits<Ret(*)(Args...) noexcept> : function_traits<Ret(Args...) noexcept> {
-        using fn_type = Ret(*)(Args...) noexcept;
-    };
-
-    // 4. Function References
-    template <typename Ret, typename... Args>
-    struct function_traits<Ret(&)(Args...)> : function_traits<Ret(Args...)> {
-        using fn_type = Ret(&)(Args...);
-    };
-
-    template <typename Ret, typename... Args>
-    struct function_traits<Ret(&)(Args...) noexcept> : function_traits<Ret(Args...) noexcept> {
-        using fn_type = Ret(&)(Args...) noexcept;
-    };
+    #undef DEFINE_FUNCTION_TRAITS
+    #undef EMPTY
 
     // Macro helper to generate member function pointer specializations cleanly
-    #define DEFINE_MEMBER_FUNCTION_TRAITS(QUALIFIERS, NOEXCEPT_VAL)                       \
-    template <typename Ret, typename Class, typename... Args>                             \
-    struct function_traits<Ret (Class::*)(Args...) QUALIFIERS>                            \
-        : function_traits_base<Ret, Args...> {                                           \
-        using class_type = Class;                                                        \
-        using fn_type    = Ret (Class::*)(Args...) QUALIFIERS;                           \
-        using args_tuple_class_temp = used_std::tuple<Class*, used_std::decay_t<Args>...>;\
-        static constexpr bool is_member   = true;                                        \
-        static constexpr bool is_noexcept = NOEXCEPT_VAL;                                \
+    #define DEFINE_MEMBER_FUNCTION_TRAITS(QUALIFIERS, NOEXCEPT_VAL)                         \
+    template <typename Ret, typename Class, typename... Args>                               \
+    struct function_traits<Ret (Class::*)(Args...) QUALIFIERS>                              \
+        : function_traits_base<Ret, Args...> {                                              \
+        using class_type = Class;                                                           \
+        using fn_type    = Ret (Class::*)(Args...) QUALIFIERS;                              \
+        using args_tuple_class_temp = used_std::tuple<Class*, used_std::decay_t<Args>...>;  \
+        static constexpr bool is_function        = false;                                   \
+        static constexpr bool is_member_function = true;                                    \
+        static constexpr bool is_noexcept        = NOEXCEPT_VAL;                            \
     };
 
     // Generate for standard combinations of const / volatile / ref / noexcept
@@ -132,12 +122,18 @@ namespace used_std {
 
     // Specialization for Lambdas / Functors with operator()
     template <typename T>
-    struct callable_traits<T, used_std::void_t<decltype(&T::operator())>> {
-        using type = typename callable_traits<decltype(&T::operator())>::type;
+    struct callable_traits<T, used_std::void_t<decltype(&used_std::remove_cvref_t<T>::operator())>> {
+        using type = typename callable_traits<decltype(&used_std::remove_cvref_t<T>::operator())>::type;
     };
 
     template <typename T>
     using callable_traits_t = typename callable_traits<used_std::remove_cvref_t<T>>::type;
+
+    template<typename Fn>
+    concept callable_type = 
+    callable_traits_t<Fn>::is_function ||
+    callable_traits_t<Fn>::is_member
+    ;
 
    template <typename Fn, typename... Args>
     concept invocable = requires (Fn&& a,Args&&... args) {
@@ -398,7 +394,6 @@ namespace used_std {
         return used_std::forward<Fn>(fn)(used_std::get<I>(t)...);
     }
 
-    inline auto unreachable = []() noexcept {__builtin_unreachable();};
 }
 template <used_std::size_t N>
 struct StaticString {
@@ -421,16 +416,16 @@ struct StaticLabel {
     
     // 1. String Literal Constructor (auto-hashes and stores string)
     template <used_std::size_t N>
-    constexpr StaticLabel(StaticString<N> string) {
-        hash = used_std::strHash::fnv1a_hash(string.data, N);
-    }
+    constexpr StaticLabel(StaticString<N> string) noexcept 
+    : hash(used_std::strHash::fnv1a_hash(string.data, N)) 
+    {}
     template <used_std::size_t N>
-    constexpr StaticLabel(const char (&string)[N] ) {
-        hash = used_std::strHash::fnv1a_hash(string, N);
-    }
+    constexpr StaticLabel(const char (&string)[N] ) noexcept 
+    : hash(used_std::strHash::fnv1a_hash(string, N)) 
+    {}
 
     // 2. Integer Constructor (stores int value and hashes the int)
-    constexpr StaticLabel(int val) {
+    constexpr StaticLabel(int val) noexcept {
         char digits[24];
         int len = 0;
         int temp = val < 0 ? -val : val;
@@ -497,8 +492,6 @@ struct DefaultState{};
 struct Wildcard {};
 [[maybe_unused]] inline constexpr Wildcard __{};
 
-// enum class BranchHint { None, Likely, Unlikely };
-
 template <FlowKind Kind>
 struct SignalBase {
     static constexpr FlowKind static_flow_kind = Kind;
@@ -561,33 +554,51 @@ namespace concepts {
 
 template <typename Fn>
 concept IsCallableType = 
-used_std::is_function_v<used_std::remove_pointer_t<Fn>> or  
-used_std::is_member_pointer_v<used_std::remove_pointer_t<Fn>> or                
-requires (used_std::remove_cvref_t<Fn> f) {
-    f;
-};
-template <IsCallableType T>
-struct Free_Function_helper {
-    using type = Wildcard;
+used_std::callable_traits_t<used_std::remove_pointer_t<Fn>>::is_function ||
+used_std::callable_traits_t<used_std::remove_pointer_t<Fn>>::is_member_function;
+
+template <typename T, typename = void>
+struct Function_Traits_helper {
+    using type       = used_std::callable_traits_t<T>;
+    using fn_type    = Wildcard;
+    using class_type = Wildcard;
 };
 
-// Only instantiate callable_traits_t if T is a member function pointer
-template <IsCallableType T>
-requires used_std::is_member_function_pointer_v<T>
-struct Free_Function_helper<T> {
-    using type = typename used_std::callable_traits_t<T>::class_type;
+template <typename T>
+requires (used_std::callable_traits_t<T>::is_function)
+struct Function_Traits_helper<T> {
+    using type       = used_std::callable_traits_t<T>;
+    using fn_type    = typename type::fn_type;
+    using class_type = Wildcard;
+};
+
+// Specialization for Member Function Pointers and Lambda operator()s
+template <typename T>
+requires (used_std::callable_traits_t<T>::is_member_function)
+struct Function_Traits_helper<T> {
+    using type       = used_std::callable_traits_t<T>;
+    using fn_type    = typename type::fn_type;
+    using class_type = typename type::class_type;
 };
 
 template <IsCallableType Fn>
 struct FnPredicate {
-    Fn fn;
-    typename Free_Function_helper<Fn>::type* instance;
-    FnPredicate(Fn&& fin) : fn(used_std::forward<Fn>(fin)) {}
-    FnPredicate(Fn&& fin, decltype(instance) inst) : fn(used_std::forward<Fn>(fin)),instance(inst) {}
+    using Helper     = Function_Traits_helper<Fn>;
+    using Traits     = Helper::type;
+    using class_type = Helper::class_type;
+    using fn_type    = Helper::fn_type;
+    static constexpr bool is_member_function = Traits::is_member_function;
+    using instance_type = used_std::conditional_t<is_member_function, const class_type*, Wildcard>;
+    const fn_type fn;
+    instance_type instance;
+    FnPredicate(Fn&& f) noexcept : fn(used_std::forward<Fn>(f)) {}
+    FnPredicate(Fn&& f, class_type* inst) noexcept requires(is_member_function) 
+    : fn(used_std::forward<Fn>(f)),instance(inst) {}
+
     template <typename Target>
-    constexpr bool operator()(const Target& target) const {
-        if constexpr (used_std::is_member_function_pointer_v<used_std::remove_pointer_t<Fn>>) {
-            if constexpr (used_std::is_convertible_v<Target,typename Free_Function_helper<Fn>::type>) {
+    constexpr bool operator()(const Target& target) const noexcept {
+        if constexpr (is_member_function) {
+            if constexpr (used_std::is_convertible_v<Target,class_type>) {
                 return used_std::invoke(fn, target);
             } else {
                 return used_std::invoke(fn, instance ,target);
@@ -608,34 +619,33 @@ constexpr auto Predicate(Fn&& fn,Class* obj) {
     return FnPredicate<Fn>(used_std::forward<Fn>(fn) ,obj);
 }
 
-template <IsCallableType T>
-struct Projection_Function_helper {
-    using type = typename used_std::callable_traits_t<T>::args_tuple_temp;
-};
-
 // --- Projection Case (Pattern + Member Function Extractor) ---
 template <IsCallableType Fn, typename ExpectedPattern>
 struct ProjectionCaseimpl {
-    using fnTraits = typename used_std::callable_traits_t<Fn>;
-    typename fnTraits::fn_type fn;
-    typename Projection_Function_helper<Fn>::type args;
+    using Helper = Function_Traits_helper<Fn>;
+    using fnTraits = Helper::type;
+    using fn_type = Helper::fn_type;
+    using class_type = Helper::class_type;
+    using args_type = typename fnTraits::args_tuple_temp;
+
+    fn_type fn;
+    args_type args;
     ExpectedPattern pattern;
 
     // Single-argument constructor (no projection args)
-    ProjectionCaseimpl(Fn&& f, ExpectedPattern&& p) 
+    ProjectionCaseimpl(Fn&& f, ExpectedPattern&& p) noexcept
         : fn(used_std::forward<Fn>(f)), 
-          args{}, 
           pattern(used_std::forward<ExpectedPattern>(p)) {}
 
     // Constructor accepting fn, tuple of args, and pattern
     template<typename TupleArgs>
-    ProjectionCaseimpl(Fn&& f, TupleArgs&& a, ExpectedPattern&& p) 
+    ProjectionCaseimpl(Fn&& f, TupleArgs&& a, ExpectedPattern&& p) noexcept 
         : fn(used_std::forward<Fn>(f)), 
           args(used_std::forward<TupleArgs>(a)),
           pattern(used_std::forward<ExpectedPattern>(p)) {}
 
     template<typename T = void>
-    constexpr bool operator()() const {
+    constexpr bool operator()() const noexcept {
         // std::apply handles both regular functions and member function pointers 
         // when arguments (including instance pointer/ref) are packed in a tuple.
         decltype(auto) extracted_val = used_std::apply(fn, args);
@@ -645,8 +655,8 @@ struct ProjectionCaseimpl {
 
 // Case 1: No extra arguments
 template <typename ExpectedPattern, IsCallableType Fn>
-constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn&& fn) {
-    using fn_t = typename used_std::callable_traits_t<used_std::remove_cvref_t<Fn>>::fn_type;
+constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn&& fn) noexcept {
+    using fn_t = used_std::remove_cvref_t<Fn>;
     return ProjectionCaseimpl<fn_t, used_std::decay_t<ExpectedPattern>>(
         used_std::forward<Fn>(fn),
         used_std::forward<ExpectedPattern>(pattern)
@@ -655,7 +665,7 @@ constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn&& fn) {
 
 // Case 2: General arguments
 template <typename ExpectedPattern, IsCallableType Fn, typename... Args>
-constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn&& fn, Args&&... args) {
+constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn&& fn, Args&&... args) noexcept {
     using fnTraits = used_std::callable_traits_t<used_std::remove_cvref_t<Fn>>;
     static_assert(sizeof...(Args) <= fnTraits::args, "Too many arguments provided for projection function");
 
@@ -669,7 +679,7 @@ constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn&& fn, Args&&... args
 
 // Case 3: Explicit object instance + member arguments
 template <typename ExpectedPattern, IsCallableType Fn, typename Class, typename... Args>
-constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn&& fn, Class* instance, Args&&... args) {
+constexpr auto ProjectionCase(ExpectedPattern&& pattern, Fn&& fn, Class* instance, Args&&... args) noexcept {
     using fnTraits = used_std::callable_traits_t<used_std::remove_cvref_t<Fn>>;
     using fn_t = typename fnTraits::fn_type;
 
@@ -704,7 +714,6 @@ struct is_type_pred : used_std::false_type {};
 template <typename T>
 struct is_type_pred<TypePredImpl<T>> : used_std::true_type {};
 
-// FIX: Check is_type_pred<T> directly
 template <typename T>
 concept isTypePred = is_type_pred<T>::value;
 
@@ -715,8 +724,8 @@ enum class RangeType  { Closed, Open, HalfOpenLeft, HalfOpenRight , Or , And };
 
 template <RangeType  iType = RangeType ::Closed,typename T = int> requires (used_std::is_arithmetic_v<T>)
 struct Range {
-    T lhs;
-    T rhs;
+    const T lhs;
+    const T rhs;
     
     template<typename Target>
     constexpr bool contains(Target target) const noexcept {
@@ -746,21 +755,28 @@ namespace concepts {
     template <typename T>
     struct is_range_inst : used_std::false_type {};
     
-    template <RangeType  iType,typename T>
+    template <RangeType iType,typename T>
     struct is_range_inst<Range<iType,T>> : used_std::true_type {};
     
     template <typename T>
     concept is_range_instance = is_range_inst<used_std::remove_cvref_t<T>>::value;
 }
 
-template <typename T,RangeType iType = RangeType::Closed> constexpr auto make_range(T min, T max) noexcept { return Range<iType,T>{min, max}; }
-template <typename T,RangeType iType = RangeType::Open> constexpr auto make_range_exclusive(T min, T max) noexcept { return Range<iType,T>{min, max}; }
-template <typename T,RangeType iType = RangeType::HalfOpenLeft> constexpr auto make_range_left_open(T min, T max) noexcept { return Range<iType,T>{min, max}; }
-template <typename T,RangeType iType = RangeType::HalfOpenRight> constexpr auto make_range_right_open(T min, T max) noexcept { return Range<iType,T>{min, max}; }
+template <typename T,RangeType iType = RangeType::Closed> 
+constexpr auto make_range(T min, T max) noexcept { return Range<iType,T>{min, max}; }
+
+template <typename T,RangeType iType = RangeType::Open> 
+constexpr auto make_range_exclusive(T min, T max) noexcept { return Range<iType,T>{min, max}; }
+
+template <typename T,RangeType iType = RangeType::HalfOpenLeft> 
+constexpr auto make_range_left_open(T min, T max) noexcept { return Range<iType,T>{min, max}; }
+
+template <typename T,RangeType iType = RangeType::HalfOpenRight> 
+constexpr auto make_range_right_open(T min, T max) noexcept { return Range<iType,T>{min, max}; }
 
 template <RangeType Op = RangeType::Or,typename... Ranges> requires (concepts::is_range_instance<Ranges> && ...)
 struct RangeCompound {
-    used_std::tuple<Ranges...> ranges;
+    const used_std::tuple<const Ranges...> ranges;
 
     constexpr explicit RangeCompound(Ranges... r) : ranges(used_std::move(r)...) {}
 
@@ -769,15 +785,16 @@ struct RangeCompound {
         return used_std::apply([&target](const auto&... r) {
             if constexpr (Op == RangeType::Or) {
                 // Short-circuits on the FIRST 'true'
-                return (r.contains(target) or ...); 
+                return (r.contains(target) || ...); 
             } else {
                 // Short-circuits on the FIRST 'false'
-                return (r.contains(target) and ...); 
+                return (r.contains(target) && ...); 
             }
         }, ranges);
     }
-    static_assert(Op == RangeType::Or or Op == RangeType::And,"Requires RangeType And / Or");
+    static_assert(Op == RangeType::Or || Op == RangeType::And,"Requires RangeType And / Or");
 };
+
 template <RangeType Op = RangeType::Or,typename... Ranges> 
 requires (concepts::is_range_instance<Ranges> && ...)
 RangeCompound(Ranges...) -> RangeCompound<Op,Ranges...>;
@@ -791,13 +808,12 @@ constexpr auto make_compound_range(Ranges&&... ranges) noexcept {
 // ============================================================================
 enum class Op { Eq, Neq, Gt, Gte, Lt, Lte };
 
-// FIX 1: Removed invalid 'class Tp' reference from concept
 template <typename ClassType, typename MemberType> 
 requires (used_std::is_class_v<ClassType> && used_std::is_member_object_pointer_v<MemberType ClassType::*>)
 struct FieldRule {
-    MemberType ClassType::*member_ptr;
-    Op op_tag = Op::Eq;
-    MemberType value;
+    const MemberType ClassType::*member_ptr;
+    const Op op_tag = Op::Eq;
+    const MemberType value;
 
     constexpr bool eval(const ClassType& obj) const noexcept {
         const auto& target_field = obj.*member_ptr;
@@ -824,7 +840,7 @@ struct is_field_rule<FieldRule<Class, Member>> : used_std::true_type {
 template <typename ClassType, typename... Rules> 
 requires ((is_field_rule<Rules>::value && ...))
 struct MultiFieldPredicate {
-    used_std::tuple<Rules...> rules;
+    const used_std::tuple<const Rules...> rules;
 
     constexpr bool matches(const ClassType& obj) const noexcept {
         return evaluate_all(obj, used_std::make_index_sequence<sizeof...(Rules)>{});
@@ -980,7 +996,6 @@ namespace concepts {
 
         template <typename F, typename Tuple, used_std::size_t... Is>
         struct is_tuple_invocable_impl<F, Tuple, used_std::index_sequence<Is...>> 
-            // Strip inner cv-qualifiers and references from every single element type!
             : used_std::is_invocable<F, used_std::remove_cvref_t<used_std::tuple_element_t<Is, Tuple>>...> {};
 
     }
@@ -1036,7 +1051,7 @@ namespace concepts {
 
    template <typename K, typename T>
     concept IsCallablePredicate = requires(K k, T t) {
-        { k(t) } -> convertible_to<bool>;
+        { used_std::invoke(k,t) } -> convertible_to<bool>;
     };  
     template <typename T>
     using primitive_param_t = used_std::conditional_t<
@@ -1145,34 +1160,29 @@ template <typename ActionType, typename ContextType>
 inline constexpr decltype(auto) execute_action_impl(ActionType&& action, const ContextType& ctx) noexcept {
     using ActionDecay  = used_std::remove_cvref_t<ActionType>;
     using CleanContext = used_std::remove_cvref_t<ContextType>;
-    
-    using FnTrait = used_std::callable_traits_t<ActionType>;
+    using FnTrait      = used_std::callable_traits_t<ActionType>;
 
-    if constexpr (concepts::IsGotoSignal<ActionDecay> || 
-                  concepts::IsFallthroughSignal<ActionDecay> || 
-                  concepts::Primitive<ActionDecay> ||
-                  used_std::is_same_v<ActionDecay, const char*>) 
-    {
-        return used_std::forward<ActionType>(action);
-    } 
-    else if constexpr (concepts::IsWildcard<ActionDecay>) {
+    if constexpr (concepts::IsWildcard<ActionDecay>) {
         return true;
-    } 
-    else if constexpr (FnTrait::args == 0) {
-        return used_std::forward<ActionType>(action)();
+    } else if constexpr (FnTrait::is_function || FnTrait::is_member_function) {
+        if constexpr (FnTrait::args == 0) {
+            return used_std::forward<ActionType>(action)();
+        }
+        else if constexpr (FnTrait::args == 1) {
+            return used_std::forward<ActionType>(action)(ctx);
+        }
+        else if constexpr (FnTrait::args > 1) {
+            using FnArgsTuple = typename FnTrait::args_tuple;
+            using ResultSequence = used_std::get_matching_indices_t<FnArgsTuple, CleanContext>;
+            
+            return used_std::apply_index(used_std::forward<ActionType>(action), ctx, ResultSequence{});
+        }
+        else if constexpr (concepts::TupleInvocable<ActionDecay, CleanContext>) {
+            return used_std::forward<ActionType>(action)(ctx);
+        } 
+    } else {
+        return used_std::forward<ActionType>(action);
     }
-    else if constexpr (FnTrait::args == 1) {
-        return used_std::forward<ActionType>(action)(ctx);
-    }
-    else if constexpr (FnTrait::args > 1) {
-        using FnArgsTuple = typename FnTrait::args_tuple;
-        using ResultSequence = used_std::get_matching_indices_t<FnArgsTuple, CleanContext>;
-        
-        return used_std::apply_index(used_std::forward<ActionType>(action), ctx, ResultSequence{});
-    }
-    else if constexpr (concepts::TupleInvocable<ActionDecay, CleanContext>) {
-        return used_std::forward<ActionType>(action)(ctx);
-    } 
 }
 
 // 2. Public wrapper function with automatic conditional noexcept deduction
@@ -1183,22 +1193,36 @@ inline constexpr decltype(auto) execute_action(ActionType&& action, const Contex
     return execute_action_impl(used_std::forward<ActionType>(action), ctx);
 }
 
-template <typename KeyType = DefaultState, typename ActionType = DefaultState>
-struct ImplCase {
-    KeyType key;
-    ActionType action;
-    
-    constexpr ImplCase() = default;
+struct baseCase {};
 
-    constexpr ImplCase(const KeyType& k) : key(k) {}
-    constexpr ImplCase(KeyType&& k) : key(used_std::move(k)) {}
+template <typename KeyType = DefaultState, typename ActionType = DefaultState>
+struct ImplCase final : baseCase {
+    static constexpr bool isDefaultKey = used_std::is_same_v<KeyType, DefaultState>;
+    static constexpr bool isDefaultAction = used_std::is_same_v<ActionType, DefaultState>;
+
+    const KeyType key;
+    const ActionType action;
+    
+    constexpr ImplCase() = delete;
+
+    constexpr ImplCase(const KeyType& k) noexcept requires (!isDefaultKey)
+    : key(k), 
+    action(DefaultState{}) 
+    {}
+    constexpr ImplCase(KeyType&& k) noexcept requires (!isDefaultKey)
+    : key(used_std::forward<KeyType>(k)),
+    action(DefaultState{}) 
+    {}
     
     template <typename K, typename A>
-    constexpr ImplCase(K&& k, A&& a) : key(used_std::forward<K>(k)), action(used_std::forward<A>(a)) {}
+    constexpr ImplCase(K k, A a) noexcept requires (!isDefaultKey)
+    : key(used_std::move(k)), action(used_std::move(a)) {}
 
     template <typename NewAction>
-    constexpr auto operator>>(NewAction&& new_action) && noexcept {
-        return ImplCase<KeyType, used_std::decay_t<NewAction>>(
+    constexpr auto operator>>(NewAction&& new_action) noexcept requires (!isDefaultKey && isDefaultAction) 
+    {
+        using Action_t = used_std::decay_t<NewAction>;
+        return ImplCase<KeyType, Action_t>(
             used_std::move(key), 
             used_std::forward<NewAction>(new_action)
         );
@@ -1208,21 +1232,33 @@ template<typename Key>
 ImplCase(Key) -> ImplCase<Key>;
 
 template <StaticLabel LabelID, typename KeyType = DefaultState, typename ActionType = DefaultState>
-struct ImplLabelCase {
-    KeyType key;
-    ActionType action;
+struct ImplLabelCase final : baseCase {
+    static constexpr bool isDefaultKey = used_std::is_same_v<KeyType, DefaultState>;
+    static constexpr bool isDefaultAction = used_std::is_same_v<ActionType, DefaultState>;
+
+    const KeyType key;
+    const ActionType action;
     
     static constexpr auto label = LabelID;
     
-    constexpr ImplLabelCase(const KeyType& k) : key(k) {}
-    constexpr ImplLabelCase(KeyType&& k) : key(used_std::move(k)) {}
+    constexpr ImplLabelCase(const KeyType& k) noexcept requires (!isDefaultKey)
+    : key(k),
+    action(DefaultState{}) 
+    {}
+    constexpr ImplLabelCase(KeyType&& k) noexcept requires (!isDefaultKey)
+    : key(used_std::move(k)), 
+    action(DefaultState{}) 
+    {}
     
     template <typename K, typename A>
-    constexpr ImplLabelCase(K&& k, A&& a) : key(used_std::forward<K>(k)), action(used_std::forward<A>(a)) {}
+    constexpr ImplLabelCase(K k, A a) noexcept requires (!isDefaultKey)
+    : key(used_std::move(k)), action(used_std::move(a)) {}
 
     template <typename NewAction>
-    constexpr auto operator>>(NewAction&& new_action) && noexcept {
-        return ImplLabelCase<LabelID,KeyType, used_std::decay_t<NewAction>>(
+    constexpr auto operator>>(NewAction&& new_action) noexcept requires (!isDefaultKey && isDefaultAction)
+    {
+        using Action_t = used_std::decay_t<NewAction> ;
+        return ImplLabelCase<LabelID,KeyType, Action_t>(
             used_std::move(key), 
             used_std::forward<NewAction>(new_action)
         );
@@ -1230,13 +1266,15 @@ struct ImplLabelCase {
 };
 
 template <typename T> 
-inline constexpr auto Case(T&& val) noexcept { return ImplCase<used_std::decay_t<T>>(used_std::forward<T>(val)); }
+inline constexpr auto Case(T&& val) noexcept {
+    using Key_t = used_std::decay_t<T>;
+    return ImplCase<Key_t>(used_std::forward<T>(val)); 
+}
 template <StaticLabel LabelID,typename T> 
-inline constexpr auto Case(T&& val) noexcept { return ImplLabelCase<LabelID, used_std::decay_t<T>>(used_std::forward<T>(val)); }
-// template <StaticLabel LabelID = 0,typename T> 
-// inline constexpr auto likely_Case(T&& val) noexcept { return ImplLabelCase<LabelID, used_std::decay_t<T>>(used_std::forward<T>(val)); }
-// template <StaticLabel LabelID = 0,typename T> 
-// inline constexpr auto unlikely_Case(T&& val) noexcept { return ImplLabelCase<LabelID, used_std::decay_t<T>>(used_std::forward<T>(val)); }
+inline constexpr auto Case(T&& val) noexcept { 
+    using Key_t = used_std::decay_t<T>;
+    return ImplLabelCase<LabelID, Key_t>(used_std::forward<T>(val)); 
+}
 
 template <typename T>
 struct UnwrapReturnType { using type = used_std::remove_cvref_t<T>;};
@@ -1270,12 +1308,12 @@ struct get_action_type<T, used_std::void_t<decltype(used_std::declval<T>().actio
 };
 
 template <bool Configured, typename CaseType, typename TargetType>
-struct CoreReturnTypeHelper {
+struct ReturnTypeHelper {
     using type = DefaultState;
 };
 
 template <typename CaseType, typename TargetType>
-struct CoreReturnTypeHelper<true, CaseType, TargetType> {
+struct ReturnTypeHelper<true, CaseType, TargetType> {
     using ActionType = typename get_action_type<CaseType>::type;
     using type = 
     // used_std::decay_t<ActionType>; 
@@ -1284,21 +1322,7 @@ struct CoreReturnTypeHelper<true, CaseType, TargetType> {
         used_std::declval<TargetType>()
     ));
 };
-// template <bool Configured, typename CaseType, typename TargetType>
-// struct LastCaseType {
-//     using type = DefaultState;
-// };
 
-// template <typename CaseType, typename TargetType>
-// struct LastCaseType<true, CaseType, TargetType> {
-//     using ActionType = typename get_action_type<CaseType>::type;
-//     using type = 
-//     // used_std::decay_t<ActionType>; 
-//     decltype(execute_action(
-//         used_std::declval<ActionType>(), 
-//         used_std::declval<TargetType>()
-//     ));
-// };
 
 // ============================================================================
 //                               WRAPPERS 
@@ -1307,24 +1331,19 @@ template <typename TargetType, typename... Cases>
 struct match {
     // static constexpr bool defaultContext = used_std::is_same_v<ContextTuple, DefaultState>;
     static constexpr used_std::size_t TotalCases    = sizeof...(Cases);
-    static constexpr used_std::size_t LastCaseIndex = TotalCases > 1 ? TotalCases - 1 : 0;
     static constexpr bool defaultCases   = TotalCases == 0;
     static constexpr bool is_configured  = !defaultCases;
+    static constexpr used_std::size_t TotalCasesIndex = is_configured ? TotalCases - 1 : 0;
+    static constexpr used_std::size_t LastCaseIndex = TotalCasesIndex;
     
     using StoreTarget = used_std::remove_cvref_t<concepts::primitive_param_t<TargetType>>;
-    // using StoreContext = used_std::remove_cvref_t<ContextTuple>;
     using StoreCases = used_std::conditional_t<is_configured, used_std::tuple<used_std::remove_cvref_t<Cases>...>, used_std::tuple<Wildcard>>;
-    // using StoreDefault = used_std::remove_cvref_t<Default>;
     
     using CasesIndex = used_std::make_index_sequence<TotalCases>;
-    StoreTarget target;
-    // StoreContext ctx;
-    StoreCases cases;
-    // StoreDefault default_action;
     using LastCaseType  = used_std::tuple_element_t<LastCaseIndex, StoreCases>;
 
-    using CoreReturnType = typename CoreReturnTypeHelper<is_configured, LastCaseType, StoreTarget>::type;
-    using ReturnType = typename UnwrapReturnType<CoreReturnType>::type;
+    using RawReturnType = typename ReturnTypeHelper<is_configured, used_std::tuple_element_t<LastCaseIndex,StoreCases>, StoreTarget>::type;
+    using ReturnType = typename UnwrapReturnType<RawReturnType>::type;
     using CleanReturnType = used_std::conditional_t<used_std::is_same_v<ReturnType, void>, Wildcard, ReturnType>;
     struct State {
         used_std::size_t next_idx;
@@ -1335,22 +1354,25 @@ struct match {
         CleanReturnType result;
     };
     
-    constexpr match() : target(__) {}
-
-    constexpr match(StoreTarget t) : target(t) {}
-    // constexpr match(StoreTarget t,StoreContext c) requires(!defaultContext) : target(used_std::move(t)),ctx(used_std::move(c)) {}
-
-    constexpr match(StoreTarget t, StoreCases ca) noexcept requires (!defaultCases)
-        : target(used_std::move(t)),  
-          cases(used_std::move(ca))
+    const StoreTarget target;
+    StoreCases cases;
+    constexpr match() noexcept requires (defaultCases) : target(__)
     {}
 
-    constexpr ReturnType operator()() noexcept && requires (is_configured) {
+    constexpr match(StoreTarget t) noexcept requires (defaultCases) : target(t) 
+    {}
+
+    constexpr match(const StoreTarget&& t,Cases&&... ca) noexcept requires (!defaultCases)
+        : target(used_std::forward<const StoreTarget>(t)),  
+          cases(used_std::forward<Cases>(ca)...)
+    {}
+
+    constexpr ReturnType operator()() noexcept requires (is_configured) {
         return used_std::move(*this).run();
     }
 
     template <typename Element> requires (is_configured)
-    constexpr auto operator()(Element&& elem) noexcept && {
+    constexpr auto operator()(Element&& elem) noexcept {
         this->target = used_std::forward<Element>(elem);
         
         if constexpr (used_std::is_same_v<CleanReturnType, bool>) {
@@ -1363,108 +1385,112 @@ struct match {
     template <typename cT>
     using case_t = used_std::decay_t<cT>;
     template <typename... ContextArgs> requires (!is_configured)
-    constexpr auto operator()(ContextArgs&&... args) && noexcept {
+    constexpr auto operator()(ContextArgs&&... args) noexcept {
         static_assert(sizeof...(ContextArgs) > 0, "operator() requires at least one argument (the default action).");
-        auto cases_tuple = used_std::make_tuple(used_std::forward<ContextArgs>(args)...);
+        
         return match<TargetType, case_t<ContextArgs>...>(
             used_std::move(target),
-            used_std::move(cases_tuple)
+            used_std::forward<ContextArgs>(args)...
         );
     }
 
     template<typename T>
-    constexpr operator T() noexcept && requires (is_configured) {
+    constexpr operator T() noexcept requires (is_configured) {
         return used_std::move(*this).run();
     }
 
-    template<used_std::size_t Is>
-    constexpr void Dispatch(State& current_state) noexcept requires(is_configured) {
-        if constexpr (Is >= TotalCases) {
-            __builtin_unreachable();
+    // template<used_std::size_t Is>
+    constexpr void Dispatch(auto& action,State& current_state) noexcept requires(is_configured) {
+        auto& [next_idx, current_target,eval,jump_signal,matched,result] = current_state;
+        
+        using RawActionResult = typename ReturnTypeHelper<true,decltype(action),StoreTarget>::type;
+
+        if constexpr (used_std::is_same_v<RawActionResult, void> || used_std::is_same_v<RawActionResult, Wildcard>) {
+            execute_action(action, target);
+            matched=true;
             return;
         } else {
-            auto& [next_idx, current_target,eval,jump_signal,matched,result] = current_state;
-            auto& current_case = used_std::get<Is>(cases);
-            if ( current_state.jump_signal || evaluate_match(current_state.current_target, current_case.key) ) {
-                using RawActionResult = typename CoreReturnTypeHelper<true,decltype(current_case.action),StoreTarget>::type;
+            decltype(auto) action_result = execute_action(action, target);
+            using CaseActionDecay = UnwrapReturnType<decltype(action_result)>::type;
 
-                if constexpr (used_std::is_same_v<RawActionResult, void> || used_std::is_same_v<RawActionResult, Wildcard>) {
-                    execute_action(current_case.action, target);
-                    matched=true;
+            // Signal 1: Static Goto
+            if constexpr (concepts::IsStaticGotoSignal<CaseActionDecay>) {
+                constexpr used_std::size_t comptime_index = used_std::find_index_v<[]<typename T>{return T::label;}, CaseActionDecay::label, StoreCases>;
+                
+                if constexpr (comptime_index >= TotalCases) {
+                    __builtin_unreachable();
                     return;
-                } else {
-                    decltype(auto) action_result = execute_action(current_case.action, target);
-                    using CaseActionDecay = UnwrapReturnType<decltype(action_result)>::type;
-
-                    // Signal 1: Static Goto
-                    if constexpr (concepts::IsStaticGotoSignal<CaseActionDecay>) {
-                        constexpr used_std::size_t comptime_index = used_std::find_index_v<[]<typename T>{return T::label;}, CaseActionDecay::label, StoreCases>;
-                        
-                        if constexpr (comptime_index >= TotalCases) {
-                            __builtin_unreachable();
-                            return;
-                        }
-
-                        next_idx = comptime_index;
-                        jump_signal = true;
-                        return;
-                    } 
-                    // Signal 2: Dynamic Goto
-                    else if constexpr (concepts::IsDynamicGotoSignal<CaseActionDecay>) {
-                        used_std::size_t active_index = used_std::find_by_value<[]<typename T>{return T::label;}, StaticLabel, StoreCases>(
-                            action_result.label, 
-                            CasesIndex{}
-                        );
-                        if (active_index >= TotalCases) {
-                            __builtin_unreachable();
-                            return;
-                        }
-                        
-                        next_idx = active_index;
-                        jump_signal = true;
-                        return;
-                    }
-                    // Signal 3: Fallthrough
-                    else if constexpr (concepts::IsFallthroughSignal<CaseActionDecay>) {
-                        next_idx = Is + 1;
-                        jump_signal = true;
-                        return;
-                    }
-                    // Terminal Return Value
-                    else {
-                        static constexpr bool retType = 
-                        !concepts::IsGotoSignal<CaseActionDecay> && !concepts::IsFallthroughSignal<CaseActionDecay> && 
-                        !concepts::IsDynamicGotoSignal<CaseActionDecay> &&
-                        !used_std::is_same_v<CaseActionDecay, void> && !used_std::is_same_v<CaseActionDecay, Wildcard>;
-
-                        if constexpr (retType) {
-                            matched = true;
-                            result = used_std::move(action_result);
-                        } else {
-                            matched = true;
-                            return;
-                        }
-                    }
                 }
-            } else {
-                next_idx = Is + 1;
+
+                next_idx = comptime_index;
+                jump_signal = true;
                 return;
+            } 
+            // Signal 2: Dynamic Goto
+            else if constexpr (concepts::IsDynamicGotoSignal<CaseActionDecay>) {
+                used_std::size_t active_index = used_std::find_by_value<[]<typename T>{return T::label;}, StaticLabel, StoreCases>(
+                    action_result.label, 
+                    CasesIndex{}
+                );
+                if (active_index >= TotalCases) {
+                    __builtin_unreachable();
+                    return;
+                }
+                
+                next_idx = active_index;
+                jump_signal = true;
+                return;
+            }
+            // Signal 3: Fallthrough
+            else if constexpr (concepts::IsFallthroughSignal<CaseActionDecay>) {
+                next_idx = next_idx + 1;
+                jump_signal = true;
+                return;
+            }
+            // Terminal Return Value
+            else {
+                if constexpr (
+                    !concepts::IsGotoSignal<CaseActionDecay> && !concepts::IsFallthroughSignal<CaseActionDecay> && 
+                    !concepts::IsDynamicGotoSignal<CaseActionDecay> &&
+                    !used_std::is_same_v<CaseActionDecay, void> && !used_std::is_same_v<CaseActionDecay, Wildcard>
+                ) {
+                    matched = true;
+                    result = used_std::move(action_result);
+                } else {
+                    matched = true;
+                    return;
+                }
             }
         }
     }
 
+    template<used_std::size_t I> 
+    constexpr void evaluateCase(State& state) noexcept requires(is_configured) {
+        if constexpr (I >= LastCaseIndex) __builtin_unreachable();
+        auto& [key, action] = std::get<I>(cases);
+        const bool matched = state.jump_signal +
+        evaluate_match(state.current_target, key);
+        return matched ? (Dispatch(action,state)) :
+        (state.next_idx = I + 1,void(0));
+    }
+
     template<used_std::size_t Low,used_std::size_t High>
     constexpr void DispatchCase (State& state) noexcept requires(is_configured) {
-        constexpr used_std::size_t Range = High - Low;
+        constexpr used_std::size_t Range = High - Low;      
+        #define DCASE(IDX) \
+        case(Low + IDX):   \
+        if constexpr (Low + IDX < High) {   \
+            return evaluateCase<Low + IDX>(state); \
+        } else __builtin_unreachable();
         switch(state.next_idx) {
-            case(Low + 0): if constexpr ((Low + 0) < High) {return Dispatch<Low + 0>(state);}
-            case(Low + 1): if constexpr ((Low + 1) < High) {return Dispatch<Low + 1>(state);}
-            case(Low + 2): if constexpr ((Low + 2) < High) {return Dispatch<Low + 2>(state);}
-            case(Low + 3): if constexpr ((Low + 3) < High) {return Dispatch<Low + 3>(state);}
-            case(Low + 4): if constexpr ((Low + 4) < High) {return Dispatch<Low + 4>(state);}
-            case(Low + 5): if constexpr ((Low + 5) < High) {return Dispatch<Low + 5>(state);}
-            case(Low + 6): if constexpr ((Low + 6) < High) {return Dispatch<Low + 6>(state);}
-            case(Low + 7): if constexpr ((Low + 7) < High) {return Dispatch<Low + 7>(state);}
+            DCASE(0)
+            DCASE(1)
+            DCASE(2)
+            DCASE(3)
+            DCASE(4)
+            DCASE(5)
+            DCASE(6)
+            DCASE(7)
             default: 
             if constexpr (Range >= 8) {
                 constexpr used_std::size_t Mid = Low + (High - Low) / 2;
@@ -1477,20 +1503,30 @@ struct match {
                 __builtin_unreachable();
             }
         }
+        #undef DCASE
     }
 
-    constexpr ReturnType run() noexcept requires (is_configured) {
+    constexpr ReturnType run() noexcept requires (is_configured && TotalCases > 1) {
         State state{.next_idx= 0 ,.current_target= target ,.eval=false,.jump_signal= false ,.matched= false,.result={}};
-        while (state.next_idx < LastCaseIndex) {
-            DispatchCase<0,LastCaseIndex>(state);
+        while (state.next_idx < TotalCasesIndex) {
+            DispatchCase<0,TotalCasesIndex>(state);
             if (state.matched) break;
         }
         
-        if constexpr (used_std::is_same_v<CleanReturnType, void> or used_std::is_same_v<CleanReturnType, Wildcard>) {
-            return state.matched ? void(0) : execute_action(used_std::get<LastCaseIndex>(cases), target);
+        if constexpr (used_std::is_same_v<CleanReturnType, void> || used_std::is_same_v<CleanReturnType, Wildcard>) {
+            return state.matched ? 
+            void(0) : 
+            execute_action(used_std::get<LastCaseIndex>(cases), target);
         } else {
-            return state.matched ? state.result : execute_action(used_std::get<LastCaseIndex>(cases), target);
+            return state.matched ? 
+            state.result : 
+            execute_action(used_std::get<LastCaseIndex>(cases), target);
         }
+    }
+    constexpr ReturnType run() noexcept requires (is_configured && TotalCases <= 1) {
+            return used_std::is_same_v<CleanReturnType, void> || used_std::is_same_v<CleanReturnType, Wildcard> ? 
+            ReturnType(0) : 
+            execute_action(used_std::get<LastCaseIndex>(cases), target);
     }
     
     // constexpr auto to_predicate() && requires (is_configured) {
@@ -1523,17 +1559,6 @@ struct match {
 };
 template <typename TargetType>
 match(TargetType) -> match<TargetType>;
-
-// static_assert([] {
-//     constexpr auto test = Case<"0">(1) >> true;
-//     auto im = []<typename T,typename R>(ImplCase<T,R> c) { return c;};
-//     im(ImplCase(1) >> true);
-//     return 1;
-// }(), "");
-
-// ============================================================================
-//                                    END
-// ============================================================================
 #endif
 // ============================================================================
 //                                GRAVEYARD

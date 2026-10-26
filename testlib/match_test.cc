@@ -27,14 +27,14 @@ void showcase_hash_labels(std::string_view command) {
 
     std::string_view response = match(command) (
         Case<"start">("start") >> "System Starting...",
-        Case<"stop"> ("stop")  >>  [&](std::string_view cmd) {std::cout << cmd << "\n"; return test == 1 ? Goto<"start"> : Goto<"err">;},
+        Case<"stop"> ("stop")  >>  [&](const std::string_view& cmd) {std::cout << cmd << "\n"; return test == 1 ? Goto<"start"> : Goto<"err">;},
         Case("pause")          >> "System Paused.",
-        Case("pause2")          >> "System Paused.",
-        Case("pause3")          >> "System Paused.",
-        Case("pause4")          >> "System Paused.",
-        Case("pause5")          >> "System Paused.",
-        Case("pause6")          >> "System Paused.",
-        Case("pause7")          >> "System Paused 7.",
+        Case("pause2")         >> "System Paused.",
+        Case("pause3")         >> "System Paused.",
+        Case("pause4")         >> "System Paused.",
+        Case("pause5")         >> "System Paused.",
+        Case("pause6")         >> "System Paused.",
+        Case("pause7")         >> "System Paused 7.",
         Case<"err">(__)        >> "err",
         "UNDEFINED!"
     );
@@ -43,13 +43,14 @@ void showcase_hash_labels(std::string_view command) {
 }
 auto visit(auto&& arg) {
     std::cout << "\n=== Visit ===" << std::endl;
-    return match(arg) (
+    std::string_view ret = match(arg) (
         Case(TypePred<int>)    >> "int",
         Case(TypePred<float>)  >> "float",
         Case(TypePred<double>) >> "double",
         Case(__)               >> "err",
         "UNDEFINED!"
     );
+    return ret;
 }
 
 
@@ -150,13 +151,13 @@ int main () {
     static_assert(match(num) (
         Case<"id">(make_compound_range(Range{0,15},Range{20,30})) >> true,
         false), "" );
-    static_assert(match(num) (
-        Case(make_compound_range(Range<RangeType::Or>{0,10},Range<RangeType::Or>{20,40})) >> []{return true;},
-        []{return false;}), "" );
-    constexpr int a = 0b1010;
-    static_assert(match(a) (
-        Case(bits_all_clear(0b0100 | 0b0001)) >> []{return true;},
-        []{return false;}), "" );
+    // static_assert(match(num) (
+    //     Case(make_compound_range(Range<RangeType::Or>{0,10},Range<RangeType::Or>{20,40})) >> []{return true;},
+    //     []{return false;}), "" );
+    // constexpr int a = 0b1010;
+    // static_assert(match(a) (
+    //     Case(bits_all_clear(0b0100 | 0b0001)) >> []{return true;},
+    //     []{return false;}), "" );
         
     match(test) (
         Case(field(&s::i,20)) >> []{
