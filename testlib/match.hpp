@@ -883,47 +883,31 @@ namespace concepts {
 }
 
 inline constexpr auto Range = Range_t{}; 
-template <used_std::size_t I, typename T>
-struct RangeNode {
-    T range;
-};
 
-// Helper implementation using index sequence expansion
-template <RangeType Op, typename IndexSeq, typename... Ranges>
-struct RangeCompoundImpl;
+template <RangeType Op = RangeType::Or,typename... Ranges> requires (concepts::is_range_instance<Ranges> && ...)
+struct RangeCompound {
+    used_std::tuple<Ranges...> ranges;
 
-template <RangeType Op, used_std::size_t... Is, typename... Ranges>
-struct RangeCompoundImpl<Op, used_std::index_sequence<Is...>, Ranges...> : private RangeNode<Is, Ranges>... {
-    
-    constexpr explicit RangeCompoundImpl(Ranges... r) 
-        : RangeNode<Is, Ranges>{used_std::move(r)}... {}
+    constexpr explicit RangeCompound(Ranges... r) : ranges(used_std::move(r)...) {}
 
     template <typename Target>
     constexpr bool contains(Target target) const noexcept {
-        if constexpr (Op == RangeType::Or) {
-            // Short-circuits on the FIRST 'true'
-            return (RangeNode<Is, Ranges>::range.contains(target) || ...); 
-        } else {
-            // Short-circuits on the FIRST 'false'
-            return (RangeNode<Is, Ranges>::range.contains(target) && ...); 
-        }
+        return used_std::apply([&target](const auto&... r) {
+            if constexpr (Op == RangeType::Or) {
+                // Short-circuits on the FIRST 'true'
+                return (r.contains(target) || ...); 
+            } else {
+                // Short-circuits on the FIRST 'false'
+                return (r.contains(target) && ...); 
+            }
+        }, ranges);
     }
+    static_assert(Op == RangeType::Or || Op == RangeType::And,"Requires RangeType And / Or");
 };
 
-// Public user-facing struct inheriting from the implementation pack
-template <RangeType Op = RangeType::Or, typename... Ranges> 
+template <RangeType Op = RangeType::Or,typename... Ranges> 
 requires (concepts::is_range_instance<Ranges> && ...)
-struct RangeCompound : public RangeCompoundImpl<Op, used_std::make_index_sequence<sizeof...(Ranges)>, Ranges...> {
-    
-    using Base = RangeCompoundImpl<Op, used_std::make_index_sequence<sizeof...(Ranges)>, Ranges...>;
-    using Base::Base; // Inherit constructors
-
-    static_assert(Op == RangeType::Or || Op == RangeType::And, "Requires RangeType And / Or");
-};
-
-template <RangeType Op = RangeType::Or, typename... Ranges> 
-requires (concepts::is_range_instance<Ranges> && ...)
-RangeCompound(Ranges...) -> RangeCompound<Op, Ranges...>;
+RangeCompound(Ranges...) -> RangeCompound<Op,Ranges...>;
 
 template <RangeType Op = RangeType::Or,typename... Ranges>
 constexpr auto make_compound_range(Ranges&&... ranges) noexcept {
