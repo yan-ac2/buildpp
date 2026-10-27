@@ -355,11 +355,24 @@ namespace used_std {
     constexpr used_std::size_t find_index_v = []<used_std::size_t... Is>(used_std::index_sequence<Is...>) {
         using CleanTuple = used_std::remove_cvref_t<Tuple>;
         used_std::size_t found_index = used_std::tuple_size_v<CleanTuple>;
-
-        ((void)((Accessor.template operator()<used_std::remove_cvref_t<used_std::tuple_element_t<Is, CleanTuple>>>() == Value)
-                ? (found_index = Is)
-                : 0
-        )or ...);
+        auto getWithLabel = [&]<used_std::size_t Idx>(){
+            using element = used_std::remove_cvref_t<used_std::tuple_element_t<Idx, CleanTuple>>;
+            if constexpr ( requires (element tt) { tt.label;}) {
+                if (Accessor.template operator()<element>() == Value) {
+                    found_index = Idx;
+                    return true;
+                } else {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        };
+        (getWithLabel.template operator()<Is>() || ...);
+        // ((void)((Accessor.template operator()<used_std::remove_cvref_t<used_std::tuple_element_t<Is, CleanTuple>>>() == Value)
+        //         ? (found_index = Is)
+        //         : 0
+        // )|| ...);
 
         return found_index;
     }(used_std::make_index_sequence<used_std::tuple_size_v<used_std::remove_cvref_t<Tuple>>>{});
@@ -732,26 +745,29 @@ concept isTypePred = is_type_pred<T>::value;
 // ============================================================================
 // MATH INTERVAL DEFINITIONS
 // ============================================================================
-enum class RangeType { None, eq, neq, lt, lte, gt, gte, OneSize, Closed, Open, HalfOpenLeft, HalfOpenRight, Or, And };
+enum class IntervalType { None, eq, neq, lt, lte, gt, gte, unary, Closed, Open, HalfOpenLeft, HalfOpenRight, Or, ClosedOr , HalfOpenOrLeft, HalfOpenOrRight, And };
 
-template <RangeType iType = RangeType::None, typename T = DefaultState> 
+template <IntervalType iType = IntervalType::None, typename T = DefaultState> 
 requires (used_std::is_arithmetic_v<T> || used_std::is_same_v<T, DefaultState>)
-struct Range_t {
-    using enum RangeType;
+struct Interval_t {
+    using enum IntervalType;
+    using this_type = Interval_t<iType,T>;
     static constexpr auto op = iType;
-    static constexpr used_std::size_t N = (op <= RangeType::OneSize) ? 1 : 2;  
-    T data[N];
-
-    constexpr Range_t() requires (N == 1) : data{} {}
-    constexpr Range_t(T val) requires (N == 1) : data{val} {}
-    constexpr Range_t(T lhs, T rhs) requires (N > 1) : data{lhs, rhs} {}
+    T data[2];
+    
+    constexpr Interval_t(this_type&& other)  noexcept : data{other.data[0],other.data[1]} {}
+    constexpr Interval_t(const this_type& other) noexcept : data{other.data[0],other.data[1]} {}
+    
+    constexpr Interval_t() noexcept : data{} {}
+    constexpr Interval_t(T val) noexcept requires (op < unary) : data{val} {}
+    constexpr Interval_t(T lhs, T rhs) noexcept requires (op > unary) : data{lhs, rhs} {}
 
     template<typename Target>
     constexpr bool contains(Target target) const noexcept {
         if constexpr (op == None) {
             return false;
         }
-        else if constexpr (op == eq || op == OneSize) {
+        else if constexpr (op == eq) {
             return target == data[0];
         }
         else if constexpr (op == neq) {
@@ -775,14 +791,23 @@ struct Range_t {
         else if constexpr (op == Open) {
             return (target > data[0]) && (target < data[1]);
         }
-        else if constexpr (op == HalfOpenLeft) { // (min, max]
+        else if constexpr (op == HalfOpenRight) { // (min, max]
             return (target > data[0]) && (target <= data[1]);
         }
-        else if constexpr (op == HalfOpenRight) { // [min, max)
+        else if constexpr (op == HalfOpenLeft) { // [min, max)
             return (target >= data[0]) && (target < data[1]);
         }
         else if constexpr (op == Or) { // Outside (min, max)
             return (target < data[0]) || (target > data[1]);
+        } 
+        else if constexpr (op == HalfOpenOrLeft) { // Outside (min, max)
+            return (target <= data[0]) || (target > data[1]);
+        } 
+        else if constexpr (op == HalfOpenOrRight) { // Outside (min, max)
+            return (target < data[0]) || (target >= data[1]);
+        } 
+        else if constexpr (op == ClosedOr) { // Outside (min, max)
+            return (target <= data[0]) || (target >= data[1]);
         } 
         else {
             return false;
@@ -791,72 +816,78 @@ struct Range_t {
 
     // Friend operators for initial left-hand bounds (e.g., 1 < x)
     template<typename R> requires (used_std::is_arithmetic_v<R>)
-    friend constexpr auto operator <(R lhs, Range_t) noexcept {
-        return Range_t<RangeType::lt, R>(lhs);
+    friend constexpr auto operator <(R lhs,const this_type&) noexcept -> Interval_t<gt, R> {
+        return Interval_t<gt, R>(lhs);
     }
     template<typename R> requires (used_std::is_arithmetic_v<R>)
-    friend constexpr auto operator <=(R lhs, Range_t) noexcept {
-        return Range_t<RangeType::lte, R>(lhs);
+    friend constexpr auto operator <=(R lhs,const this_type&) noexcept -> Interval_t<gte, R> {
+        return Interval_t<gte, R>(lhs);
     }
     template<typename R> requires (used_std::is_arithmetic_v<R>)
-    friend constexpr auto operator >(R lhs, Range_t) noexcept {
-        return Range_t<RangeType::gt, R>(lhs);
+    friend constexpr auto operator >(R lhs,const this_type&) noexcept -> Interval_t<lt, R> {
+        return Interval_t<lt, R>(lhs);
     }
     template<typename R> requires (used_std::is_arithmetic_v<R>)
-    friend constexpr auto operator >=(R lhs, Range_t) noexcept {
-        return Range_t<RangeType::gte, R>(lhs);
+    friend constexpr auto operator >=(R lhs,const this_type&) noexcept -> Interval_t<lte, R> {
+        return Interval_t<lte, R>(lhs);
     }
     template<typename R> requires (used_std::is_arithmetic_v<R>)
-    friend constexpr auto operator ==(R lhs, Range_t) noexcept {
-        return Range_t<RangeType::eq, R>(lhs);
+    friend constexpr auto operator ==(R lhs,const this_type&) noexcept -> Interval_t<eq, R> {
+        return Interval_t<eq, R>(lhs);
     }
     template<typename R> requires (used_std::is_arithmetic_v<R>)
-    friend constexpr auto operator !=(R lhs, Range_t) noexcept {
-        return Range_t<RangeType::neq, R>(lhs);
+    friend constexpr auto operator !=(R lhs,const this_type&) noexcept -> Interval_t<neq, R> {
+        return Interval_t<neq, R>(lhs);
     }
 
     // Member operators for chaining ranges (e.g., 1 < x < 5)
     constexpr auto operator <(T rhs) const noexcept {
         if constexpr (op == None) {
-            return Range_t<RangeType::lt, T>(rhs);
+            return Interval_t<lt, T>(rhs);
         } 
-        else if constexpr (op == gt || op == lt) {
-            return Range_t<RangeType::Open, T>(data[0], rhs);
+        else if constexpr (op == gt) {
+            return Interval_t<Open, T>(data[0], rhs);
         }
         else if constexpr (op == gte) {
-            return Range_t<RangeType::HalfOpenRight, T>(data[0], rhs);
+            return Interval_t<HalfOpenLeft, T>(data[0], rhs);
         }
-        else if constexpr (op == lte) {
-            return Range_t<RangeType::HalfOpenLeft, T>(data[0], rhs);
-        } else {
-            return Range_t<RangeType::Open, T>(data[0], rhs);
+        else if constexpr(op == lt) {
+            return Interval_t<Or, T>(data[0], rhs);
+        }
+        else if constexpr(op == lte) {
+            return Interval_t<HalfOpenOrLeft, T>(data[0], rhs);
         }
     }
 
     constexpr auto operator <=(T rhs) const noexcept {
         if constexpr (op == None) {
-            return Range_t<RangeType::lte, T>(rhs);
+            return Interval_t<lte, T>(rhs);
+        }
+        else if constexpr (op == gte) {
+            return Interval_t<Closed, T>(data[0], rhs);
         }
         else if constexpr (op == gt) {
-            return Range_t<RangeType::HalfOpenLeft, T>(data[0], rhs);
-        }
-        else if constexpr (op == gte && op == lte) {
-            return Range_t<RangeType::Closed, T>(data[0], rhs);
+            return Interval_t<HalfOpenRight, T>(data[0], rhs);
         }
         else if constexpr (op == lt) {
-            return Range_t<RangeType::HalfOpenRight, T>(data[0], rhs);
-        } 
-        else {
-            return Range_t<RangeType::Closed, T>(data[0], rhs);
+            return Interval_t<HalfOpenOrRight, T>(data[0], rhs);
+        }
+        else if constexpr (op == lte) {
+            return Interval_t<ClosedOr, T>(data[0], rhs);
         }
     }
-
-    constexpr auto operator >(T rhs) const noexcept requires (op == None) {
-        return Range_t<RangeType::gt, T>(rhs);
+    template<typename R> requires (used_std::is_arithmetic_v<R>)
+    constexpr auto operator >(R rhs) const noexcept {
+        if constexpr (op == None) {
+            return Interval_t<gt, R>(rhs);
+        }
     }
-
-    constexpr auto operator >=(T rhs) const noexcept requires (op == None) {
-        return Range_t<RangeType::gte, T>(rhs);
+    
+    template<typename R> requires (used_std::is_arithmetic_v<R>)
+    constexpr auto operator >=(R rhs) const noexcept {
+        if constexpr (op == None) {
+            return Interval_t<gte, T>(rhs);
+        }
     }
 
     constexpr auto operator ==(T rhs) const noexcept {
@@ -868,51 +899,61 @@ struct Range_t {
     }
 };
 
-template <RangeType iType = RangeType::Closed, typename T> 
-requires (used_std::is_arithmetic_v<T>)
-Range_t(T, T) -> Range_t<iType, T>;
 namespace concepts {
     template <typename T>
     struct is_range_inst : used_std::false_type {};
     
-    template <RangeType iType,typename T>
-    struct is_range_inst<Range_t<iType,T>> : used_std::true_type {};
+    template <IntervalType iType,typename T>
+    struct is_range_inst<Interval_t<iType,T>> : used_std::true_type {};
     
     template <typename T>
     concept is_range_instance = is_range_inst<used_std::remove_cvref_t<T>>::value;
 }
 
-inline constexpr auto Range = Range_t{}; 
+inline constexpr auto Interval = Interval_t{};
 
-template <RangeType Op = RangeType::Or,typename... Ranges> requires (concepts::is_range_instance<Ranges> && ...)
-struct RangeCompound {
-    used_std::tuple<Ranges...> ranges;
+template<class T, used_std::size_t I>
+struct indexed_type : T {
+    constexpr indexed_type(T&& in) : T(used_std::forward<T>(in)) {}
+    constexpr indexed_type(const T& in) : T(in) {}
+};
 
-    constexpr explicit RangeCompound(Ranges... r) : ranges(used_std::move(r)...) {}
+template <IntervalType Op, typename IndexSeq, concepts::is_range_instance... Ranges>
+struct IntervalCompoundImpl;
+
+template <IntervalType Op, used_std::size_t... I, concepts::is_range_instance... Ranges>
+struct IntervalCompoundImpl<Op, used_std::index_sequence<I...>, Ranges...> : private indexed_type<Ranges, I>... {
+    using indexed_type<Ranges, I>::contains...;
+
+    constexpr explicit IntervalCompoundImpl(Ranges&&... r) 
+        : indexed_type<Ranges, I>(used_std::forward<Ranges>(r))... {}
 
     template <typename Target>
     constexpr bool contains(Target target) const noexcept {
-        return used_std::apply([&target](const auto&... r) {
-            if constexpr (Op == RangeType::Or) {
-                // Short-circuits on the FIRST 'true'
-                return (r.contains(target) || ...); 
-            } else {
-                // Short-circuits on the FIRST 'false'
-                return (r.contains(target) && ...); 
-            }
-        }, ranges);
+        if constexpr (Op == IntervalType::Or) {
+            return (indexed_type<Ranges, I>::contains(target) || ...); 
+        } else {
+            return (indexed_type<Ranges, I>::contains(target) && ...); 
+        }
     }
-    static_assert(Op == RangeType::Or || Op == RangeType::And,"Requires RangeType And / Or");
+    static_assert(Op == IntervalType::Or || Op == IntervalType::And, "Requires RangeType And / Or");
 };
 
-template <RangeType Op = RangeType::Or,typename... Ranges> 
+template <IntervalType Op = IntervalType::Or, concepts::is_range_instance... Ranges> 
 requires (concepts::is_range_instance<Ranges> && ...)
-RangeCompound(Ranges...) -> RangeCompound<Op,Ranges...>;
+struct IntervalCompound final : private IntervalCompoundImpl<Op, used_std::make_index_sequence<sizeof...(Ranges)>, Ranges...> {
+    using seq = used_std::make_index_sequence<sizeof...(Ranges)>;
+    using IntervalCompoundImpl<Op, seq , Ranges...>::IntervalCompoundImpl;
+    using IntervalCompoundImpl<Op, seq , Ranges...>::contains;
+};
+template <IntervalType Op = IntervalType::Or,concepts::is_range_instance... Ranges> 
+requires (concepts::is_range_instance<Ranges> && ...)
+IntervalCompound(Ranges...) -> IntervalCompound<Op,Ranges...>;
 
-template <RangeType Op = RangeType::Or,typename... Ranges>
-constexpr auto make_compound_range(Ranges&&... ranges) noexcept {
-    return RangeCompound<Op,used_std::decay_t<Ranges>...>{used_std::forward<Ranges>(ranges)...};
-}
+// Example test with identical range types:
+static_assert(sizeof(IntervalCompound(0 >= Interval <= 15, 20 >= Interval <= 30)) == 16);
+
+
 // ============================================================================
 // FIELD PREDICATES
 // ============================================================================
@@ -938,6 +979,7 @@ struct FieldRule {
         return false;
     }
 };
+
 
 template <typename T>
 struct is_field_rule : used_std::false_type {};
@@ -1303,10 +1345,9 @@ inline constexpr decltype(auto) execute_action(ActionType&& action, const Contex
     return execute_action_impl(used_std::forward<ActionType>(action), ctx);
 }
 
-struct baseCase {};
 
 template <typename KeyType = DefaultState, typename ActionType = DefaultState>
-struct ImplCase final : baseCase {
+struct ImplCase {
     static constexpr bool isDefaultKey    = !used_std::is_same_v<KeyType, DefaultState>;
     static constexpr bool isDefaultAction = !used_std::is_same_v<ActionType, DefaultState>;
 
@@ -1337,12 +1378,17 @@ struct ImplCase final : baseCase {
             used_std::forward<const Action_t>(new_action)
         );
     }
+    template<typename T>
+    explicit operator T() {
+        return &action;
+    }
 };
 template<typename Key>
 ImplCase(Key) -> ImplCase<Key>;
 
 template <StaticLabel LabelID, typename KeyType = DefaultState, typename ActionType = DefaultState>
-struct ImplLabelCase final : baseCase {
+struct ImplLabelCase final {
+    using this_type = ImplLabelCase<LabelID,KeyType,ActionType>;
     static constexpr bool isDefaultKey = !used_std::is_same_v<KeyType, DefaultState>;
     static constexpr bool isDefaultAction = !used_std::is_same_v<ActionType, DefaultState>;
 
@@ -1374,6 +1420,7 @@ struct ImplLabelCase final : baseCase {
             used_std::forward<const Action_t>(new_action)
         );
     }
+    
 };
 
 template <typename T> 
@@ -1433,7 +1480,6 @@ struct ReturnTypeHelper<true, CaseType, TargetType> {
         used_std::declval<TargetType>()
     ));
 };
-
 
 // ============================================================================
 //                               WRAPPERS 
@@ -1532,10 +1578,10 @@ struct match_t {
                     __builtin_unreachable();
                     return;
                 }
-
+                
                 next_idx = comptime_index;
                 jump_signal = true;
-                return;
+                return evaluateCase<comptime_index>(current_state);
             } 
             // Signal 2: Dynamic Goto
             else if constexpr (concepts::IsDynamicGotoSignal<CaseActionDecay>) {
@@ -1618,7 +1664,17 @@ struct match_t {
         #undef DCASE
     }
 
+    template <typename T>
+    constexpr decltype(auto) try_cast(auto& v) noexcept {
+        if constexpr (requires { v.action; }) {
+            // If v is an ImplCase or ImplLabelCase, extract its action
+            return (v.action);
+        } else {
+            return used_std::forward<decltype(v)>(v);
+        }
+    }
     constexpr ReturnType run() noexcept requires (is_configured && TotalCases > 1) {
+        auto& DefaultCase = used_std::get<LastCaseIndex>(cases);
         State state{.next_idx= 0 ,.current_target= target ,.jump_signal= false ,.matched= false,.result={}};
         while (state.next_idx < TotalCasesIndex) {
             DispatchCase<0,TotalCasesIndex>(state);
@@ -1628,22 +1684,24 @@ struct match_t {
         if constexpr (used_std::is_same_v<CleanReturnType, void> || used_std::is_same_v<CleanReturnType, Wildcard>) {
             return state.matched ? 
             void(0) : 
-            execute_action(used_std::get<LastCaseIndex>(cases), target);
+            execute_action(try_cast<get_action_type<decltype(DefaultCase)>>(DefaultCase), target);
         } else {
             return state.matched ? 
             state.result : 
-            execute_action(used_std::get<LastCaseIndex>(cases), target);
+            execute_action(try_cast<get_action_type<decltype(DefaultCase)>>(DefaultCase), target);
         }
     }
     
     constexpr ReturnType run() noexcept requires (is_configured && TotalCases <= 1) {
+            auto& DefaultCase = used_std::get<LastCaseIndex>(cases);
             return used_std::is_same_v<CleanReturnType, void> || used_std::is_same_v<CleanReturnType, Wildcard> ? 
             ReturnType(0) : 
-            execute_action(used_std::get<LastCaseIndex>(cases), target);
-    }
-    
+            execute_action(try_cast<get_action_type<decltype(DefaultCase)>>(DefaultCase), target);
+        }
+        
     constexpr auto to_fn() {
         return [self = used_std::move(*this)](const StoreTarget& elem) mutable {
+            auto& DefaultCase = used_std::get<LastCaseIndex>(self.cases);
             State state{.next_idx= 0 ,.current_target=elem ,.jump_signal= false ,.matched= false,.result={}};
             while (state.next_idx < TotalCasesIndex) {
                 self.template DispatchCase<0,TotalCasesIndex>(state);
@@ -1651,7 +1709,7 @@ struct match_t {
             }
             return state.matched ? 
             state.result : 
-            execute_action(used_std::get<LastCaseIndex>(self.cases), self.target);
+            execute_action(self.template try_cast<get_action_type<decltype(DefaultCase)>>(DefaultCase), self.target);
         };
     }
     // constexpr auto to_predicate() && requires (is_configured) {

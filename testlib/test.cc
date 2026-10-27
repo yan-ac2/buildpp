@@ -625,8 +625,31 @@ struct taggedStorage {
     }
 };
 
+template<typename T, std::size_t I>
+struct indexed_type {
+    T data;
+    constexpr indexed_type(T&& in) : data(std::forward<T>(in)) {}
+    constexpr indexed_type(const T& in) : T(in) {}
+};
+
+
+template <typename IndexSeq, typename... Ranges>
+struct tupImpl;
+
+template <typename... T,std::size_t... I>
+struct tupImpl<std::index_sequence<I...>, T...> : indexed_type<T, I>...{
+
+    constexpr tupImpl(T&&... r) : indexed_type<T, I>(std::forward<T>(r))... {}
+
+};
+template <typename... T> 
+struct tup final : private tupImpl<std::make_index_sequence<sizeof...(T)>, T...> {
+    using seq = std::make_index_sequence<sizeof...(T)>;
+    constexpr tup(T&&... r) : tupImpl<std::make_index_sequence<sizeof...(T)>, T...>(std::forward<T>(r)...) {}
+};
 int main() {
     // Explicit initialization solves the non-trivial union default constructor error
+    tup<int> s(1);
     union TaggedUnion {
         
         size_t active{0};

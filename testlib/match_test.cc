@@ -11,9 +11,9 @@ void showcase_numeric_and_ranges(int score) {
     // std::size_t score2 = 2;
     std::string_view result = match(score) (
         Case(100)                      >> "Perfect Score!",
-        Case(90 >= Range < 99) >> "Grade: A",
-        Case(80 > Range < 89)  >> "Grade: B",
-        Case(70 > Range < 79)  >> "Grade: C",
+        Case(90 < Interval <= 99) >> "Grade: A",
+        Case(80 <= Interval <= 89)  >> "Grade: B",
+        Case(70 < Interval < 79)  >> "Grade: C",
         (score < 70 ? "Grade: Fail" : "Grade: Invalid")
     );
 
@@ -36,8 +36,8 @@ void showcase_hash_labels(std::string_view command) {
         Case("pause5")         >> "System Paused.",
         Case("pause6")         >> "System Paused.",
         Case("pause7")         >> "System Paused 7.",
-        Case<"err">(__)        >> "err",
-        "UNDEFINED!"
+        Case<"err">(__)        >> "err"
+        
     );
 
     std::cout << "Command [\"" << command << "\"] (Hash: " << cmd_hash << ") -> " << response << std::endl;
@@ -148,17 +148,17 @@ int main () {
         }
     };
     constexpr s test = 20;
-    constexpr int num = 29;
+    constexpr int num = 15;
     static_assert(match(num) (
-        Case<"id">(make_compound_range(0 >= Range <= 15,20 > Range < 30)) >> true,
+        Case<"id">(IntervalCompound(0 >= Interval <= 15,20 < Interval < 30)) >> true,
         false), "" );
-    // static_assert(match(num) (
-    //     Case(make_compound_range(Range<RangeType::Or>{0,10},Range<RangeType::Or>{20,40})) >> []{return true;},
-    //     []{return false;}), "" );
-    // constexpr int a = 0b1010;
-    // static_assert(match(a) (
-    //     Case(bits_all_clear(0b0100 | 0b0001)) >> []{return true;},
-    //     []{return false;}), "" );
+    static_assert(match(num) (
+        Case(0 > Interval <= 10) >> []{return true;},
+        []{return false;}), "" );
+    constexpr int a = 0b1010;
+    static_assert(match(a) (
+        Case(bits_all_clear(0b0100 | 0b0001)) >> []{return true;},
+        []{return false;}), "" );
         
     match(test) (
         Case(field(&s::i,20)) >> []{
@@ -175,11 +175,11 @@ int main () {
     int num2 = 0;
     for (int i = 0 ;i < 5; ++i) {
         match(num2) (
-            Case<"inRange">(20 >= Range <= 40) >> [&]{
+            Case<"inRange">(20 <= Interval <= 40) >> [&]{
                 std::cout << "is in range";
                 num2 = 0;
             },
-            Case<"outRange">(0 >= Range <= 20) >> [&] {
+            Case<"outRange">(0 <= Interval <= 20) >> [&] {
                 ++num2;
                 std::cout << "increase" << num2 << '\n';
                 if (num2 >= 15) {
@@ -191,7 +191,7 @@ int main () {
             Case<"any">(__) >> [&] {
                 --num2;
                 std::cout << "decrease" << num2 << '\n';
-                return (20 >= Range <= 40) == num2 ? Goto<"inRange"> : Goto<"any">;
+                return (20 <= Interval <= 40) == num2 ? Goto<"inRange"> : Goto<"any">;
             },
             []{
                 std::cout << "is not range";
@@ -216,7 +216,7 @@ int main () {
     // std::cout << "\n";
     for (int i : arrtest) {
         match(i) (
-            Case<"eval">(1 >= Range <= 5) >> Goto<"print">,
+            Case<"eval">(IntervalCompound{1 <= Interval <= 2, Interval > 4}) >> Goto_v<"print">,
             Case<"print">(false) >> [i]{
                 std::cout << i << ", ";
             },
