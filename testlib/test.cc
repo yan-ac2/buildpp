@@ -643,13 +643,13 @@ struct tupImpl<std::index_sequence<I...>, T...> : indexed_type<T, I>...{
 
 };
 template <typename... T> 
-struct tup final : private tupImpl<std::make_index_sequence<sizeof...(T)>, T...> {
+struct tup final : tupImpl<std::make_index_sequence<sizeof...(T)>, T...> {
     using seq = std::make_index_sequence<sizeof...(T)>;
     constexpr tup(T&&... r) : tupImpl<std::make_index_sequence<sizeof...(T)>, T...>(std::forward<T>(r)...) {}
 };
 int main() {
     // Explicit initialization solves the non-trivial union default constructor error
-    tup<int> s(1);
+    tup<int,int> s(1,2);
     union TaggedUnion {
         
         size_t active{0};
@@ -668,6 +668,7 @@ int main() {
     auto is_active = u.active; 
     std::cout << "Active: " << is_active << "\n"; // Output: true
     std::cout << "Value: " << u.storage2 << "\n";  // Output: 42
+    std::cout << "Value: " << static_cast<indexed_type<int, 0>>(s).data << "\n";  // Output: 42
     u.storage1 = 10;
     is_active = u.active; 
     std::cout << "Active: " << is_active << "\n"; // Output: true
