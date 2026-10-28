@@ -625,31 +625,113 @@ struct taggedStorage {
     }
 };
 
-template<typename T, std::size_t I>
-struct indexed_type {
-    T data;
-    constexpr indexed_type(T&& in) : data(std::forward<T>(in)) {}
-    constexpr indexed_type(const T& in) : T(in) {}
+template<template <typename> class tuple_like>
+struct pack_size {};
+template<template <class... T> class tuple_like>
+struct pack_size<tuple_like<T...>> {
+    static constexpr size_t value = sizeof...(T);
+    friend constexpr auto operator | (const tuple_like<T...>&,const pack_size<tuple_like<T...>>&) {
+        return value;
+    }
+};
+static constexpr 
+template<typename Head,typename... Tails>
+struct pack_holder {
+    using head = Head;
+    using next = pack_holder<Tails...>;
 };
 
+template<typename Head>
+struct pack_holder<Head> {
+    using head = Head;
+    using next = pack_holder<Head>;
+};
+
+template <size_t I, typename Holder> struct pack_element;
+template <typename Head, typename... Tail>
+struct pack_element<0, pack_holder<Head, Tail...>> { using type = Head; };
+template <size_t I, typename Head, typename... Tail>
+struct pack_element<I, pack_holder<Head, Tail...>> {
+    using type = typename pack_element<I - 1, pack_holder<Tail...>>::type;
+};
+template <size_t I, typename Tuple>
+using pack_element_t = typename pack_element<I, std::remove_cvref_t<Tuple>>::type;
+
+template <size_t I,typename Holder> struct pack_element2 { 
+    static_assert(pack_size<Holder>::value > I);
+    using type = typename pack_element2<I - 1, typename Holder::next>::type;
+};
+template <typename T> struct pack_element2<0,T> { 
+    using type = T::head;
+};
+
+static_assert(std::is_same_v<char,pack_element2<2, pack_holder<int,float,char>>::type>);
+template<std::size_t I,typename T>
+struct indexed_type {
+    T data;
+};
+
+struct defaultState {};
 
 template <typename IndexSeq, typename... Ranges>
 struct tupImpl;
+template <size_t... Is> struct value_seq {};
+template <size_t N, size_t... Is> struct make_value_seq_impl : make_value_seq_impl<N - 1, N - 1, Is...> {};
+template <size_t... Is> struct make_value_seq_impl<0, Is...> { using type = value_seq<Is...>; };
+template <size_t N> using make_value_seq = typename make_value_seq_impl<N>::type;
 
 template <typename... T,std::size_t... I>
-struct tupImpl<std::index_sequence<I...>, T...> : indexed_type<T, I>...{
+struct tupImpl<value_seq<I...>, T...> : indexed_type<I,T>...{
 
-    constexpr tupImpl(T&&... r) : indexed_type<T, I>(std::forward<T>(r))... {}
+    constexpr tupImpl(T&&... r) : indexed_type<I,T>(static_cast<T&&>(r))... {}
 
 };
 template <typename... T> 
-struct tup final : tupImpl<std::make_index_sequence<sizeof...(T)>, T...> {
-    using seq = std::make_index_sequence<sizeof...(T)>;
-    constexpr tup(T&&... r) : tupImpl<std::make_index_sequence<sizeof...(T)>, T...>(std::forward<T>(r)...) {}
+struct tup final : private tupImpl<make_value_seq<sizeof...(T)>, T...> {
+    static constexpr size_t tuple_size = sizeof...(T);
+    using pack_t = pack_holder<T...>;
+    template<size_t N>
+    using tuple_element = pack_element_t<N, pack_t>;
+    using seq = make_value_seq<tuple_size>;
+    constexpr tup(T&&... r) : tupImpl<seq, T...>(static_cast<T&&>(r)...) {}
+
+    template <size_t I> 
+    constexpr tuple_element<I>& get() {
+        return static_cast<indexed_type<I,tuple_element<I>>&>(*this).data;
+    }
 };
+
+namespace std {
+    template <typename... T>
+    struct tuple_size<tup<T...>> : std::integral_constant<std::size_t, sizeof...(T)> {};
+
+    template <std::size_t I, typename... T>
+    struct tuple_element<I, tup<T...>> {
+        using type = pack_element_t<I, pack_holder<T...>>;
+    };
+}
+
+// 2. Fix and provide the lvalue reference getter overload for `auto&`
+template<size_t I, typename... T> 
+constexpr decltype(auto) get(tup<T...>& t) { // Changed from value to mutable lvalue ref
+    return t.template get<I>();
+}
+
+// 3. Keep your existing const and rvalue overloads
+template<size_t I, typename... T> 
+constexpr decltype(auto) get(const tup<T...>& t) {
+    return t.template get<I>();
+}
+template<size_t I, typename... T> 
+constexpr decltype(auto) get(tup<T...>&& t) {
+    return std::move(t).template get<I>(); 
+}
+
 int main() {
-    // Explicit initialization solves the non-trivial union default constructor error
-    tup<int,int> s(1,2);
+    tup<int,std::string> s(1,{"hello",2});
+    static_assert(pack_size<decltype(s)>::value > 2);
+    auto& [sb, a] = s;
+    sb += 100;
     union TaggedUnion {
         
         size_t active{0};
@@ -660,7 +742,11 @@ int main() {
         TaggedUnion() {}
         ~TaggedUnion() {}
     } u;
-
+    struct another {};
+    union test2 {
+        struct ss : another {};
+        
+    };
     // Activate and write to storage1
     u.storage2 = 42.f;
 
@@ -668,7 +754,9 @@ int main() {
     auto is_active = u.active; 
     std::cout << "Active: " << is_active << "\n"; // Output: true
     std::cout << "Value: " << u.storage2 << "\n";  // Output: 42
-    std::cout << "Value: " << static_cast<indexed_type<int, 0>>(s).data << "\n";  // Output: 42
+    std::cout << "Value: " << sb << "\n";  // Output: 42
+    std::cout << "Value: " << s.get<0>() << "\n";  // Output: 42
+    std::cout << "Value: " << a << "\n";  // Output: 42
     u.storage1 = 10;
     is_active = u.active; 
     std::cout << "Active: " << is_active << "\n"; // Output: true

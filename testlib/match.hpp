@@ -912,10 +912,17 @@ namespace concepts {
 
 inline constexpr auto Interval = Interval_t{};
 
-template<class T, used_std::size_t I>
-struct indexed_type : T {
-    constexpr indexed_type(T&& in) : T(used_std::forward<T>(in)) {}
-    constexpr indexed_type(const T& in) : T(in) {}
+template<typename T, used_std::size_t I>
+struct indexed_type {
+    T _data;
+    constexpr indexed_type(T&& in) : _data(static_cast<T&&>(in)) {}
+    constexpr indexed_type(const T& in) : _data(in) {}
+    constexpr const T& get() const noexcept {
+        return _data;
+    }
+    constexpr T& get() noexcept {
+        return _data;
+    }
 };
 
 template <IntervalType Op, typename IndexSeq, concepts::is_range_instance... Ranges>
@@ -923,18 +930,23 @@ struct IntervalCompoundImpl;
 
 template <IntervalType Op, used_std::size_t... I, concepts::is_range_instance... Ranges>
 struct IntervalCompoundImpl<Op, used_std::index_sequence<I...>, Ranges...> : private indexed_type<Ranges, I>... {
-    using indexed_type<Ranges, I>::contains...;
+    using indexed_type<Ranges, I>::get...;
 
     constexpr explicit IntervalCompoundImpl(Ranges&&... r) 
-        : indexed_type<Ranges, I>(used_std::forward<Ranges>(r))... {}
+        : indexed_type<Ranges, I>(static_cast<Ranges&&>(r))... {}
 
     template <typename Target>
     constexpr bool contains(Target target) const noexcept {
         if constexpr (Op == IntervalType::Or) {
-            return (indexed_type<Ranges, I>::contains(target) || ...); 
+            return (indexed_type<Ranges, I>::get().contains(target) || ...); 
         } else {
-            return (indexed_type<Ranges, I>::contains(target) && ...); 
+            return (indexed_type<Ranges, I>::get().contains(target) && ...); 
         }
+    }
+    
+    template <typename Target>
+    constexpr bool operator == (Target target) {
+        return contains(target);
     }
     static_assert(Op == IntervalType::Or || Op == IntervalType::And, "Requires RangeType And / Or");
 };
@@ -945,13 +957,14 @@ struct IntervalCompound final : private IntervalCompoundImpl<Op, used_std::make_
     using seq = used_std::make_index_sequence<sizeof...(Ranges)>;
     using IntervalCompoundImpl<Op, seq , Ranges...>::IntervalCompoundImpl;
     using IntervalCompoundImpl<Op, seq , Ranges...>::contains;
+    using IntervalCompoundImpl<Op, seq , Ranges...>::operator ==;
 };
 template <IntervalType Op = IntervalType::Or,concepts::is_range_instance... Ranges> 
 requires (concepts::is_range_instance<Ranges> && ...)
 IntervalCompound(Ranges...) -> IntervalCompound<Op,Ranges...>;
 
 // Example test with identical range types:
-static_assert(sizeof(IntervalCompound(0 >= Interval <= 15, 20 >= Interval <= 30)) == 16);
+static_assert(IntervalCompound(0 >= Interval <= 15, 20 <= Interval <= 30) == 15);
 
 
 // ============================================================================
