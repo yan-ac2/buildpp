@@ -625,16 +625,22 @@ struct taggedStorage {
     }
 };
 
-template<template <typename> class tuple_like>
-struct pack_size {};
-template<template <class... T> class tuple_like>
-struct pack_size<tuple_like<T...>> {
+template<class tuple_like = void>
+struct pack_size {
+    using this_type = pack_size<tuple_like>;
+    template<template <class...> class container, class... T>
+    friend constexpr auto operator | (const container<T...>&,const this_type&) {
+        return pack_size<container<T...>>::value;
+    }
+};
+template<template <class...> class container, class... T>
+struct pack_size<container<T...>> {
     static constexpr size_t value = sizeof...(T);
-    friend constexpr auto operator | (const tuple_like<T...>&,const pack_size<tuple_like<T...>>&) {
+    friend constexpr auto operator | (const container<T...>&,const pack_size<container<T...>>&) {
         return value;
     }
 };
-static constexpr 
+static constexpr auto p_size = pack_size<void>{};
 template<typename Head,typename... Tails>
 struct pack_holder {
     using head = Head;
@@ -729,7 +735,7 @@ constexpr decltype(auto) get(tup<T...>&& t) {
 
 int main() {
     tup<int,std::string> s(1,{"hello",2});
-    static_assert(pack_size<decltype(s)>::value > 2);
+    static_assert((s | p_size) == 2);
     auto& [sb, a] = s;
     sb += 100;
     union TaggedUnion {
@@ -755,7 +761,7 @@ int main() {
     std::cout << "Active: " << is_active << "\n"; // Output: true
     std::cout << "Value: " << u.storage2 << "\n";  // Output: 42
     std::cout << "Value: " << sb << "\n";  // Output: 42
-    std::cout << "Value: " << s.get<0>() << "\n";  // Output: 42
+    std::cout << "Value: " << s.template get<0>() << "\n";  // Output: 42
     std::cout << "Value: " << a << "\n";  // Output: 42
     u.storage1 = 10;
     is_active = u.active; 
