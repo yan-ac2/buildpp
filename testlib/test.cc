@@ -640,72 +640,104 @@ struct pack_size<container<T...>> {
         return value;
     }
 };
+
 static constexpr auto p_size = pack_size<void>{};
+
 template<typename Head,typename... Tails>
 struct pack_holder {
-    using head = Head;
+    using type = Head;
     using next = pack_holder<Tails...>;
+};
+
+template<typename... T>
+struct pack_holder<pack_holder<T...>> {
+    using pack_t = pack_holder<T...>;
+    using type   = pack_t::type;
+    using next   = pack_t::next;
 };
 
 template<typename Head>
 struct pack_holder<Head> {
-    using head = Head;
-    using next = pack_holder<Head>;
+    using type = Head;
+    using next = Head;
+};
+template<typename Head>
+struct class_pack_holder;
+template<template <typename...> class Tuple,typename... T>
+struct class_pack_holder<Tuple<T...>> {
+    using type = pack_holder<T...>;
 };
 
-template <size_t I, typename Holder> struct pack_element;
-template <typename Head, typename... Tail>
-struct pack_element<0, pack_holder<Head, Tail...>> { using type = Head; };
-template <size_t I, typename Head, typename... Tail>
-struct pack_element<I, pack_holder<Head, Tail...>> {
-    using type = typename pack_element<I - 1, pack_holder<Tail...>>::type;
+template <size_t I,typename Holder> 
+struct pack_element { 
+    using type = typename pack_element<I - 1, typename pack_holder<Holder>::next>::type;
 };
-template <size_t I, typename Tuple>
-using pack_element_t = typename pack_element<I, std::remove_cvref_t<Tuple>>::type;
-
-template <size_t I,typename Holder> struct pack_element2 { 
-    static_assert(pack_size<Holder>::value > I);
-    using type = typename pack_element2<I - 1, typename Holder::next>::type;
+template <typename T> struct pack_element<0,T> { 
+    using type = pack_holder<T>::type;
 };
-template <typename T> struct pack_element2<0,T> { 
-    using type = T::head;
-};
+template <size_t I,typename... T>
+using pack_element_t = typename pack_element<I, pack_holder<T...>>::type;
+template <size_t I,class Tuple>
+using tuple_element_t = typename pack_element<I, typename class_pack_holder<Tuple>::type>::type;
 
-static_assert(std::is_same_v<char,pack_element2<2, pack_holder<int,float,char>>::type>);
-template<std::size_t I,typename T>
-struct indexed_type {
-    T data;
-};
-
-struct defaultState {};
-
-template <typename IndexSeq, typename... Ranges>
-struct tupImpl;
+static_assert(std::is_same_v<std::string,pack_element<3, pack_holder<int,float,char,std::string>>::type>);
+struct defaultState { constexpr defaultState() = default;};
 template <size_t... Is> struct value_seq {};
-template <size_t N, size_t... Is> struct make_value_seq_impl : make_value_seq_impl<N - 1, N - 1, Is...> {};
+template <size_t N, size_t... Is> struct make_value_seq_impl { using type = make_value_seq_impl<N - 1, N - 1, Is...>::type;};
 template <size_t... Is> struct make_value_seq_impl<0, Is...> { using type = value_seq<Is...>; };
 template <size_t N> using make_value_seq = typename make_value_seq_impl<N>::type;
 
-template <typename... T,std::size_t... I>
-struct tupImpl<value_seq<I...>, T...> : indexed_type<I,T>...{
+template<size_t I, typename T, bool = __is_empty(T)> struct indexed_type;
 
-    constexpr tupImpl(T&&... r) : indexed_type<I,T>(static_cast<T&&>(r))... {}
-
+template<size_t I, typename T>
+struct indexed_type<I, T, true> : T {
+    constexpr indexed_type() : T{} {}
+    constexpr indexed_type(T&& i) : T(static_cast<T&&>(i)) {}
 };
+
+template<size_t I, typename T>
+struct indexed_type<I, T, false> {
+    T data;
+    constexpr indexed_type() : data{} {}
+    constexpr indexed_type(T&& i) : data(static_cast<T&&>(i)) {}
+};
+
+template <typename IndexSeq, typename... Ranges>
+struct tupImpl;
+
+template <typename... T, std::size_t... I>
+struct tupImpl<value_seq<I...>, T...> : indexed_type<I, T>... {
+    // Standard constructor (works for both literal and non-literal types at runtime)
+    constexpr tupImpl() {}
+    constexpr tupImpl(T&&... r) : indexed_type<I, T>(static_cast<T&&>(r))... {}
+};
+
 template <typename... T> 
-struct tup final : private tupImpl<make_value_seq<sizeof...(T)>, T...> {
+struct tup {
+    tupImpl<make_value_seq<sizeof...(T)>, T...> storage;
     static constexpr size_t tuple_size = sizeof...(T);
     using pack_t = pack_holder<T...>;
-    template<size_t N>
+    
+    template <size_t N>
     using tuple_element = pack_element_t<N, pack_t>;
+    
     using seq = make_value_seq<tuple_size>;
-    constexpr tup(T&&... r) : tupImpl<seq, T...>(static_cast<T&&>(r)...) {}
 
-    template <size_t I> 
+    constexpr tup() {}
+    constexpr tup(T&&... r) : storage(static_cast<T&&>(r)...) {}
+
+    template <size_t I> requires (I < tuple_size)
     constexpr tuple_element<I>& get() {
-        return static_cast<indexed_type<I,tuple_element<I>>&>(*this).data;
+        using elem_t = tuple_element<I>;
+        if constexpr (__is_empty(elem_t)) {
+            return static_cast<indexed_type<I, elem_t, true>&>(*this);
+        } else {
+            return static_cast<indexed_type<I, elem_t, false>&>(*this).data;
+        }
     }
 };
+
+// static_assert(make_value_seq<5>{});
 
 namespace std {
     template <typename... T>
@@ -732,11 +764,14 @@ template<size_t I, typename... T>
 constexpr decltype(auto) get(tup<T...>&& t) {
     return std::move(t).template get<I>(); 
 }
-
+struct test5 {
+    tup<int,defaultState> s;
+};
 int main() {
-    tup<int,std::string> s(1,{"hello",2});
-    static_assert((s | p_size) == 2);
-    auto& [sb, a] = s;
+    constexpr test5 s;
+
+    static_assert((s | p_size) == 3);
+    auto& [sb, a,c] = s;
     sb += 100;
     union TaggedUnion {
         
@@ -761,7 +796,7 @@ int main() {
     std::cout << "Active: " << is_active << "\n"; // Output: true
     std::cout << "Value: " << u.storage2 << "\n";  // Output: 42
     std::cout << "Value: " << sb << "\n";  // Output: 42
-    std::cout << "Value: " << s.template get<0>() << "\n";  // Output: 42
+    // std::cout << "Value: " << get<0>(s) << "\n";  // Output: 42
     std::cout << "Value: " << a << "\n";  // Output: 42
     u.storage1 = 10;
     is_active = u.active; 

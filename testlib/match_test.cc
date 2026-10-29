@@ -48,7 +48,7 @@ auto visit(auto&& arg) {
         Case(Type_is<int>)    >> "int",
         Case(Type_is<float>)  >> "float",
         Case(Type_is<double>) >> "double",
-        Case(__)               >> "err",
+        Case(__)              >> "err",
         "UNDEFINED!"
     );
     return ret;

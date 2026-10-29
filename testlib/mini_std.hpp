@@ -362,20 +362,106 @@ namespace mini_std {
     template <size_t N, size_t... Is> struct make_index_sequence_impl : make_index_sequence_impl<N - 1, N - 1, Is...> {};
     template <size_t... Is> struct make_index_sequence_impl<0, Is...> { using type = index_sequence<Is...>; };
     template <size_t N> using make_index_sequence = typename mini_std::make_index_sequence_impl<N>::type;
+
     
-    // --- TUPLE IMPL ---
-    template <typename... Args> struct tuple;
-    template <> struct tuple<> {};
-    
-    template <typename Head, typename... Tail> 
-    struct tuple<Head, Tail...> : tuple<Tail...> {
-        constexpr tuple() = default;
-        constexpr tuple(Head h, Tail... t) 
-            : tuple<Tail...>(mini_std::forward<Tail>(t)...), value(mini_std::forward<Head>(h)) {}
-        Head value;
+    template<typename Head,typename... Tails>
+    struct pack_holder {
+        using type = Head;
+        using next = pack_holder<Tails...>;
     };
 
-    // Deduction Guides
+    template<typename... T>
+    struct pack_holder<pack_holder<T...>> {
+        using pack_t = pack_holder<T...>;
+        using type   = pack_t::type;
+        using next   = pack_t::next;
+    };
+
+    template<typename Head>
+    struct pack_holder<Head> {
+        using type = Head;
+        using next = Head;
+    };
+
+    // template<typename Head>
+    // struct class_pack_holder;
+    // template<template <typename...> class Tuple,typename... T>
+    // struct class_pack_holder<Tuple<T...>> {
+    //     using type = pack_holder<T...>;
+    // };
+
+    template <size_t I,typename Holder> 
+    struct pack_element { 
+        using type = typename pack_element<I - 1, typename pack_holder<Holder>::next>::type;
+    };
+    template <typename T> struct pack_element<0,T> { 
+        using type = pack_holder<T>::type;
+    };
+    template <size_t I,typename... T>
+    using pack_element_t = typename pack_element<I, pack_holder<T...>>::type;
+
+    // template <size_t I,class Tuple>
+    // using tuple_element_t = typename pack_element<I, typename class_pack_holder<Tuple>::type>::type;
+    
+    // --- TUPLE IMPL ---
+    // template <typename... Args> struct tuple;
+    // template <> struct tuple<> {};
+    
+    // template <typename Head, typename... Tail> 
+    // struct tuple<Head, Tail...> : tuple<Tail...> {
+    //     constexpr tuple() = default;
+    //     constexpr tuple(Head h, Tail... t) 
+    //         : tuple<Tail...>(mini_std::forward<Tail>(t)...), value(mini_std::forward<Head>(h)) {}
+    //     Head value;
+    // };
+    // template<size_t I,typename T,bool = __is_empty(T)> struct indexed_type;
+    // template<size_t I,typename T>
+    // struct indexed_type<I,T,true> : T {
+    //     constexpr indexed_type() : T{} {}
+    //     constexpr indexed_type(T&& i) : T(static_cast<T&&>(i)) {}
+    // };
+    template<typename I,typename T>
+    struct indexed_type {
+        T data;
+        constexpr indexed_type() : data{} {}
+        constexpr indexed_type(T&& i) : data(static_cast<T&&>(i)) {}
+    };
+
+    template <typename IndexSeq, typename... T>
+    struct tupImpl;
+
+    template <typename... T,size_t... I>
+    struct tupImpl<index_sequence<I...>, T...> : indexed_type<integral_constant<size_t,I>,T>...{
+
+        constexpr tupImpl() = default;
+        template<typename... Ti>
+        constexpr tupImpl(Ti&&... r) : indexed_type<integral_constant<size_t,I>,T>{static_cast<T&&>(r)}... {}
+
+    };
+    template <typename... T> 
+    struct tuple final : private tupImpl<make_index_sequence<sizeof...(T)>, T...> {
+        static constexpr size_t tuple_size = sizeof...(T);
+        template<size_t N>
+        using tuple_element = pack_element_t<N, T...>;
+        template<size_t N>
+        using stored_at = indexed_type<integral_constant<size_t,N>, tuple_element<N>>;
+        using seq = make_index_sequence<tuple_size>;
+        constexpr tuple() = default;
+        template<typename... Ti>
+        constexpr tuple(Ti&&... r) : tupImpl<seq, T...>{static_cast<T&&>(r)...} {}
+
+        template <size_t I> requires (I < tuple_size)
+        constexpr tuple_element<I>& get() noexcept {
+            return static_cast<stored_at<I>&>(*this).data;
+        }
+        template <size_t I> requires (I < tuple_size)
+        constexpr const tuple_element<I>& get() const noexcept {
+            return static_cast<const stored_at<I>&>(*this).data;
+        }
+    };
+    template <> 
+    struct tuple<> {};
+    
     tuple() -> tuple<>;
     template <typename... Args> tuple(Args...) -> tuple<Args...>;
 
@@ -416,31 +502,19 @@ namespace mini_std {
     }
 
     // --- TUPLE GET INTERFACE ---
-    template <size_t I,typename Head, typename... Tail>
-    [[nodiscard]] constexpr decltype(auto) get(tuple<Head,Tail...>& t) noexcept {
-        if constexpr (I == 0) {
-            return (t.value);
-        } else {
-            return mini_std::get<I - 1>(static_cast<mini_std::tuple<Tail...>&>(t));
-        }
+    template<size_t I, typename... T> 
+    constexpr decltype(auto) get(tuple<T...>& t) { // Changed from value to mutable lvalue ref
+        return t.template get<I>();
     }
 
-    template <size_t I, typename Head, typename... Tail>
-    [[nodiscard]] constexpr decltype(auto) get(const mini_std::tuple<Head, Tail...>& t) noexcept {
-        if constexpr (I == 0) {
-            return (t.value);
-        } else {
-            return mini_std::get<I - 1>(static_cast<const mini_std::tuple<Tail...>&>(t));
-        }
+    // 3. Keep your existing const and rvalue overloads
+    template<size_t I, typename... T> 
+    constexpr decltype(auto) get(const tuple<T...>& t) {
+        return t.template get<I>();
     }
-
-    template <mini_std::size_t I, typename Head, typename... Tail>
-    [[nodiscard]] constexpr decltype(auto) get(mini_std::tuple<Head, Tail...>&& t) noexcept {
-        if constexpr (I == 0) {
-            return mini_std::move(t.value);
-        } else {
-            return mini_std::get<I - 1>(static_cast<mini_std::tuple<Tail...>&&>(t));
-        }
+    template<size_t I, typename... T> 
+    constexpr decltype(auto) get(tuple<T...>&& t) {
+        return move(t).template get<I>(); 
     }
 
     // --- INVOKE IMPLEMENTATION ---

@@ -3,10 +3,10 @@
 #define MATCH_H
 
 
-    #include <type_traits>
-    #include <tuple>
-    #include <utility>
-    // #include "mini_std.hpp"
+    // #include <type_traits>
+    // #include <tuple>
+    // #include <utility>
+    #include "mini_std.hpp"
 
 
 // ============================================================================
@@ -14,7 +14,7 @@
 // ============================================================================
 
 namespace used_std {
-    using namespace std; 
+    using namespace mini_std; 
 
     template <typename T, typename = void>
     struct is_tuple_like : used_std::false_type {};
@@ -468,7 +468,7 @@ struct StaticLabel {
         return ret  = used_std::strHash::fnv1a_hash(buf,static_cast<used_std::size_t>(len));
     }
     constexpr auto slen(const char* s) noexcept -> unsigned int {
-        size_t ret{0};
+        used_std::size_t ret{0};
         while (*s != '\0') {
             ++ret;
         }
@@ -513,7 +513,7 @@ enum class FlowKind : int {
 };
 
 
-struct DefaultState{};
+struct DefaultState{ constexpr DefaultState() = default; };
 struct Wildcard {};
 [[maybe_unused]] inline constexpr Wildcard __{};
 
@@ -925,22 +925,19 @@ struct indexed_type {
     }
 };
 
-template <IntervalType Op, typename IndexSeq, concepts::is_range_instance... Ranges>
-struct IntervalCompoundImpl;
+template <IntervalType Op, concepts::is_range_instance... Ranges>
+struct IntervalCompound {
+    used_std::tuple<Ranges...> storage;
 
-template <IntervalType Op, used_std::size_t... I, concepts::is_range_instance... Ranges>
-struct IntervalCompoundImpl<Op, used_std::index_sequence<I...>, Ranges...> : private indexed_type<Ranges, I>... {
-    using indexed_type<Ranges, I>::get...;
-
-    constexpr explicit IntervalCompoundImpl(Ranges&&... r) 
-        : indexed_type<Ranges, I>(static_cast<Ranges&&>(r))... {}
+    constexpr IntervalCompound(Ranges&&... r) 
+        : storage(static_cast<Ranges&&>(r)...) {}
 
     template <typename Target>
     constexpr bool contains(Target target) const noexcept {
         if constexpr (Op == IntervalType::Or) {
-            return (indexed_type<Ranges, I>::get().contains(target) || ...); 
+            return used_std::apply([&](auto&... s) { return ((s.contains(target)) || ...);},storage);
         } else {
-            return (indexed_type<Ranges, I>::get().contains(target) && ...); 
+            return used_std::apply([&](auto&... s) { return ((s.contains(target)) && ...);},storage);
         }
     }
     
@@ -951,14 +948,6 @@ struct IntervalCompoundImpl<Op, used_std::index_sequence<I...>, Ranges...> : pri
     static_assert(Op == IntervalType::Or || Op == IntervalType::And, "Requires RangeType And / Or");
 };
 
-template <IntervalType Op = IntervalType::Or, concepts::is_range_instance... Ranges> 
-requires (concepts::is_range_instance<Ranges> && ...)
-struct IntervalCompound final : private IntervalCompoundImpl<Op, used_std::make_index_sequence<sizeof...(Ranges)>, Ranges...> {
-    using seq = used_std::make_index_sequence<sizeof...(Ranges)>;
-    using IntervalCompoundImpl<Op, seq , Ranges...>::IntervalCompoundImpl;
-    using IntervalCompoundImpl<Op, seq , Ranges...>::contains;
-    using IntervalCompoundImpl<Op, seq , Ranges...>::operator ==;
-};
 template <IntervalType Op = IntervalType::Or,concepts::is_range_instance... Ranges> 
 requires (concepts::is_range_instance<Ranges> && ...)
 IntervalCompound(Ranges...) -> IntervalCompound<Op,Ranges...>;
@@ -1244,9 +1233,9 @@ template <typename TargetType, typename KeyType>
         if constexpr (used_std::is_tuple<TargetDecay>) {
             auto evaluator = []<used_std::size_t... Is>(used_std::index_sequence<Is...>) noexcept {
                 if constexpr (KeyDecay::policy_value == TypePolicy::Any) {
-                    return (KeyDecay::template Trait<typename used_std::tuple_element<Is, TargetDecay>::type>::value || ...);
+                    return (KeyDecay::template Trait<typename used_std::tuple_element_t<Is, TargetDecay>::type>::value || ...);
                 } else {
-                    return (KeyDecay::template Trait<typename used_std::tuple_element<Is, TargetDecay>::type>::value && ...);
+                    return (KeyDecay::template Trait<typename used_std::tuple_element_t<Is, TargetDecay>::type>::value && ...);
                 }
             };
             return evaluator(used_std::make_index_sequence<used_std::tuple_size_v<TargetDecay>>{});
@@ -1400,7 +1389,7 @@ template<typename Key>
 ImplCase(Key) -> ImplCase<Key>;
 
 template <StaticLabel LabelID, typename KeyType = DefaultState, typename ActionType = DefaultState>
-struct ImplLabelCase final {
+struct ImplLabelCase {
     using this_type = ImplLabelCase<LabelID,KeyType,ActionType>;
     static constexpr bool isDefaultKey = !used_std::is_same_v<KeyType, DefaultState>;
     static constexpr bool isDefaultAction = !used_std::is_same_v<ActionType, DefaultState>;
@@ -1509,7 +1498,7 @@ struct match_t {
     static constexpr used_std::size_t LastCaseIndex = TotalCasesIndex;
     
     using StoreTarget = TargetType;
-    using StoreCases = used_std::conditional_t<is_configured, used_std::tuple<used_std::remove_cvref_t<Cases>...>, used_std::tuple<Wildcard>>;
+    using StoreCases = used_std::conditional_t<is_configured, used_std::tuple<used_std::remove_cvref_t<Cases>...>, used_std::tuple<DefaultState>>;
     
     using CasesIndex = used_std::make_index_sequence<TotalCases>;
     using LastCaseType  = used_std::tuple_element_t<LastCaseIndex, StoreCases>;
@@ -1530,7 +1519,7 @@ struct match_t {
     
     constexpr match_t(StoreTarget t) noexcept : target(t) 
     {}
-    constexpr match_t() noexcept : target(DefaultState{})
+    constexpr match_t() noexcept   
     {}
     constexpr match_t(match_t&& other) noexcept 
     : target(other.target),
@@ -1637,7 +1626,7 @@ struct match_t {
     template<used_std::size_t I> 
     constexpr void evaluateCase(State& state) noexcept requires(is_configured) {
         if constexpr (I >= LastCaseIndex) __builtin_unreachable();
-        auto& [key, action] = std::get<I>(cases);
+        auto& [key, action] = used_std::get<I>(cases);
         const bool matched = state.jump_signal +
         evaluate_match(state.current_target, key);
         return matched ? (Dispatch(action,state)) :
