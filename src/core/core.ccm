@@ -2,5 +2,6 @@ export module core;
 
 export import :std;
 export import :types;
-export import :utl;
+export import :util;
+export import :format;
 

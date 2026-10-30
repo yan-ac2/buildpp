@@ -143,12 +143,6 @@ inline void* LoadExtension( const char* name )
 #endif
 	}
 
-export
-template<StaticString str>
-class Renderer
-{
-    static_assert(false, "Please enter renderer type");
-};
 
 export 
 class GlHints : public IRenderer {
@@ -408,8 +402,7 @@ private:
 };
 
 export
-template<>
-class Renderer<"GL"> {
+class Renderer {
     GlHints* hints = nullptr;
     public:
 
@@ -610,8 +603,7 @@ class Shader
     }
 };
 
-template<>
-class Renderer<"software"> {
+class software_Renderer {
     public:
     int channel;
     bool done = false;
@@ -699,23 +691,23 @@ class Renderer<"software"> {
     uint8* get() const {return buffer;}
     uint8* view() const {return buffer;} 
 
-    Renderer& init(Window* win,size_t height,size_t width) {
+    software_Renderer& init(Window* win,size_t height,size_t width) {
         
         window = win;
         initBuffer(height, width,4);
         return *this;
     }
-    Renderer& end() {
+    software_Renderer& end() {
         clear();
         return *this;
     }
-    Renderer& swapbuffer() {
+    software_Renderer& swapbuffer() {
         // thread_local bool* isDone = &done;
         // end();
         return *this;
 
     }
-    ~Renderer() {
+    ~software_Renderer() {
         // surfaceFree(surface);
     }
 

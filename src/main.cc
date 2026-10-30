@@ -51,7 +51,7 @@ int main() {
     // child.InitChild(&app,"ChildWindow",800,600,WindowFlags::NoBorder);
     Event event;
     GlHints glHints;
-    Renderer<"GL"> glCtx(&glHints);
+    Renderer glCtx(&glHints);
     DisplayManager disp;
     
     app.addDisplayManager(&disp);
