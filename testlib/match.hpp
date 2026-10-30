@@ -348,8 +348,8 @@ namespace used_std {
     
     using Tuple1 = used_std::tuple<int, short, char, float, double,short,int>;
     using Tuple2 = used_std::tuple<int>;
-    using test_matchCoord = get_matching_indices_t<Tuple2,Tuple1>;
-    static_assert(used_std::is_same_v<test_matchCoord, used_std::index_sequence<0>>,"");
+    using test_matchCoord = get_matching_indices_t<Tuple1,Tuple2>;
+    static_assert(used_std::is_same_v<test_matchCoord, used_std::index_sequence<0>>);
 
     template <auto Accessor, auto Value, typename Tuple>
     constexpr used_std::size_t find_index_v = []<used_std::size_t... Is>(used_std::index_sequence<Is...>) {
@@ -912,19 +912,6 @@ namespace concepts {
 
 inline constexpr auto Interval = Interval_t{};
 
-template<typename T, used_std::size_t I>
-struct indexed_type {
-    T _data;
-    constexpr indexed_type(T&& in) : _data(static_cast<T&&>(in)) {}
-    constexpr indexed_type(const T& in) : _data(in) {}
-    constexpr const T& get() const noexcept {
-        return _data;
-    }
-    constexpr T& get() noexcept {
-        return _data;
-    }
-};
-
 template <IntervalType Op, concepts::is_range_instance... Ranges>
 struct IntervalCompound {
     used_std::tuple<Ranges...> storage;
@@ -935,9 +922,9 @@ struct IntervalCompound {
     template <typename Target>
     constexpr bool contains(Target target) const noexcept {
         if constexpr (Op == IntervalType::Or) {
-            return used_std::apply([&](auto&... s) { return ((s.contains(target)) || ...);},storage);
+            return used_std::apply([&](const auto&... s) { return ((s.contains(target)) || ...);},storage);
         } else {
-            return used_std::apply([&](auto&... s) { return ((s.contains(target)) && ...);},storage);
+            return used_std::apply([&](const auto&... s) { return ((s.contains(target)) && ...);},storage);
         }
     }
     
@@ -1203,7 +1190,7 @@ namespace concepts {
     template <typename Tuple> 
     concept TupleOfRefsOrPointers = IsTupleOfRefsOrPointers<used_std::remove_cvref_t<Tuple>>::value;
 
-   template <typename K, typename T>
+    template <typename K, typename T>
     concept IsCallablePredicate = requires(K k, T t) {
         { used_std::invoke(k,t) } -> convertible_to<bool>;
     };  
@@ -1294,9 +1281,9 @@ template <typename TargetType, typename KeyType>
     else if constexpr (concepts::MatchesPredicate<KeyType, TargetType>) {
         return used_std::invoke(key.matches, target);
     } 
-    else if constexpr (concepts::IsCallablePredicate<KeyType, TargetType>) {
-        return used_std::invoke(key, target);
-    } 
+    // else if constexpr (concepts::IsCallablePredicate<KeyType, TargetType>) {
+    //     return used_std::invoke(key, target);
+    // } 
     
     else if constexpr (requires { { target == key } -> concepts::convertible_to<bool>; }) {
         return (target == key);
@@ -1624,9 +1611,9 @@ struct match_t {
     }
 
     template<used_std::size_t I> 
-    constexpr void evaluateCase(State& state) noexcept requires(is_configured) {
+    constexpr void evaluateCase(State& state) & noexcept requires(is_configured) {
         if constexpr (I >= LastCaseIndex) __builtin_unreachable();
-        auto& [key, action] = used_std::get<I>(cases);
+        const auto& [key, action] = used_std::get<I>(cases);
         const bool matched = state.jump_signal +
         evaluate_match(state.current_target, key);
         return matched ? (Dispatch(action,state)) :
@@ -1676,7 +1663,7 @@ struct match_t {
         }
     }
     constexpr ReturnType run() noexcept requires (is_configured && TotalCases > 1) {
-        auto& DefaultCase = used_std::get<LastCaseIndex>(cases);
+        const auto& DefaultCase = used_std::get<LastCaseIndex>(cases);
         State state{.next_idx= 0 ,.current_target= target ,.jump_signal= false ,.matched= false,.result={}};
         while (state.next_idx < TotalCasesIndex) {
             DispatchCase<0,TotalCasesIndex>(state);

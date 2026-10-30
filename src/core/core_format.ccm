@@ -1,0 +1,214 @@
+
+export module core:format;
+
+import :std;
+import :util;
+
+
+template <typename T>
+concept Formattable = 
+    requires(T t) { { std::string_view(t) } -> std::same_as<std::string_view>; } || 
+    std::integral<std::decay_t<T>> ||
+    std::floating_point<std::decay_t<T>>;
+
+template <typename... Args>
+concept onlyStr = (Formattable<Args> && ...);
+
+export
+struct fmt {
+    std::string str;
+
+    enum colors {
+        Not_color,
+        Black,     Bold_Black,     High_Black,
+        Red,       Bold_Red,       High_Red,
+        Green,     Bold_Green,     High_Green,
+        Yellow,    Bold_Yellow,    High_Yellow,
+        Blue,      Bold_Blue,      High_Blue,
+        Purple,    Bold_Purple,    High_Purple,
+        Cyan,      Bold_Cyan,      High_Cyan,
+        White,     Bold_White,     High_White,
+    };
+
+    // 1. Variadic Concatenation Constructor: fmt("hello ", 123, " world")
+    template<onlyStr... Args>
+    constexpr fmt(Args&&... args) {
+        varConcat(std::forward<Args>(args)...);
+    }
+    template<onlyStr... Args>
+    constexpr fmt& varConcat(Args&&... args) { 
+        size_t preAlloc = (getArgSize(args) + ... + 0);
+        str.reserve(preAlloc);
+        (appendArg(std::forward<Args>(args)), ...);
+        return *this;
+    }
+    // 2. Format String Constructor: fmt("Value: {}, Status: {}", 42, "OK")
+    template<onlyStr... Args>
+    constexpr fmt(const char* in, Args&&... args) {
+        if (std::string_view(in).find('{') == std::string_view::npos) {
+            varConcat(in, std::forward<Args>(args)...);
+            return;
+        }
+        std::string_view fmtStr(in);
+        size_t preAlloc = fmtStr.size() + (getArgSize(args) + ... + 0);
+        size_t lastPos = 0;
+
+        // Lambda executed once per parameter in fold expression
+        auto processArg = [this, &fmtStr, &lastPos](auto&& arg) {
+            size_t pBegin = fmtStr.find('{',lastPos);
+            if (pBegin != std::string_view::npos) {
+                size_t pEnd = fmtStr.find('}', pBegin + 1);
+                if (pEnd != std::string_view::npos) {
+                    str.append(fmtStr.substr(lastPos, pBegin - lastPos));
+                    appendArg(std::forward<decltype(arg)>(arg));
+                    lastPos = pEnd + 1;
+                }
+            }
+        };
+
+        str.reserve(preAlloc);
+        (processArg(std::forward<Args>(args)), ...);
+        if (lastPos < fmtStr.size()) {
+            str.append(fmtStr.substr(lastPos));
+        }
+    }
+
+    // Apply ANSI Color
+    constexpr fmt& color(colors c) { 
+        str.reserve(str.size() + 14);
+        str.insert(0, this->getColor(c));
+        str.append(this->getColor(Not_color));
+        return *this;
+    }
+
+    // Collapse multiple contiguous spaces into a single space
+    constexpr fmt& clean() { 
+        if (str.empty()) return *this;
+
+        size_t writeIdx = 0;
+        bool inSpace = false;
+
+        for (size_t readIdx = 0; readIdx < str.size(); ++readIdx) {
+            char c = str[readIdx];
+            if (c == ' ') {
+                if (!inSpace) {
+                    str[writeIdx++] = c;
+                    inSpace = true;
+                }
+            } else {
+                str[writeIdx++] = c;
+                inSpace = false;
+            }
+        }
+        str.resize(writeIdx);
+        return *this;
+    }
+
+    constexpr fmt& endl() { str.append("\n"); return *this; }
+
+    constexpr std::string_view sv() const { return str; }
+    constexpr const char* cstr() const { return str.c_str(); }
+    constexpr operator std::string_view() const { return sv(); }
+    constexpr operator const char*() const { return cstr(); }
+    
+    friend std::ostream& operator<<(std::ostream& os, const fmt& f) {
+        return os << f.str;
+    }
+
+private:
+    struct formatHelper {
+        int attr = 0;
+        int attr2 = 0;
+        constexpr formatHelper() {}
+    };
+
+    template<onlyStr T>
+    constexpr size_t getArgSize(const T& arg) const {
+        using Raw = std::remove_cvref_t<T>;
+        if constexpr (std::is_convertible_v<Raw, std::string_view>) {
+            return std::string_view (arg).size();
+        } else if constexpr (std::integral<Raw>) {
+            return Math::digitLength(arg);
+        } else if constexpr (std::floating_point<Raw>) {
+            return Math::digitLength(arg);
+        }
+        return 0;
+    }
+
+    template<onlyStr T>
+    constexpr void appendArg(T&& arg) {
+        using Raw = std::remove_cvref_t<T>;
+        if constexpr (std::is_convertible_v<Raw, std::string_view>) {
+            str += std::string_view(arg);
+        } else if constexpr (std::integral<Raw>) {
+            char digit[Math::maxDigits<Raw>()];
+            auto [eDigit, ec] = std::to_chars(digit, digit + Math::maxDigits<Raw>(), std::forward<T>(arg));
+            str.append(digit, static_cast<std::size_t>(eDigit - digit));
+        } else if constexpr (std::floating_point<Raw>) {
+            char digit[Math::maxDigits<Raw>()];
+            auto [eDigit, ec] = std::to_chars(digit, digit + Math::maxDigits<Raw>(), std::forward<T>(arg));
+            str.append(digit, static_cast<std::size_t>(eDigit - digit));
+        } else {
+            __builtin_unreachable();
+        }
+    }
+
+    
+
+    constexpr std::string_view getColor(colors color) const {
+        switch (color) {
+            case Not_color:    return "\033[0m";
+            case Black:        return "\033[0;30m";
+            case Red:          return "\033[0;31m";
+            case Green:        return "\033[0;32m";
+            case Yellow:       return "\033[0;33m";
+            case Blue:         return "\033[0;34m";
+            case Purple:       return "\033[0;35m";
+            case Cyan:         return "\033[0;36m";
+            case White:        return "\033[0;37m";
+            case Bold_Black:   return "\033[1;30m";
+            case Bold_Red:     return "\033[1;31m";
+            case Bold_Green:   return "\033[1;32m";
+            case Bold_Yellow:  return "\033[1;33m";
+            case Bold_Blue:    return "\033[1;34m";
+            case Bold_Purple:  return "\033[1;35m";
+            case Bold_Cyan:    return "\033[1;36m";
+            case Bold_White:   return "\033[1;37m";
+            case High_Black:   return "\033[0;90m";
+            case High_Red:     return "\033[0;91m";
+            case High_Green:   return "\033[0;92m";
+            case High_Yellow:  return "\033[0;93m";
+            case High_Blue:    return "\033[0;94m";
+            case High_Purple:  return "\033[0;95m";
+            case High_Cyan:    return "\033[0;96m";
+            case High_White:   return "\033[0;97m";
+            default:           return "";
+        }
+    }
+};
+
+export
+struct Print {
+
+};
+
+export
+template <size_t N>
+struct StaticString
+{
+    char data[N] {};
+
+    constexpr StaticString(const char (&input)[N + 1])
+    {
+        for(size_t i {0};input[i] != '\0';i++) {
+            data[i] = input[i];
+        }
+    }
+    constexpr bool operator ==(const char* other) {
+        return std::string_view(data) == other;
+    }
+    constexpr size_t getSize() const {return N;}
+    constexpr const char* getData () const {return data;}
+    constexpr operator const char*() const {return data;}
+};
+template <size_t N> StaticString(const char(&)[N]) -> StaticString<N - 1>;

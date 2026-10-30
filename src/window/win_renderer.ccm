@@ -5,13 +5,13 @@ module;
     #include "retard.h"
 */
 #include "glHeader.hpp"
-export module lib.win:renderer;
+export module win:renderer;
 // import somethisng;
 // import lib.std; // test
 // import lib.types; // test
 // import lib.utl; // test
 import core;
-import :common;
+import :fwd;
 
 enum class glType
 {
@@ -641,7 +641,7 @@ class Renderer<"software"> {
     inline void set(size_t ix,size_t iy,RGBA colors) {
         uint8* index = buffer + ((iy * (channel*width))  +  ix *channel);
         if (index >= buffer + bufferSize || index <= buffer) return;
-        colors.copy<4>(index);
+        colors.copy(index);
     }
 
     void line(int32 aix,int32 aiy,int32 bix,int32 biy,RGBA col) {

@@ -1,9 +1,10 @@
 module;
-#include "pch.hpp"
+// #include "pch.hpp"
+#include "windows.h"
 
-export module lib.win:common;
+export module win:fwd;
 import core;
-import keyboard;
+import :keyboard;
 
 export class Window;
 

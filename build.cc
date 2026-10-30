@@ -60,7 +60,7 @@
 int selfCompile(bool recompile)
 {
     std::cout << sformat("{}\n",addColors("compile self",strColors::Bold_Green));
-    const fs::path rootPath = fs::current_path();
+    const std::string rootPath = fs::current_path().string();
     outputPath outPath;
     outPath.setRootPath(rootPath)
     .setExePath("")
@@ -71,7 +71,7 @@ int selfCompile(bool recompile)
     Project rebuild("build",outPath,Project::exe,recompile);
     current = &rebuild;
     rebuild.setCompiler("clang++")
-    .addOptions("-O1 -Wall -Wextra -Wpedantic -Werror -fno-rtti -std=c++23")
+    .addOptions("-O1 -Wall -Wextra -Wpedantic -Werror -fno-rtti -std=c++20")
     .addLdOptions("-fuse-ld=lld")
     .setProjectPath(rootPath)
     .addSourcePath("")
@@ -88,7 +88,7 @@ int CompileFile(const std::string_view Name,const std::string_view From,const st
     std::span<const std::string_view> IncludePath,std::span<const std::string_view> src,const std::span<const std::string_view> libraryList,bool recompile)
 {
     std::cout << sformat("Compiling {}\nFrom: {}\n" ,Name,From);
-    const fs::path rootPath = fs::current_path();
+    const std::string rootPath = fs::current_path().string();
     outputPath outPath;
     outPath.setRootPath(rootPath)
     .setExePath(oPath)
@@ -146,7 +146,7 @@ int CompileFile(const std::string_view Name,const std::string_view From,const st
 
 int compileProject(bool recompile)
 {
-    const fs::path rootPath = fs::current_path();
+    const std::string rootPath = fs::current_path().string();
     compileCommand cmdJson;
     outputPath outPath;
     outPath.setRootPath(rootPath).setExePath("bin").setBuildfolder(".build").setOutpath("Project");
@@ -168,13 +168,13 @@ int compileProject(bool recompile)
         "lib.ui.ccm",
         "lib.image.ccm",
     })
-    .addSource("src/core", "*")
+    .addSource("src/core","*")
     .addSource("src/window", {
-        "lib.win.ccm",
-        "winCommon.ccm",
-        "platform.ccm",
-        "renderer.ccm",
-        "keyboard.ccm",
+        "win.ccm",
+        "win_forward.ccm",
+        "win_renderer.ccm",
+        "win_platform.ccm",
+        "win_keyboard.ccm"
     })
     .addIncludePathList({
         "src",
@@ -183,8 +183,8 @@ int compileProject(bool recompile)
     .getHeaderFile()
     .setResourcePath("res")
     .setMain("main.cc").scanHeader().scanModule()
-    .LinkLibrary("lib.win.ccm",{"gdi32","user32"})
-    .LinkLibrary("renderer.ccm",{"opengl32"})
+    .LinkLibrary("win.ccm",{"gdi32","user32"})
+    .LinkLibrary("win_renderer.ccm",{"opengl32"})
     .configureModuleFlags().dumpProject()
     ;
 
@@ -209,8 +209,8 @@ int compileProject(bool recompile)
     while(!queue.empty()) {
         auto& modulef = queue.front().get();
         queue.pop();
+        // std::cout << "Compile Module: " << modulef.Name <<"\ n";
         if (compile.compileModule(modulef) == false) {
-            // std::cout << "Compiled Module: "_fmt.color(fmt::Red) << modulef.Name <<"\n";
             queue.emplace(modulef);
         }
     }

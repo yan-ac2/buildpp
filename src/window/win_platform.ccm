@@ -1,11 +1,12 @@
 module;
-#include "pch.hpp"
+// #include "pch.hpp"
+#include "windows.h"
 
-export module lib.win:platform;
+export module win:platform;
 
 import core;
-import :common;
 import :renderer;
+import :fwd;
 
 
 export

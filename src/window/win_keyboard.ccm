@@ -1,8 +1,9 @@
 module;
 
-#include "pch.hpp"
+#include "windows.h"
 
-export module keyboard;
+export module win:keyboard;
+
 import core;
 
 export namespace keyboard {

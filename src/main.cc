@@ -2,10 +2,10 @@
 // #include <chrono>
 // #include <tuple>
 // import lib;
-#include "pch.hpp"
+#include "glHeader.hpp"
 
 import core;
-import lib.win;
+import win;
 import lib.image;
 import lib.ui;
 

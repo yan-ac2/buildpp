@@ -1,34 +1,32 @@
 
-#include <iostream>
-// #include <ranges>
-#include <span> 
-#include <ranges> 
+#include <cstdio>
+#include <string_view>
+#include <string>
 #include "match.hpp"
-
 // --- A. Numeric & Range matching ---
 void showcase_numeric_and_ranges(int score) {
-    std::cout << "\n=== 1. Numeric & Range Pattern matching ===" << std::endl;
+    std::printf("\n=== 1. Numeric & Range Pattern matching ===\n");
     // std::size_t score2 = 2;
     std::string_view result = match(score) (
-        Case(100)                      >> "Perfect Score!",
+        Case(100)                             >> "Perfect Score!",
         Case(90 < Interval <= 99) >> "Grade: A",
         Case(80 <= Interval <= 89)  >> "Grade: B",
         Case(70 < Interval < 79)  >> "Grade: C",
         (score < 70 ? "Grade: Fail" : "Grade: Invalid")
     );
 
-    std::cout << "Score [" << score << "] -> " << result << std::endl;
+    std::printf("Score [%d] -> %.*s\n", score, static_cast<int>(result.size()), result.data());
 }
 
 // --- B. StaticLabel / FNV-1a Hash matching ---
 void showcase_hash_labels(std::string_view command) {
-    std::cout << "\n=== 2. StaticLabel Hash matching ===" << std::endl;
+    std::printf("\n=== 2. StaticLabel Hash matching ===\n");
     int test = 1;
     std::size_t cmd_hash = used_std::strHash::fnv1a_hash(command.data(), command.size());
 
     std::string_view response = match(command) (
         Case<"start">("start") >> "System Starting...",
-        Case<"stop"> ("stop")  >>  [&](const std::string_view& cmd) {std::cout << cmd << "\n"; return test == 1 ? Goto<"start"> : Goto<"err">;},
+        Case<"stop"> ("stop")  >>  [&](const std::string_view& cmd) {std::printf("%.*s\n", static_cast<int>(cmd.size()), cmd.data()); return test == 1 ? Goto<"start"> : Goto<"err">;},
         Case("pause")          >> "System Paused.",
         Case("pause2")         >> "System Paused.",
         Case("pause3")         >> "System Paused.",
@@ -40,10 +38,10 @@ void showcase_hash_labels(std::string_view command) {
         
     );
 
-    std::cout << "Command [\"" << command << "\"] (Hash: " << cmd_hash << ") -> " << response << std::endl;
+    std::printf("Command [\"%*s\"] (Hash: %zu) -> %.*s\n",static_cast<int>(command.size()), command.data(), cmd_hash, static_cast<int>(response.size()), response.data());
 }
 auto visit(auto&& arg) {
-    std::cout << "\n=== Visit ===" << std::endl;
+    std::printf("\n=== Visit ===\n");
     std::string_view ret = match(arg) (
         Case(Type_is<int>)    >> "int",
         Case(Type_is<float>)  >> "float",
@@ -79,11 +77,11 @@ struct Validator {
 };
 
 int main () {
-    std::cout << "=================================================" << std::endl;
-    std::cout << "       PATTERN MATCHING LIBRARY SHOWCASE         " << std::endl;
-    std::cout << "=================================================" << std::endl;
-
-    std::cout << "=== Free Function & Member Function matching ===\n";
+    std::printf(
+    "=================================================\n"
+    "        PATTERN MATCHING LIBRARY SHOWCASE         \n"
+    "=================================================\n"
+    "=== Free Function & Member Function matching ===\n");
 
     // -------------------------------------------------------------
     // 1. Standalone / Free Function Evaluation
@@ -94,7 +92,7 @@ int main () {
         Case(&is_positive) >> [] { return "Positive Odd Number"; },
         [] { return "Other"; }
     );
-    std::cout << "Number " << number << " -> " << num_res << "\n";
+    std::printf("Number %d -> %.*s\n", number, static_cast<int>(num_res.size()), num_res.data());
 
     // -------------------------------------------------------------
     // 2. Unbound Member Function Evaluation (Target is the Instance)
@@ -106,12 +104,12 @@ int main () {
         Case(Predicate(&User::is_active)) >> "Active Minor",
         "Inactive Minor"
     );
-    std::cout << u1.name << " -> " << user_res << "\n";
+    std::printf("%.*s -> %.*s\n", static_cast<int>(u1.name.size()), u1.name.data(), static_cast<int>(user_res.size()), user_res.data());
     
     // std::variant<int,double,float> var;
     // var = 12.f;
     std::string_view visited = visit(12); 
-    std::cout << "value : " << visited << "\n";
+    std::printf("value : %.*s\n", static_cast<int>(visited.size()), visited.data());
     // -------------------------------------------------------------
     // 3. Bound Member Function Evaluation (External Instance)
     // -------------------------------------------------------------
@@ -122,7 +120,7 @@ int main () {
         Case(Predicate(&Validator::exceeds_threshold,&validator)) >> "Passed Validation",
         "Failed Validation"
     );
-    std::cout << "Score " << score << " -> " << val_res << "\n";
+    std::printf("Score %d -> %.*s\n", score, static_cast<int>(val_res.size()), val_res.data());
 
     // 4. Numeric Range Showcase
     showcase_numeric_and_ranges(95);
@@ -162,26 +160,26 @@ int main () {
         
     match(test) (
         Case(field(&s::i,20)) >> []{
-            std::cout << "is 20";
+            std::printf("is 20");
         },
         Case(__) >> [&]() {
-            std::cout << "default" << test.i << '\n';
+            std::printf("default%d\n", test.i);
         },
         []{
-            std::cout << "Error";
+            std::printf("Error");
         }
     );
-    std::cout << "\n";
+    std::printf("\n");
     int num2 = 0;
     for (int i = 0 ;i < 5; ++i) {
         match(num2) (
             Case<"inRange">(20 <= Interval <= 40) >> [&]{
-                std::cout << "is in range";
+                std::printf("is in range");
                 num2 = 0;
             },
             Case<"outRange">(0 <= Interval <= 20) >> [&] {
                 ++num2;
-                std::cout << "increase" << num2 << '\n';
+                std::printf("increase%d\n", num2);
                 if (num2 >= 15) {
                     num2 = 50;
                     return Goto<"any">;
@@ -190,39 +188,25 @@ int main () {
             },
             Case<"any">(__) >> [&] {
                 --num2;
-                std::cout << "decrease" << num2 << '\n';
+                std::printf("decrease%d\n", num2);
                 return (20 <= Interval <= 40) == num2 ? Goto<"inRange"> : Goto<"any">;
             },
             []{
-                std::cout << "is not range";
+                std::printf("is not range");
             }
         );
     }
 
     int arrtest[] {1,2,3,4,5,6,7,8};
-    // auto rangetest = std::span{arrtest} | std::views::filter(
-    //     // [](auto& r) {
-    //     //     return r > 5 ? true : false;
-    //     // }
-    //     match(int{}).when(
-    //         Case(Range{1,5}) >> true
-    //         ,false
-    //     ) 
-    // );
-
-    // for (int i : rangetest) {
-    //     std::cout << i << ", ";
-    // }
-    // std::cout << "\n";
     for (int i : arrtest) {
         match(i) (
             Case<"eval">(IntervalCompound{1 <= Interval <= 2, Interval > 4}) >> Goto_v<"print">,
             Case<"print">(false) >> [i]{
-                std::cout << i << ", ";
+                std::printf("%d, ", i);
             },
             false
         );
     }
-    std::cout << "\n";
+    std::printf("\n");
     return 1;
 }

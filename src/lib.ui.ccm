@@ -3,7 +3,7 @@ module;
 
 export module lib.ui;
 import core;
-import lib.win;
+import win;
 
 export
 struct Rect {

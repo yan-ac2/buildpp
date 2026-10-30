@@ -383,12 +383,16 @@ namespace mini_std {
         using next = Head;
     };
 
-    // template<typename Head>
-    // struct class_pack_holder;
-    // template<template <typename...> class Tuple,typename... T>
-    // struct class_pack_holder<Tuple<T...>> {
-    //     using type = pack_holder<T...>;
-    // };
+    template<typename Head>
+    struct class_pack_holder;
+    template<template <typename...> class Tuple,typename... T>
+    struct class_pack_holder<Tuple<T...>> {
+        using type = pack_holder<T...>;
+    };
+    template<template <typename...> class Tuple>
+    struct class_pack_holder<Tuple<>> {
+        using type = pack_holder<void>;
+    };
 
     template <size_t I,typename Holder> 
     struct pack_element { 
@@ -439,25 +443,13 @@ namespace mini_std {
 
     };
     template <typename... T> 
-    struct tuple final : private tupImpl<make_index_sequence<sizeof...(T)>, T...> {
+    struct tuple {
         static constexpr size_t tuple_size = sizeof...(T);
-        template<size_t N>
-        using tuple_element = pack_element_t<N, T...>;
-        template<size_t N>
-        using stored_at = indexed_type<integral_constant<size_t,N>, tuple_element<N>>;
         using seq = make_index_sequence<tuple_size>;
+        tupImpl<seq, T...> storage;
         constexpr tuple() = default;
         template<typename... Ti>
-        constexpr tuple(Ti&&... r) : tupImpl<seq, T...>{static_cast<T&&>(r)...} {}
-
-        template <size_t I> requires (I < tuple_size)
-        constexpr tuple_element<I>& get() noexcept {
-            return static_cast<stored_at<I>&>(*this).data;
-        }
-        template <size_t I> requires (I < tuple_size)
-        constexpr const tuple_element<I>& get() const noexcept {
-            return static_cast<const stored_at<I>&>(*this).data;
-        }
+        constexpr tuple(Ti&&... r) : storage{static_cast<T&&>(r)...} {}
     };
     template <> 
     struct tuple<> {};
@@ -468,7 +460,7 @@ namespace mini_std {
     // --- TUPLE SIZE & ELEMENT ---
     template <typename T> struct tuple_size;
     template <typename... Types> 
-    struct tuple_size<tuple<Types...>> : mini_std::integral_constant<mini_std::size_t, sizeof...(Types)> {};
+    struct tuple_size<tuple<Types...>> : integral_constant<size_t, sizeof...(Types)> {};
     template <typename T> struct tuple_size<const T> : tuple_size<T> {};
     template <typename T> struct tuple_size<volatile T> : tuple_size<T> {};
     template <typename T> struct tuple_size<const volatile T> : tuple_size<T> {};
@@ -476,16 +468,16 @@ namespace mini_std {
     template <typename T> 
     inline constexpr mini_std::size_t tuple_size_v = mini_std::tuple_size<mini_std::remove_cvref_t<T>>::value;
 
-    template <size_t I, typename Tuple> struct tuple_element;
-    template <typename Head, typename... Tail>
-    struct tuple_element<0, tuple<Head, Tail...>> { using type = Head; };
-    template <size_t I, typename Head, typename... Tail>
-    struct tuple_element<I, tuple<Head, Tail...>> {
-        using type = typename mini_std::tuple_element<I - 1, tuple<Tail...>>::type;
-    };
+    // template <size_t I, typename Tuple> struct tuple_element;
+    // template <typename Head, typename... Tail>
+    // struct tuple_element<0, tuple<Head, Tail...>> { using type = Head; };
+    // template <size_t I, typename Head, typename... Tail>
+    // struct tuple_element<I, tuple<Head, Tail...>> {
+    //     using type = typename mini_std::tuple_element<I - 1, tuple<Tail...>>::type;
+    // };
     template <size_t I, typename Tuple>
-    using tuple_element_t = typename mini_std::tuple_element<I, mini_std::remove_cvref_t<Tuple>>::type;
-
+    using tuple_element_t = typename pack_element<I,typename class_pack_holder<Tuple>::type>::type;
+    // static_assert(is_same_v<char,tuple_element_t<2, tuple<int,float,char>>>);
     // --- IS TUPLE LIKE ---
     template <typename T, typename = void>
     struct is_tuple_like : mini_std::false_type {};
@@ -495,35 +487,44 @@ namespace mini_std {
 
     template <typename T>
     inline constexpr bool is_tuple_like_v = is_tuple_like<T>::value;
-
     template <typename... Args>
     constexpr mini_std::tuple<Args&&...> forward_as_tuple(Args&&... args) noexcept {
         return mini_std::tuple<Args&&...>(mini_std::forward<Args>(args)...);
     }
-
+    
     // --- TUPLE GET INTERFACE ---
     template<size_t I, typename... T> 
-    constexpr decltype(auto) get(tuple<T...>& t) { // Changed from value to mutable lvalue ref
-        return t.template get<I>();
+    constexpr decltype(auto) get(tuple<T...>& t) { 
+        using elem_t = pack_element_t<I,T...>;
+        using idx_t = indexed_type<integral_constant<size_t, I>, elem_t>;
+        return static_cast<idx_t&>(t.storage).data;
     }
-
+    
     // 3. Keep your existing const and rvalue overloads
     template<size_t I, typename... T> 
     constexpr decltype(auto) get(const tuple<T...>& t) {
-        return t.template get<I>();
+        using elem_t = pack_element_t<I,T...>;
+        using idx_t = indexed_type<integral_constant<size_t, I>, elem_t>;
+        return static_cast<const idx_t&>(t.storage).data;
     }
     template<size_t I, typename... T> 
     constexpr decltype(auto) get(tuple<T...>&& t) {
-        return move(t).template get<I>(); 
+        using elem_t = pack_element_t<I,T...>;
+        using idx_t = indexed_type<integral_constant<size_t, I>, elem_t>;
+        return static_cast<const idx_t&&>(static_cast<tuple<T...>&&>(t).storage).data;
     }
 
+    static_assert(is_same_v<decltype(get<0>(declval<tuple<int,int>>())),int>);
     // --- INVOKE IMPLEMENTATION ---
     namespace detail {
-       template <typename F, typename Obj, typename... Args>
+        template <typename F, typename Obj, typename ...Args>
         constexpr decltype(auto) invoke_memfn(F&& f, Obj&& obj, Args&&... args) {
-            using CleanObj = mini_std::remove_reference_t<Obj>;
-            if constexpr (mini_std::is_pointer_v<CleanObj>) {
+            if constexpr (mini_std::is_pointer_v<mini_std::remove_cvref_t<Obj>>) {
                 return ((*mini_std::forward<Obj>(obj)).*f)(mini_std::forward<Args>(args)...);
+            } else if constexpr (requires { (*mini_std::forward<Obj>(obj)).*f; }) {
+                return ((*mini_std::forward<Obj>(obj)).*f)(mini_std::forward<Args>(args)...);
+            } else if constexpr (requires { (mini_std::forward<Obj>(obj).get().*f); }) {
+                return (mini_std::forward<Obj>(obj).get().*f)(mini_std::forward<Args>(args)...);
             } else {
                 return (mini_std::forward<Obj>(obj).*f)(mini_std::forward<Args>(args)...);
             }
@@ -544,10 +545,9 @@ namespace mini_std {
         }
     }
 
-    // Overload 1: Regular callables (exclude member function pointers)
+    // Overload 1: Regular callables (lambdas, function pointers, functors)
     template <typename F, typename... Args>
-    requires (!mini_std::is_member_pointer_v<mini_std::remove_cvref_t<F>>) &&
-            requires(F&& f, Args&&... args) { mini_std::forward<F>(f)(mini_std::forward<Args>(args)...); }
+    requires (!mini_std::is_member_pointer_v<mini_std::remove_cvref_t<F>>)
     constexpr decltype(auto) invoke(F&& f, Args&&... args) {
         return mini_std::forward<F>(f)(mini_std::forward<Args>(args)...);
     }
@@ -559,8 +559,14 @@ namespace mini_std {
         return detail::invoke_memfn(mini_std::forward<F>(f), mini_std::forward<Obj>(obj), mini_std::forward<Args>(args)...);
     }
 
+    // Overload 3: Member data objects
+    // template <typename F, typename Obj>
+    // requires mini_std::is_member_object_pointer_v<mini_std::remove_cvref_t<F>>
+    // constexpr decltype(auto) invoke(F&& f, Obj&& obj) {
+    //     return detail::invoke_memobj(mini_std::forward<F>(f), mini_std::forward<Obj>(obj));
+    // }
     namespace detail {
-    template <typename AlwaysVoid, typename F, typename... Args>
+        template <typename AlwaysVoid, typename F, typename... Args>
         struct is_nothrow_invocable_impl : mini_std::false_type {};
 
         template <typename F, typename... Args>
@@ -579,12 +585,12 @@ namespace mini_std {
         template <typename F, typename... Args>
         struct invoke_result_impl<mini_std::void_t<decltype(mini_std::declval<F>()(mini_std::declval<Args>()...))>,
             F, Args... > {
-            using type = decltype(mini_std::declval<F>()(mini_std::declval<Args>()...)); 
+            using type = decltype(declval<F>()(declval<Args>()...)); 
         };
 
         template <typename Fn, typename Tuple, size_t... Is>
-        constexpr decltype(auto) apply_impl(Fn&& f, Tuple&& t, mini_std::index_sequence<Is...>) {
-            return mini_std::invoke(mini_std::forward<Fn>(f), mini_std::get<Is>(mini_std::forward<Tuple>(t))...);
+        constexpr decltype(auto) apply_impl(Fn&& f, Tuple&& t, index_sequence<Is...>) {
+            return mini_std::invoke(forward<Fn>(f), get<Is>(forward<Tuple>(t))...);
         }
     }
 
@@ -681,12 +687,11 @@ namespace mini_std {
     
 
     // --- UNREACHABLE ---
-    [[noreturn]] inline void unreachable() noexcept {
-#       if defined(__GNUC__) or defined(__clang__)
-            __builtin_unreachable();
-#       elif defined(_MSC_VER)
-            __assume(0);
-#       endif
-    }
+//     inline constexpr auto unreachable =
+// #       if defined(__GNUC__) or defined(__clang__)
+//             __builtin_unreachable();
+// #       elif defined(_MSC_VER)
+//             __assume(0);
+// #       endif
 }
 #endif

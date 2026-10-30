@@ -1,9 +1,6 @@
 
-export module lib.std;
+export module core:std;
 
-
-export import <cstddef>;
-export import <cstdint>;
 export import <cassert>;
 export import <type_traits>;
 

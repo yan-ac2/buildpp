@@ -1,12 +1,12 @@
 module;
 
-export module lib.win;
+export module win;
 
 #ifdef __WIN32
     export import :platform;
 #endif
 export import :renderer;
-export import :common;
-export import keyboard;
+export import :fwd;
+export import :keyboard;
 
 // export using namespace keyboard;

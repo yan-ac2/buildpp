@@ -612,8 +612,6 @@ struct taggedStorage {
     size_t active{0}; // Set active to true when initialized/used
     T stored{};
 
-    // Custom copy/move assignment operators preserve standard-layout 
-    // as long as they don't break standard layout constraints.
     taggedStorage& operator=(const T& rhs) {
         stored = rhs;
         active = N;
@@ -625,23 +623,14 @@ struct taggedStorage {
     }
 };
 
-template<class tuple_like = void>
-struct pack_size {
-    using this_type = pack_size<tuple_like>;
-    template<template <class...> class container, class... T>
-    friend constexpr auto operator | (const container<T...>&,const this_type&) {
-        return pack_size<container<T...>>::value;
-    }
-};
+template<class tuple_like>
+struct pack_size {};
 template<template <class...> class container, class... T>
 struct pack_size<container<T...>> {
     static constexpr size_t value = sizeof...(T);
-    friend constexpr auto operator | (const container<T...>&,const pack_size<container<T...>>&) {
-        return value;
-    }
 };
 
-static constexpr auto p_size = pack_size<void>{};
+// static constexpr auto p_size = pack_size<void>{};
 
 template<typename Head,typename... Tails>
 struct pack_holder {
@@ -716,28 +705,14 @@ template <typename... T>
 struct tup {
     tupImpl<make_value_seq<sizeof...(T)>, T...> storage;
     static constexpr size_t tuple_size = sizeof...(T);
-    using pack_t = pack_holder<T...>;
-    
-    template <size_t N>
-    using tuple_element = pack_element_t<N, pack_t>;
     
     using seq = make_value_seq<tuple_size>;
 
     constexpr tup() {}
     constexpr tup(T&&... r) : storage(static_cast<T&&>(r)...) {}
-
-    template <size_t I> requires (I < tuple_size)
-    constexpr tuple_element<I>& get() {
-        using elem_t = tuple_element<I>;
-        if constexpr (__is_empty(elem_t)) {
-            return static_cast<indexed_type<I, elem_t, true>&>(*this);
-        } else {
-            return static_cast<indexed_type<I, elem_t, false>&>(*this).data;
-        }
-    }
 };
 
-// static_assert(make_value_seq<5>{});
+static_assert(std::is_same_v<int,tuple_element_t<0, tup<int,defaultState>>>);
 
 namespace std {
     template <typename... T>
@@ -751,28 +726,44 @@ namespace std {
 
 // 2. Fix and provide the lvalue reference getter overload for `auto&`
 template<size_t I, typename... T> 
-constexpr decltype(auto) get(tup<T...>& t) { // Changed from value to mutable lvalue ref
-    return t.template get<I>();
+constexpr decltype(auto) get(tup<T...>& t) { 
+    using elem_t = pack_element_t<I,T...>;
+    if constexpr (__is_empty(elem_t)) {
+        return static_cast<const indexed_type<I, elem_t, true>&>(t.storage);
+    } else {
+        return static_cast<const indexed_type<I, elem_t, false>&>(t.storage).data;
+    }
 }
 
 // 3. Keep your existing const and rvalue overloads
 template<size_t I, typename... T> 
 constexpr decltype(auto) get(const tup<T...>& t) {
-    return t.template get<I>();
+    using elem_t = pack_element_t<I,T...>;
+    if constexpr (__is_empty(elem_t)) {
+        return static_cast<const indexed_type<I, elem_t, true>&>(t.storage);
+    } else {
+        return static_cast<const indexed_type<I, elem_t, false>&>(t.storage).data;
+    }
 }
 template<size_t I, typename... T> 
 constexpr decltype(auto) get(tup<T...>&& t) {
-    return std::move(t).template get<I>(); 
+    using elem_t = pack_element_t<I,T...>;
+    if constexpr (__is_empty(elem_t)) {
+        return static_cast<indexed_type<I, elem_t, true>&&>(static_cast<tup<T...>&&>(t).storage);
+    } else {
+        return static_cast<indexed_type<I, elem_t, false>&&>(static_cast<tup<T...>&&>(t).storage).data;
+    } 
 }
+static_assert(std::is_same_v<std::string,tuple_element_t<3, tup<int,float,char,std::string>>>);
 struct test5 {
-    tup<int,defaultState> s;
+    // tup<int,defaultState> s;
 };
 int main() {
-    constexpr test5 s;
+    // constexpr test5 s;
 
-    static_assert((s | p_size) == 3);
-    auto& [sb, a,c] = s;
-    sb += 100;
+    // static_assert((s | p_size) == 3);
+    auto&& [sb, a] = tup{1,1.2f};
+    // sb += 100;
     union TaggedUnion {
         
         size_t active{0};
@@ -797,7 +788,7 @@ int main() {
     std::cout << "Value: " << u.storage2 << "\n";  // Output: 42
     std::cout << "Value: " << sb << "\n";  // Output: 42
     // std::cout << "Value: " << get<0>(s) << "\n";  // Output: 42
-    std::cout << "Value: " << a << "\n";  // Output: 42
+    // std::cout << "Value: " << a << "\n";  // Output: 42
     u.storage1 = 10;
     is_active = u.active; 
     std::cout << "Active: " << is_active << "\n"; // Output: true
