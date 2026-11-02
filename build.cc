@@ -4,7 +4,6 @@
 // #include <mutex>
 // #include <thread>
 #include <queue>
-#include <cstdint>
 
 
 [[maybe_unused]] inline Project* current {nullptr};
@@ -59,7 +58,7 @@
 
 int selfCompile(bool recompile)
 {
-    std::cout << sformat("{}\n",addColors("compile self",strColors::Bold_Green));
+    std::printf("%s",sformat("{}\n",addColors("compile self",strColors::Bold_Green)).c_str());
     const std::string rootPath = fs::current_path().string();
     outputPath outPath;
     outPath.setRootPath(rootPath)
@@ -87,7 +86,7 @@ int selfCompile(bool recompile)
 int CompileFile(const std::string_view Name,const std::string_view From,const std::string_view oPath,Project::projectType type,std::span<const std::string_view> options,std::span<const std::string_view> ldoptions,
     std::span<const std::string_view> IncludePath,std::span<const std::string_view> src,const std::span<const std::string_view> libraryList,bool recompile)
 {
-    std::cout << sformat("Compiling {}\nFrom: {}\n" ,Name,From);
+    std::printf("%s",sformat("Compiling {}\nFrom: {}\n" ,Name,From).c_str());
     const std::string rootPath = fs::current_path().string();
     outputPath outPath;
     outPath.setRootPath(rootPath)
@@ -227,7 +226,7 @@ int compileProject(bool recompile)
 }
 void exitImpl() {
     current->~Project();
-    std::cout << sformat("{} forced Exit\n",addColors("Error:",strColors::Bold_Red));
+    std::printf("%s",sformat("{} forced Exit\n",addColors("Error:",strColors::Bold_Red)).c_str());
 }
 template <std::size_t N = 0>
 struct Options {
@@ -345,7 +344,7 @@ struct argsParse {
 
 auto main(int argc, const char* argv[]) -> int 
 {
-    std::cout << sformat("{}\n",addColors("CPP BUILD",strColors::Bold_Purple));
+    std::printf("%s",sformat("{}\n",addColors("CPP BUILD",strColors::Bold_Purple)).c_str());
     std::atexit(exitImpl);
     auto makeOptions = Options()
     .addOptions({"-C","-compile"})
@@ -353,14 +352,14 @@ auto main(int argc, const char* argv[]) -> int
     auto cmd = argsParse(argc,argv,std::move(makeOptions));
     for(const auto& c : cmd.options) {
         for(const auto& cc : c) {
-            std::cout << cc << " ";
+            std::printf("%*s ", static_cast<int>(cc.size()),cc.data());
         }
     }
-    std::cout << "\n";
+    std::printf("\n");
     for(const auto& c : cmd.args) {
-        std::cout << c << " ";
+        std::printf("%*s ", static_cast<int>(c.size()),c.data() );
     }
-    std::cout << "\n";
+    std::printf("\n");
     
     std::string_view inputLine = cmd.args[0];
     if (argc < 2) {return 1;} else 

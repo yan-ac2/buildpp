@@ -307,27 +307,65 @@ enum Op {
     none , eq, neq, lt, gt, lte, gte
 };
 
-template <typename T, size_t B = 0>
-struct input_t {
+template <typename T,size_t level = 0>
+struct comp_t;
+
+template <typename T, size_t L = 0>
+struct input_t : comp_t<T,L> {
     T data;
     const std::source_location loc;
-    
-    constexpr input_t(T val, std::source_location s = std::source_location::current()) noexcept 
-        : data(val), loc(s) {}
+    template<typename U>
+    constexpr input_t(U&& val, std::source_location s = std::source_location::current()) noexcept 
+    : data(val), loc(s) {}
 };
 
 template <typename T>
-struct input_t<T, 0> {
+struct input_t<T, 0> : comp_t<T,0> {
     T data;
     
-    constexpr input_t(T val) noexcept : data(val) {}
+    template<typename U>
+    constexpr input_t(U&& val) noexcept : data(val) {}
+};
+template <typename T,Op op,size_t level = 0> struct index_guard;
+
+template <typename T,size_t level>
+struct comp_t {
+    using type = input_t<T,level>;
+    template<Op ret_op>
+    using cmp_return = index_guard<T,ret_op,level>;
+    template <typename R>
+    friend constexpr auto operator <(type& s,const R& rhs) noexcept {
+        return cmp_return<lt>(s).ret(rhs);
+    }
+    template <typename R>
+    friend constexpr auto operator <=(type& s,const R& rhs)noexcept {
+        return cmp_return<lte>(s).ret(rhs);
+    }
+    template<typename R>
+    friend constexpr auto operator >(type& s,const R& rhs) noexcept {
+        return cmp_return<gt>(s).ret(rhs);
+    }
+    
+    template<typename R>
+    friend constexpr auto operator >=(type& s,const R& rhs) noexcept {
+        return cmp_return<gte>(s).ret(rhs);
+    }
+    template<typename R>
+    friend constexpr auto operator ==(type& s,const R& rhs) noexcept {
+        return cmp_return<eq>(s).ret(rhs);
+    }
+    
+    template<typename R>
+    friend constexpr auto operator !=(type& s,const R& rhs) noexcept {
+        return cmp_return<neq>(s).ret(rhs);
+    }
 };
 
 template<typename T,size_t L>
 constexpr void errmsg(std::string_view msg,const input_t<T,L>& loc) { 
     if constexpr (L > 1) {
-        std::printf("\n\033[1;31mError:\033[1;0m %s:%d:%d at function: %s \n%*s with value: %lu ",
-        loc.loc.file_name(),loc.loc.line(),loc.loc.column(),loc.loc.function_name(),
+        std::printf("\n\033[1;31mError:\033[1;0m %s:%d:%d at function: %s \n%*s with value: %zu ",
+            loc.loc.file_name(),loc.loc.line(),loc.loc.column(),loc.loc.function_name(),
         static_cast<int>(msg.size()),msg.data(),
         loc.data
         );
@@ -340,15 +378,16 @@ constexpr void errmsg(std::string_view msg,const input_t<T,L>& loc) {
     }
 }
 
-template <typename T,Op op,size_t level = 0>
+template <typename T,Op op,size_t level>
 struct index_guard {
     using type = input_t<T,level>;
     type& storage;
-    constexpr index_guard(const input_t<T,level>& val) noexcept : storage(val) {}
-    constexpr index_guard(input_t<T,level>& val) noexcept : storage(val) {}
-    constexpr index_guard(input_t<T,level>&& val) noexcept : storage(val) {}
-
-    constexpr bool eval(T val,T other) const noexcept {
+    constexpr index_guard(type& val) noexcept : storage(val) {}
+    constexpr index_guard(type&& val) noexcept : storage(val) {}
+    // constexpr index_guard(const type& val) noexcept : storage(val) {}
+    
+    template <typename R>
+    constexpr bool eval(T val,R&& other) const noexcept {
         return 
         op == eq  ? val == other :
         op == neq ? val != other :
@@ -358,11 +397,13 @@ struct index_guard {
         op == gte ? val >= other :
         false;
     }
-    constexpr T ret (T other) const noexcept {
+    
+    template <typename R>
+    constexpr T ret (R&& other) const noexcept {
         if constexpr (level < 1) {
             return storage.data;
         } else {
-            if (eval(storage.data,other)) {
+            if (eval(storage.data,static_cast<R&&>(other))) {
                 return storage.data;
             } else {
                 errmsg("index imput error",storage);
@@ -370,41 +411,7 @@ struct index_guard {
             }
         }
     }
-
-    constexpr auto operator <(T rhs) const noexcept {
-        return index_guard<T,lt,level>(storage).ret(rhs);
-    }
-
-    constexpr auto operator <=(T rhs) const noexcept {
-        return index_guard<T,lte,level>(storage).ret(rhs);
-    }
-    template<typename R>
-    constexpr auto operator >(R rhs) const noexcept {
-        return index_guard<T,gt,level>(storage).ret(rhs);
-    }
-    
-    template<typename R>
-    constexpr auto operator >=(R rhs) const noexcept {
-        return index_guard<T,gte, level>(storage).ret(rhs);
-    }
-
-    constexpr auto operator ==(T rhs) const noexcept {
-        return index_guard<T,eq, level>(storage).ret(rhs);
-    }
-
-    constexpr auto operator !=(T rhs) const noexcept {
-        return index_guard<T,neq, level>(storage).ret(rhs);
-    }
 };
-
-struct pre_t {
-    template<typename T,size_t V>
-    friend constexpr auto operator ==(input_t<T,V>& i,const pre_t&) {
-        return index_guard<T,none,V>{i};
-    }
-};
-
-inline constexpr auto pre = pre_t{};
 
 struct testArray {
     char data[24];
@@ -412,9 +419,9 @@ struct testArray {
     constexpr auto size() const -> size_t {
         return sizeof(data) - 1; 
     }
-    using index_type = index_guard<size_t,lte,1>;
+    using index_type = index_guard<size_t,lte,2>;
     constexpr char& operator[](index_type::type idx) {
-        return  data[(idx == pre) <= size()];
+        return  data[idx <= size()];
     };
 
     constexpr char* begin() {
@@ -441,10 +448,10 @@ int main()
     }
     d[2] = 'c';
     d[22] = 'c';
-    for (auto i : {1,2,3,4,5,7,8,9,15,24}) {
+    for (auto i : {1,2,3,4,5,7,8,9,15,22}) {
         std::cout << d[i] << " ";
     }
-    d[26] = 'c';
+    d[22] = 'c';
     std::cout << '\n';
     
     // const std::string makeOptions9 {sformat("{{{}}} {} {}\n", num1,num2,num3)};
