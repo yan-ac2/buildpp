@@ -1,4 +1,7 @@
 
+module;
+
+#include <string>
 export module core:format;
 
 import :std;
