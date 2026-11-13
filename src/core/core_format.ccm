@@ -4,7 +4,7 @@ module;
 #include <string>
 export module core:format;
 
-import :std;
+import :types;
 import :util;
 
 
@@ -36,20 +36,20 @@ struct fmt {
     // 1. Variadic Concatenation Constructor: fmt("hello ", 123, " world")
     template<onlyStr... Args>
     constexpr fmt(Args&&... args) {
-        varConcat(std::forward<Args>(args)...);
+        varConcat(static_cast<Args&&>(args)...);
     }
     template<onlyStr... Args>
     constexpr fmt& varConcat(Args&&... args) { 
         size_t preAlloc = (getArgSize(args) + ... + 0);
         str.reserve(preAlloc);
-        (appendArg(std::forward<Args>(args)), ...);
+        (appendArg(static_cast<Args&&>(args)), ...);
         return *this;
     }
     // 2. Format String Constructor: fmt("Value: {}, Status: {}", 42, "OK")
     template<onlyStr... Args>
     constexpr fmt(const char* in, Args&&... args) {
         if (std::string_view(in).find('{') == std::string_view::npos) {
-            varConcat(in, std::forward<Args>(args)...);
+            varConcat(in, static_cast<Args&&>(args)...);
             return;
         }
         std::string_view fmtStr(in);

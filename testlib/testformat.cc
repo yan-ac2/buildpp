@@ -6,7 +6,6 @@
 #include <charconv>
 #include <cassert>
 #include <iostream>
-#include <ranges>
 
 using size_t = decltype(sizeof(0));
 using ptrdiff_t = decltype((char*)(nullptr) - (char*)(nullptr));
@@ -63,6 +62,17 @@ struct formatString {
         for(;*str++ != '\0';temp++);
         return temp;
     }
+};
+
+struct argsString {
+    union {
+        const char* sv;
+        struct {
+            char data[64];
+        };
+    };
+
+
 };
 
 struct strColors {
@@ -191,115 +201,45 @@ struct formatter<T> {
 };
 
 template <typename T>
-constexpr auto appendArg(T&& arg) noexcept -> std::string {
-    using Raw = std::remove_cvref_t<T>;
-    // const size_t start = *pos;
-    // const size_t len = *(pos + 1);
-    // // 1. Calculate shifted start position
-    // const size_t actualStart = start + *offset;
-
-    if constexpr (std::is_same_v<Raw, addColors>) {
-        // const size_t current = str.size() - 2;
-        // str.replace(actualStart, len, arg);
-        // const size_t diff = str.size() - current;
-        // *offset += diff - len;
-        return std::string(arg);
+constexpr auto format_arg (T& arg) noexcept -> std::string {
+    using Decayed = std::decay_t<T>;
+    if constexpr (std::is_convertible_v<Decayed, std::string_view>) {
+        return formatter<std::string_view>::format(std::string_view(arg));
     } else {
-        // std::string_view argStr;
-        if constexpr (std::is_convertible_v<Raw, std::string_view>) {
-            return std::string(arg);
-            // argStr = std::string_view(arg);
-            // // 2. Replace only the placeholder length (Pos.len)
-            // str.replace(actualStart, len, argStr);
-        } else if constexpr (std::integral<Raw> || std::floating_point<Raw>) {
-            char digit[64];
-            auto [ptr, ec] = std::to_chars(digit, digit + sizeof(digit),arg);
-            // argStr = std::string_view(digit, static_cast<size_t>(ptr - digit));
-            // str.replace(actualStart, len, argStr);
-            return std::string(digit, static_cast<size_t>(ptr - digit));
-        } else if constexpr (std::is_pointer_v<Raw>) {
-            // Option 1: Formatting the pointee value (dereferencing)
-            using Pointee = std::remove_pointer_t<Raw>;
-            if constexpr (std::integral<Pointee> || std::floating_point<Pointee>) {
-                char digit[64];
-                auto [ptr, ec] = std::to_chars(digit, digit + sizeof(digit), *arg);
-                // if (ec == std::errc{}) {
-                //     argStr = std::string_view(digit, static_cast<size_t>(ptr - digit));
-                //     str.replace(actualStart, len, argStr);
-                // }
-                return std::string(digit, static_cast<size_t>(ptr - digit));
-            }
-        }
-        // 3. Accumulate delta into offset for the next replacement
-        // *offset += argStr.size() - len;
-
+        return formatter<Decayed>::format(arg);
     }
-
 };
 
+constexpr auto merge_args(std::string& str,const std::string fargs[],std::string_view sv,size_t posArray[],size_t count) noexcept -> std::string {
+    const char* data = sv.data();
+    const size_t size = sv.size();
+    size_t begin = 0;
+    size_t idx{0};
+    for (;idx < size;++idx) {
+        const size_t start = *posArray;
+        const size_t len   = start + *(posArray + 1);
+        if (idx == start) {
+            (str += std::string_view(data + begin, idx - begin)) += *fargs;
+            begin = len;
+            posArray += 2;
+            ++fargs; 
+        }
+    }
+    if (begin < size) str += std::string_view{data + begin,size - begin};
+    return str;
+}
 
 template<typename... Args>
 constexpr auto sformat(formatString<sizeof...(Args)> fmtStr,Args&&... args) noexcept -> std::string {
-    constexpr size_t argsSize = sizeof...(Args);
-    std::string str;
-    if constexpr (argsSize > 0) {
-        auto& data = fmtStr.sv;
-        auto posArray = fmtStr.begin();
-        auto format_arg = [&]<typename T>(T& arg) {
-            using Decayed = std::decay_t<T>;
-            if constexpr (std::is_convertible_v<Decayed, std::string_view>) {
-                return formatter<std::string_view>::format(std::string_view(arg));
-            } else {
-                return formatter<Decayed>::format(arg);
-            }
-        };
-        std::string fargs[argsSize] {format_arg(args)...};
-        size_t begin = 0;
-        size_t argsidx = 0;
-        for (size_t idx{0};idx < data.size();++idx) {
-            const size_t start = *posArray;
-            const size_t len   = start + *(posArray + 1);
-            if (idx == start) {
-                std::string& strref = fargs[argsidx];
-                std::string_view temp (data.data() + begin, idx - begin);
-                str += temp;
-                str += strref;
-            }
-            if(idx == len) {
-                begin = len;
-                ++argsidx; 
-                posArray += 2;
-            }
-        }
-        if (begin < data.size()) str += std::string_view{data.data() + begin,data.end()};
-    }
-    return str;
-}
-template<typename... Args>
-constexpr auto snformat(formatString<sizeof...(Args)> fmtStr,Args&&... args) noexcept -> std::string {
     std::string str {};
     if constexpr (sizeof...(Args) > 0) {
-        auto* data = fmtStr.sv.data();
         auto* posArray = fmtStr.begin();
-        auto format_arg = [&]<typename T>(T& arg) {
-            using Decayed = std::decay_t<T>;
-            if constexpr (std::is_convertible_v<Decayed, std::string_view>) {
-                return formatter<std::string_view>::format(std::string_view(arg));
-            } else {
-                return formatter<Decayed>::format(arg);
-            }
-        };
-        std::string fargs[sizeof...(Args)] {(format_arg(args),...)};
-        // size_t offset = 0;
-        size_t begin = 0;
-        for(size_t idx{0};idx < sizeof...(Args);++idx) {
-            str += std::string_view(data + begin,*posArray - begin);
-            str += *(fargs + idx);
-            begin = *(posArray) + *(posArray + 1);
-            posArray += 2;
-        };
+        const std::string fargs[sizeof...(Args)] {format_arg(args)...};
+        return merge_args(str,fargs,fmtStr.sv,posArray,sizeof...(Args));
+    } else {
+        str = fmtStr.sv;
     }
-    return str;
+    return str; 
 }
 
 
