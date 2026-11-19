@@ -1,11 +1,13 @@
 
+#include <windows.h>
+
 #include <type_traits>
 #include <string_view>
 #include <string>
 #include <source_location>
 #include <charconv>
 #include <cassert>
-#include <iostream>
+#include <cstdlib>
 
 using size_t = decltype(sizeof(0));
 using ptrdiff_t = decltype((char*)(nullptr) - (char*)(nullptr));
@@ -220,7 +222,7 @@ constexpr auto merge_args(std::string& str,const std::string fargs[],std::string
             const size_t len = *posArray + *(posArray + 1);
             str.reserve((str.size() + (idx - begin)) + fargs->size());
             (str += {data + begin, idx - begin}) += *fargs;
-            begin = len; 
+            begin = len;
             if (--count > 0) {
                 posArray += 2; start = data + *posArray;
                 ++fargs;
@@ -243,11 +245,6 @@ constexpr auto sformat(formatString<sizeof...(Args)> fmtStr,Args&&... args) noex
     return str; 
 }
 
-
-enum Op {
-    none , eq, neq, lt, gt, lte, gte
-};
-
 template <typename T,size_t level = 0>
 struct comp_t;
 
@@ -267,90 +264,96 @@ struct input_t<T, 0> : comp_t<T,0> {
     template<typename U>
     constexpr input_t(U&& val) noexcept : data(val) {}
 };
-template <typename T,Op op,size_t level = 0> struct index_guard;
+template <typename T>
+struct input_t<T,1> : comp_t<T,1> {
+    T data;
+    template<typename U>
+    constexpr input_t(U&& val) noexcept 
+    : data(val) {}
+};
 
 template <typename T,size_t level>
 struct comp_t {
     using type = input_t<T,level>;
-    template<Op ret_op>
-    using cmp_return = index_guard<T,ret_op,level>;
+
     template <typename R>
-    friend constexpr auto operator <(type& s,const R& rhs) noexcept {
-        return cmp_return<lt>(s).ret(rhs);
+    friend constexpr bool operator <(type& s,R&& rhs) noexcept {
+        return s.data < rhs;
     }
     template <typename R>
-    friend constexpr auto operator <=(type& s,const R& rhs)noexcept {
-        return cmp_return<lte>(s).ret(rhs);
+    friend constexpr bool operator <=(type& s,R&& rhs)noexcept {
+        return s.data <= rhs;
     }
     template<typename R>
-    friend constexpr auto operator >(type& s,const R& rhs) noexcept {
-        return cmp_return<gt>(s).ret(rhs);
-    }
-    
-    template<typename R>
-    friend constexpr auto operator >=(type& s,const R& rhs) noexcept {
-        return cmp_return<gte>(s).ret(rhs);
+    friend constexpr bool operator >(type& s,R&& rhs) noexcept {
+        return s.data > rhs;
     }
     template<typename R>
-    friend constexpr auto operator ==(type& s,const R& rhs) noexcept {
-        return cmp_return<eq>(s).ret(rhs);
+    friend constexpr bool operator >=(type& s,R&& rhs) noexcept {
+        return s.data >= rhs;
     }
-    
     template<typename R>
-    friend constexpr auto operator !=(type& s,const R& rhs) noexcept {
-        return cmp_return<neq>(s).ret(rhs);
+    friend constexpr bool operator ==(type& s,R&& rhs) noexcept {
+        return s.data == rhs;
+    }
+    template<typename R>
+    friend constexpr bool operator !=(type& s,R&& rhs) noexcept {
+        return s.data != rhs;
     }
 };
 
-template<typename T,size_t L>
-constexpr void errmsg(std::string_view msg,const input_t<T,L>& loc) { 
-    if constexpr (L > 1) {
-        std::printf("\n\033[1;31mError:\033[1;0m %s:%d:%d at function: %s \n%*s with value: %zu ",
-            loc.loc.file_name(),loc.loc.line(),loc.loc.column(),loc.loc.function_name(),
-        static_cast<int>(msg.size()),msg.data(),
-        loc.data
-        );
-
-    } else {
-        std::printf("\n\033[1;31mError:\033[1;0m %*s with value: %zu ", 
-        static_cast<int>(msg.size()),msg.data(),
-        loc.data
-        );
-    }
-}
-
-template <typename T,Op op,size_t level>
-struct index_guard {
-    using type = input_t<T,level>;
-    type& storage;
-    constexpr index_guard(type& val) noexcept : storage(val) {}
-    constexpr index_guard(type&& val) noexcept : storage(val) {}
-    // constexpr index_guard(const type& val) noexcept : storage(val) {}
+namespace log {
     
-    template <typename R>
-    constexpr bool eval(T val,R&& other) const noexcept {
+    enum log_type {
+        Log , Warning, Error
+    };
+    static constexpr std::string_view error_header   = "\033[1;31mError:\033[1;0m";
+    static constexpr std::string_view warning_header = "\033[0;33mWarning:\033[1;0m";
+    static constexpr std::string_view log_header     = "Log:";
+    namespace {
+        void errmsg_impl(const char header[],int hs,const char msg[],int msgs,const char input[],int ins) noexcept {
+            std::fprintf(stderr,"\n%*s %*s \nWhat: with value [%*s]", 
+                hs,header,
+                msgs,msg,
+                ins,input
+            );
+        }
+        void errmsg_impl(const char header[],int hs,const char msg[],int msgs,const char input[],int ins,const std::source_location& loc) noexcept {
+    
+            const unsigned int ll[] {loc.line(),loc.column()};
+            std::fprintf(stderr,"\n%*s %s:%u:%u \nWhat: %*s [%*s]",
+                hs,header,
+                loc.file_name(),
+                ll[0],ll[1],
+                msgs,msg,
+                ins,input
+            );
+        }
+    }
+    template <size_t L>
+    consteval std::string_view get_level() noexcept {
         return 
-        op == eq  ? val == other :
-        op == neq ? val != other :
-        op == lt  ? val <  other :
-        op == lte ? val <= other : 
-        op == gt  ? val >  other :
-        op == gte ? val >= other :
-        false;
+        L < 3 && L > 0 ? warning_header :
+        L == 3 ? error_header:
+        log_header;
     }
     
-    template <typename R>
-    constexpr T ret (R&& other) const noexcept {
-        if constexpr (level < 1) {
-            return storage.data;
-        } else {
-            if (eval(storage.data,static_cast<R&&>(other))) {
-                return storage.data;
+    template<typename T,size_t L> requires (std::is_integral_v<T> || std::is_convertible_v<T, std::string_view>)
+    void errmsg(std::string_view msg,const input_t<T,L>& input) {
+        if constexpr (L > 0) {
+            const std::string_view t {get_level<L>()};
+            if constexpr (std::is_integral_v<T>) {
+                char value[64];
+                char* ptr = &(*std::to_chars(value,value + sizeof(value),input.data).ptr = '\0');
+                if constexpr (L == 1) errmsg_impl(t.data(),t.size(),msg.data(),msg.size(),value,ptr - value);
+                else errmsg_impl(t.data(),t.size(),msg.data(),msg.size(),value,ptr - value,input.loc);
             } else {
-                errmsg("index imput error",storage);
-                std::exit(1);
+                const std::string_view in {input.data};
+                if constexpr (L == 1) errmsg_impl(t.data(),t.size(),msg.data(),msg.size(),in.data(),in.size());
+                else errmsg_impl(t.data(),t.size(),msg.data(),msg.size(),in.data(),in.size(),input.loc);
             }
         }
+        if constexpr(L > 2) std::exit(1);
     }
 };
 
@@ -360,9 +363,10 @@ struct testArray {
     constexpr auto size() const -> size_t {
         return sizeof(data) - 1; 
     }
-    using index_type = index_guard<size_t,lte,2>;
-    constexpr char& operator[](index_type::type idx) {
-        return  data[idx <= size()];
+    using index_type = input_t<size_t,2>;
+    constexpr char& operator[](index_type idx) {
+        if (idx > size()) log::errmsg("index error", idx);
+        return  data[idx.data];
     };
 
     constexpr char* begin() {
@@ -373,54 +377,70 @@ struct testArray {
     }
 };
 
+
+struct runtime {
+    UINT originalCP = GetConsoleOutputCP();
+    runtime() {
+        SetConsoleOutputCP(CP_UTF8);
+    }
+
+    ~runtime(){
+        SetConsoleOutputCP(originalCP);
+    }
+};
+
+
 int main()
 {
-    struct test {
-        const char* str;
-        size_t num;
-    };
-    // testArray d;
-    // for (auto& c : d) {
-        //     c = 'a';
-    // }
-    // d[2] = 'c';
-    // d[22] = 'c';
-    // for (auto i : {1,2,3,4,5,7,8,9,15,22}) {
-    //     std::cout << d[i] << " ";
-    // }
-    // d[22] = 'c';
-    // std::cout << '\n';
-    
-    constexpr size_t num1 {1};
-    size_t num2 {11};
-    size_t num3 {11};
-    constexpr std::string makeOptions {sformat("{{{}}} {} {} {}\n", 123,"hello",num1,12345)};
-    const std::string makeOptions9 {sformat("{{{}}} {} {}\n", num1,num2,num3)};
-    const std::string makeOptions2 = sformat("{} {}\n",addColors("hello world",strColors::Red),12);
-    const std::string makeOptions3 = sformat("hello {}\n",2);
-    std::string makeOptions4;
-    for (auto s : {test{"hello",5},test{"world",15},test{"num",65}}) {
-        makeOptions4 += sformat("{} {} ",s.str,s.num);
+    // runtime app_rt;
+    // struct test {
+    //     const char* str;
+    //     size_t num;
+    // };
+    testArray d;
+    for (auto& c : d) {
+            c = 'a';
     }
-    std::string makeOptions5;
-    for (auto s : {"{}","{}","{}","\n"}) {
-        makeOptions5 += s;
+    d[2] = 'c';
+    d[22] = 'c';
+    for (auto i : {1,2,3,4,5,7,8,9,15,24}) {
+        // std::cout << d[i] << " ";
+        d[i];
     }
-    constexpr formatString<2> fstr {"{} {}\n"};
-    const std::string makeOptions6 = sformat(makeOptions5,1,2,3);
-    const std::string makeOptions7 = sformat(fstr,1,2);
-    const std::string makeOptions8 = sformat(fstr,1.213,435.f);
-    const std::string makeOptions10 = sformat("using snformat 2 {} {} {}","hello",2.23f,3);
-    std::cout << makeOptions;
-    std::cout << makeOptions2;
-    std::cout << makeOptions3;
-    std::cout << makeOptions4 << "\n";
-    std::cout << makeOptions5;
-    std::cout << makeOptions6;
-    std::cout << makeOptions7;
-    std::cout << makeOptions8;
-    std::cout << makeOptions9;
-    std::cout << makeOptions10;
+    d[22] = 'c';
+    std::printf("%s","\ndone\n");
     
+    // constexpr size_t num1 {1};
+    // size_t num2 {11};
+    // size_t num3 {11};
+    // constexpr std::string makeOptions {sformat("{{{}}} {} {} {}\n", 123,"hello",num1,12345)};
+    // const std::string makeOptions9 {sformat("{{{}}} {} {}\n", num1,num2,num3)};
+    // const std::string makeOptions2 = sformat("{} {}\n",addColors("hello world",strColors::Red),12);
+    // const std::string makeOptions3 = sformat("hello {}\n",2);
+    // std::string makeOptions4;
+    // for (auto s : {test{"hello",5},test{"world",15},test{"num",65}}) {
+    //     makeOptions4 += sformat("{} {} ",s.str,s.num);
+    // }
+    // std::string makeOptions5;
+    // for (auto s : {"{}","{}","{}","\n"}) {
+    //     makeOptions5 += s;
+    // }
+    // constexpr formatString<2> fstr {"{} {}\n"};
+    // const std::string makeOptions6 = sformat(makeOptions5,1,2,3);
+    // const std::string makeOptions7 = sformat(fstr,1,2);
+    // const std::string makeOptions8 = sformat(fstr,1.213,435.f);
+    // const std::string makeOptions10 = sformat("using snformat 2 {} {} {}","hello",2.23f,3);
+    // std::cout << makeOptions;
+    // std::cout << makeOptions2;
+    // std::cout << makeOptions3;
+    // std::cout << makeOptions4 << "\n";
+    // std::cout << makeOptions5;
+    // std::cout << makeOptions6;
+    // std::cout << makeOptions7;
+    // std::cout << makeOptions8;
+    // std::cout << makeOptions9;
+    // std::cout << makeOptions10;
+
     return 0; 
 }
+

@@ -258,6 +258,151 @@ constexpr auto sformat(formatString<sizeof...(Args)> fmtStr,Args&&... args) noex
     return str;
 }
 
+template <typename T,size_t level = 0>
+struct comp_t;
+
+template <typename T, size_t L = 0>
+struct input_t : comp_t<T,L> {
+    T data;
+    const std::source_location loc;
+    template<typename U>
+    constexpr input_t(U&& val, std::source_location s = std::source_location::current()) noexcept 
+    : data(val), loc(s) {}
+};
+
+template <typename T>
+struct input_t<T, 0> : comp_t<T,0> {
+    T data;
+    
+    template<typename U>
+    constexpr input_t(U&& val) noexcept : data(val) {}
+};
+template <typename T>
+struct input_t<T,1> : comp_t<T,1> {
+    T data;
+    template<typename U>
+    constexpr input_t(U&& val) noexcept 
+    : data(val) {}
+};
+
+template <typename T,size_t level>
+struct comp_t {
+    using type = input_t<T,level>;
+
+    template <typename R>
+    friend constexpr bool operator <(type& s,R&& rhs) noexcept {
+        return s.data < rhs;
+    }
+    template <typename R>
+    friend constexpr bool operator <=(type& s,R&& rhs)noexcept {
+        return s.data <= rhs;
+    }
+    template<typename R>
+    friend constexpr bool operator >(type& s,R&& rhs) noexcept {
+        return s.data > rhs;
+    }
+    template<typename R>
+    friend constexpr bool operator >=(type& s,R&& rhs) noexcept {
+        return s.data >= rhs;
+    }
+    template<typename R>
+    friend constexpr bool operator ==(type& s,R&& rhs) noexcept {
+        return s.data == rhs;
+    }
+    template<typename R>
+    friend constexpr bool operator !=(type& s,R&& rhs) noexcept {
+        return s.data != rhs;
+    }
+};
+
+namespace log {
+    
+    enum log_type {
+        None ,Log , Warning, Error
+    };
+    static constexpr std::string_view error_header   = "\033[1;31mError:\033[1;0m";
+    static constexpr std::string_view warning_header = "\033[0;33mWarning:\033[1;0m";
+    static constexpr std::string_view log_header     = "Log:";
+    namespace {
+        [[maybe_unused]] 
+        void errmsg(const char header[],int hs,const char msg[],int msgs) noexcept {
+            std::fprintf(stderr,"\n%*s %*s\n", 
+                hs,header,
+                msgs,msg
+            );
+        }
+        [[maybe_unused]] 
+        void errmsg(const char header[],int hs,const char msg[],int msgs,const char input[],int ins) noexcept {
+            std::fprintf(stderr,"\n%*s %*s \nWhat: with value [%*s]", 
+                hs,header,
+                msgs,msg,
+                ins,input
+            );
+        }
+        [[maybe_unused]]
+        void errmsg(const char header[],int hs,const char msg[],int msgs,const char input[],int ins,const std::source_location& loc) noexcept {
+    
+            const unsigned int ll[] {loc.line(),loc.column()};
+            std::fprintf(stderr,"\n%*s %s:%u:%u \nWhat: %*s [%*s]",
+                hs,header,
+                loc.file_name(),
+                ll[0],ll[1],
+                msgs,msg,
+                ins,input
+            );
+        }
+    }
+    template <size_t L>
+    consteval std::string_view get_level() noexcept {
+        return 
+        L < 3 && L > 0 ? warning_header :
+        L == 3 ? error_header:
+        log_header;
+    }
+    
+    template<typename T,size_t L> requires (std::is_integral_v<T> || std::is_convertible_v<T, std::string_view>)
+    void msg(std::string_view msg,const input_t<T,L>& input) {
+        if constexpr (L > 0) {
+            const std::string_view t {get_level<L>()};
+            if constexpr (std::is_integral_v<T>) {
+                char value[64];
+                char* ptr = &(*std::to_chars(value,value + sizeof(value),input.data).ptr = '\0');
+                if constexpr (L == 1) errmsg(t.data(),t.size(),msg.data(),msg.size(),value,ptr - value);
+                else errmsg(t.data(),t.size(),msg.data(),msg.size(),value,ptr - value,input.loc);
+            } else {
+                const std::string_view in {input.data};
+                if constexpr (L == 1) errmsg(t.data(),t.size(),msg.data(),msg.size(),in.data(),in.size());
+                else errmsg(t.data(),t.size(),msg.data(),msg.size(),in.data(),in.size(),input.loc);
+            }
+        }
+        if constexpr(L > 2) std::exit(1);
+    }
+
+    template<log_type L,typename T> requires (std::is_integral_v<T> || std::is_convertible_v<T, std::string_view>)
+    void msg(std::string_view msg,const T& input) {
+        if constexpr (L > 0) {
+            const std::string_view t {get_level<L>()};
+            if constexpr (std::is_integral_v<T>) {
+                char value[64];
+                char* ptr = &(*std::to_chars(value,value + sizeof(value),input).ptr = '\0');
+                errmsg(t.data(),t.size(),msg.data(),msg.size(),value,ptr - value);
+            } else {
+                const std::string_view in {input};
+                errmsg(t.data(),t.size(),msg.data(),msg.size(),in.data(),in.size());
+            }
+        }
+        if constexpr(L > 2) std::exit(1);
+    }
+    template<log_type L>
+    void msg(std::string_view msg) {
+        if constexpr (L > 0) {
+            const std::string_view t {get_level<L>()};
+            errmsg(t.data(),t.size(),msg.data(),msg.size());
+        }
+        if constexpr(L > 2) std::exit(1);
+    }
+};
+
 class cmdImpl {
     struct PipeDeleter {
         int* exitStatus = nullptr;
@@ -294,10 +439,7 @@ class cmdImpl {
         return *this;
     }
     auto err(const std::string& msg) -> int {
-        if (ret != 0) {
-            std::fprintf(stderr,"%*s\n", static_cast<int>(msg.size()),msg.c_str());
-            std::exit(1);
-        }
+        if (ret != 0) log::msg<log::Error>(msg);
         return ret;
     }
     auto operator <<(std::string_view cmd) -> cmdImpl& { return run({cmd.data(),cmd.size()});}
@@ -306,16 +448,6 @@ class cmdImpl {
 inline cmdImpl cmd;
 
 struct outputPath {
-    private:
-    auto err (bool e = false,std::string_view msg = "",std::source_location fn = std::source_location::current()) -> outputPath& {
-        if (e) {
-            const std::string ret = sformat("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name());
-            std::fprintf(stderr,"%*s",static_cast<int>(ret.size()),ret.c_str()); 
-            std::exit(1);
-        } 
-        return *this;
-    }
-    public:
     fs::path rootPath   {};
     fs::path buildPath  {};
     fs::path objPath    {};
@@ -325,22 +457,22 @@ struct outputPath {
 
     auto setRootPath(std::string_view root) -> outputPath& { rootPath = root; return *this;}
     auto setExePath(std::string_view exe) -> outputPath& {
-        if(rootPath.empty()) {return err(true,"root path is empty");}
+        if(rootPath.empty()) log::msg<log::Error>("Root path empty");
         if (exe.empty()) {
             exePath = rootPath;
         } else {
             exePath = rootPath / exe;
         }
-        return err();
+        return *this;
     }
     auto setBuildfolder(std::string_view folder) -> outputPath& {
-        if(rootPath.empty()) {return err(true,"root path is empty");}
+        if(rootPath.empty()) log::msg<log::Error>("Root path empty");
         buildPath = rootPath / folder;
         return *this;
     }
     auto setOutpath(std::string_view folder) -> void {
-        err(rootPath.empty(),"Root path is empty");
-        err(buildPath.empty(),"Bulid path is empty");
+        if(rootPath.empty()) log::msg<log::Error>("Root path empty");
+        if(buildPath.empty()) log::msg<log::Error>("Build path empty");
         objPath = buildPath / folder / "obj";
         modulePath = buildPath / folder / "module";
         stdPath = modulePath / folder / "std";
@@ -487,14 +619,14 @@ struct File {
     using string_type = std::string;
     using view_type = std::string_view;
     // using IDx = std::size_t;
-    auto err(bool cnd = false,std::string_view msg = "",std::source_location fn = std::source_location::current()) const -> const File& {
-        if (cnd) {
-            const std::string ret = sformat("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name());
-            std::fprintf(stderr,"%*s",static_cast<int>(ret.size()),ret.c_str()); 
-            std::exit(1);
-        } 
-        return *this;
-    }
+    // auto err(bool cnd = false,std::string_view msg = "",std::source_location fn = std::source_location::current()) const -> const File& {
+    //     if (cnd) {
+    //         const std::string ret = sformat("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name());
+    //         std::fprintf(stderr,"%*s",static_cast<int>(ret.size()),ret.c_str()); 
+    //         std::exit(1);
+    //     } 
+    //     return *this;
+    // }
 
     mutable bool compiled = false;
     mutable bool haveHeaderUnit = false;
@@ -519,16 +651,16 @@ struct File {
     string_type objectPath  {};
     std::vector<string_type> dependencies {};
     [[nodiscard]] auto getModuleOutput(const fs::path* mPath) const -> string_type {
-        err(Name.empty(), "File Name Empty");
-        err((fileType != Module) && (fileType != SystemHeader) && (fileType != HeaderUnit), "File Not a Module");
+        if (Name.empty()) log::msg<log::Error>("File Name Empty");
+        if ((fileType != Module) && (fileType != SystemHeader) && (fileType != HeaderUnit)) log::msg<log::Error>("File Not a Module");
         return sformat("{}{}",(*mPath / getName()).string(), fileUtil::pcmModule);
     }
     auto setObjOutputName(const fs::path& oPath) -> void {
-        err(Name.empty(),"File Name Empty");
+        if (Name.empty()) log::msg<log::Error>("File Name Empty");
         objectPath = sformat("{}{}{}",(oPath / getName()).string(),fileType == ModuleImpl ? "-impl" : "", fileUtil::objFile);
     }
     auto getName() const -> string_type {
-        err(Name.empty(),"File Name Empty");
+        if (Name.empty()) log::msg<log::Error>("File Name Empty");
         if (isPartition) {
             string_type temp = Name;
             temp.replace(temp.find(':'),1,"-");
@@ -546,11 +678,19 @@ struct HeaderFile {
 };
 
 class FileManager {
+    using File_type = File;
+    using MapPair = std::pair<const std::string, File_type>;
+    using HeaderContainer = std::vector<HeaderFile>;
+    using index_t = input_t<size_t,3>;
+    using key_t = input_t<std::string_view,3>;
     struct StringHash {
         using is_transparent = void;
 
         std::size_t operator()(std::string_view sv) const {
             return std::hash<std::string_view>{}(sv);
+        }
+        std::size_t operator()(const key_t& sv) const {
+            return std::hash<std::string_view>{}(sv.data);
         }
         std::size_t operator()(const std::string& s) const {
             return std::hash<std::string>{}(s);
@@ -559,28 +699,16 @@ class FileManager {
             return std::hash<std::string_view>{}(str);
         }
     };
-    using File_type = File;
-    using MapPair = std::pair<const std::string, File_type>;
-    using HeaderContainer = std::vector<HeaderFile>;
     using HeaderMap = std::unordered_map<std::string, HeaderContainer,StringHash,std::equal_to<>>;
     using SourceFileMap = std::unordered_map<std::string, File_type ,StringHash,std::equal_to<>>;
-
-    auto err(bool cnd = false,std::string_view msg = "",std::source_location fn = std::source_location::current()) -> FileManager& {
-        if (cnd) {
-            const std::string ret = sformat("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name());
-            std::fprintf(stderr,"%*s",static_cast<int>(ret.size()),ret.c_str()); 
-            std::exit(1);
-        } 
-        return *this;
-    }
+    
     HeaderMap Header {};
     SourceFileMap Files {};
 
     public:
     File_type* Main = nullptr;
     auto addFile(std::string_view name) -> MapPair& {
-        const std::string temp {name};
-        auto ref = Files.try_emplace(temp, File{.FileName=temp}).first;
+        auto ref = Files.try_emplace({name.data(),name.size()}, File{.FileName={name.data(),name.size()}}).first;
         
         return *ref;
     }
@@ -589,17 +717,17 @@ class FileManager {
         return Header.try_emplace({path.data(),path.size()},HeaderContainer{}).first->second;
     }
 
-    auto addHeader(std::string_view path,std::string_view name) -> void {
-        auto it = Header.find(path);
+    auto addHeader(key_t path,std::string_view name) -> void {
+        auto it = Header.find(path.data);
         auto found = [&](std::span<HeaderFile> from){ 
             for (const auto& F : from) {
                 if (name == F.Name) return true;
             } return false;
         };
         if (it != Header.end()) {
-            if (!found(it->second)) it->second.push_back(HeaderFile{.Name = {name.data(),name.size()},.Path={path.data(),path.size()}});
+            if (!found(it->second)) it->second.push_back(HeaderFile{.Name = {name.data(),name.size()},.Path={path.data.data(),path.data.size()}});
         } else {
-            err(true,sformat("{} Path {} is not registered\n",addColors("Error:",strColors::Bold_Red),path));
+            log::msg("Path is not registered",path);
         }
     }
     auto moveHeaderFrom(const std::string& Path,HeaderFile& H) -> void {
@@ -612,14 +740,14 @@ class FileManager {
         if (!found) {it.push_back(std::move(H));}
     }
     
-    auto getHeaderPath(std::string_view name,std::source_location loc = std::source_location::current()) -> std::string_view {
+    auto getHeaderPath(key_t name) -> std::string_view {
         for (auto& [I , IN] : Header) {
             for(const auto& N : IN)
-            if (N.Name == name) {
+            if (N.Name == name.data) {
                 return I;
             }
         }
-        err(true,sformat("{} Key {} doesn't exists",addColors("Error:",strColors::Bold_Red),name),loc);
+        log::msg("Key doesn't exists",name);
         return "";
     }
     auto copyFile(std::string& name,const File& other) -> File_type& {
@@ -638,30 +766,30 @@ class FileManager {
     }
     
     
-    auto getByName(std::string_view id) -> File* {
+    auto getByName(key_t id) -> File* {
         for (auto& I : Files) {
-            if (I.second.Name == id) {
+            if (I.second.Name == id.data) {
                 return &I.second;
             }
         }
-        err(true,sformat("{} Name {} doens't exists",addColors("Error:",strColors::Red),id));
+        log::msg("File with Name doesn't exists",id);
         return nullptr;
     }
-    auto operator [](std::string_view id) -> File* {
-        auto it = Files.find(id); 
+    auto operator [](key_t id) -> File* {
+        auto it = Files.find(id.data); 
         if (it != Files.end()) {
             return &it->second;
         }
-        err(true,sformat("{} Name {} doens't exists",addColors("Error:",strColors::Red),id));
+        log::msg("File with Name doesn't exists",id);
         return nullptr;
     }
     
-    auto getPair (std::string_view id) -> MapPair* {
-        auto it = Files.find(id);
+    auto getPair (key_t id) -> MapPair* {
+        auto it = Files.find(id.data);
         if (it != Files.end()) {
             return &*it; 
         }
-        err(true,sformat("{} Name {} doens't exists",addColors("Error:",strColors::Red),id));
+        log::msg("File with Name doesn't exists",id);
         return nullptr; 
     }
 
@@ -691,6 +819,7 @@ class FileManager {
 
 class Project
 {
+    using str_input = input_t<std::string_view,3>;
     outputPath* OutPath;
     compileCommand* cmdJson;
     std::string ProjectName     {};
@@ -698,15 +827,6 @@ class Project
     std::string LdOptions       {};
     std::string Compiler        {};
     std::string outputName      {};
-    
-    constexpr auto err(bool cnd = false,std::string_view msg = "",std::source_location fn = std::source_location::current()) -> Project& {
-        if (cnd) {
-            const std::string ret = sformat("{} {}:{}:{} at: {}\n",msg,fn.file_name(),fn.line(),fn.column(),fn.function_name());
-            std::fprintf(stderr,"%*s",static_cast<int>(ret.size()),ret.c_str()); 
-            std::exit(1);
-        } 
-        return *this;
-    }
     
     bool recompile;
     
@@ -763,7 +883,7 @@ class Project
     constexpr auto setResourcePath(std::string_view in) -> Project&   {ResPath = in; return *this;}
     auto addSourcePath  (std::string_view in) -> Project&   {
         const fs::path temp {Path / in};
-        err(!fs::exists(temp),sformat("{} Source path: {} does not exist",addColors("Error:",strColors::Bold_Red),temp.string()));
+        if (!fs::exists(temp)) log::msg<log::Error>("Source path does not exist",temp.string());
         SourcePath.insert(temp.string()); 
         return *this;
     }
@@ -775,7 +895,7 @@ class Project
     }
     auto addIncludePath (std::string_view IncludePath) -> Project& {
         const fs::path temp {Path / IncludePath};
-        err(!fs::exists(temp),sformat("{} Include path: {} does not exist",addColors("Error:",strColors::Red),temp.string()));
+        if (!fs::exists(temp)) log::msg<log::Error>("Include path does not exist",temp.string());
         ProjectFile.setHeaderPath(temp.string()); 
         return *this;
     }
@@ -801,7 +921,7 @@ class Project
     
     auto addSource(std::string_view from,std::string_view file) -> Project& {
         const fs::path fromPath {Path / from};
-        err (!fs::is_directory(fromPath),sformat("{} {} is not a directory",addColors("Error:",strColors::Red), fromPath.string()));
+        if (!fs::is_directory(fromPath)) log::msg<log::Error>("Is not a directory",fromPath.string());
         
         if (file == "*") {
             const fs::directory_iterator iterator(fromPath);
@@ -821,7 +941,7 @@ class Project
             }
         } else {
             const fs::path sourcePath {fromPath / file};
-            err (!fs::exists(sourcePath),sformat("{} Source Path {} does not exist",addColors("Error:",strColors::Bold_Red) , sourcePath.string()));
+            if (!fs::exists(sourcePath)) log::msg<log::Error>("Source path does not exist",sourcePath.string());
             const bool isModule = fileUtil::isModule(sourcePath.extension().string());
             // const bool isSource = fileUtil::isCpp(sourcePath.extension().string());
             auto & P = ProjectFile.addFile(sourcePath.filename().string());
@@ -836,7 +956,7 @@ class Project
         return *this;
     }
     constexpr auto addSource(const std::string_view from,std::span<const std::string_view> ListFiles) -> Project& {
-        err(ListFiles.empty(),sformat("{} Please add atleast one file to compile",addColors("Error:",strColors::Bold_Red)));
+        if (ListFiles.empty()) log::msg<log::Error>("add atleast one file to compile");
         for (const auto& i : ListFiles) {
             addSource(from,i);
         }
@@ -938,10 +1058,10 @@ class Project
     
     auto solveHeaderDependencies(HeaderFile& Header) -> void 
     {
-        err(Header.Path.empty() ,sformat("{} Empty project path {}",addColors("Error:",strColors::Bold_Red),Header.Path)); 
+        if (Header.Path.empty()) log::msg<log::Error>("Project path is Empty",Header.Path); 
         const std::string HeaderPath = (fs::path{Header.Path} / Header.Name).generic_string(); 
         std::ifstream files(HeaderPath);
-        err(!files.is_open(),sformat("{} Unable to open file {}",addColors("Error:",strColors::Bold_Red),HeaderPath));
+        if (!files.is_open()) log::msg<log::Error>("Unable to open file",HeaderPath);
         std::string line;
         bool inBlockComment = false; 
         while (std::getline(files, line)) {
@@ -1002,7 +1122,7 @@ class Project
     {
         for (const auto& p : SourcePath)
         {
-            err ((!fs::exists(p) || !fs::is_directory(p)), sformat("{} Directory {} does not exist",addColors("Error:",strColors::Bold_Red),p));
+            if(!fs::exists(p) || !fs::is_directory(p)) log::msg<log::Error>("Directory does not exist",p);
             fs::directory_iterator iterator(p);
             
             for (const auto& entry : iterator) {
@@ -1075,15 +1195,17 @@ class Project
    auto containsToken(std::string_view str,const std::string_view target) noexcept -> bool 
     {
         size_t startidx{0};
-        for (size_t endidx = 0; endidx <= str.size(); ++endidx) {
-            if (endidx == str.size() || str[endidx] == ' ') {
-                const size_t token_len = endidx - startidx;
+        // size_t endidx = 0; endidx <= str.size(); ++endidx
+        for (const char& c : str) {
+            if (c == str.back() || c == ' ') {
+                const size_t idx = &c - str.data();
+                const size_t token_len = idx - startidx;
                 if (token_len > 0) {
                     if (std::string_view(str.data() + startidx, token_len) == target) {
                         return true;
                     }
                 }
-                startidx = endidx + 1;
+                startidx = idx + 1;
             }
         }
         return false;
@@ -1092,10 +1214,10 @@ class Project
     auto scanHeader() -> Project& 
     {
         for (auto& [K, V] : ProjectFile) {
-            err(V.Path.empty(), sformat("{} Empty project path {}",addColors("Error:",strColors::Bold_Red),V.Path));
+            if (V.Path.empty()) log::msg<log::Error>("Project path is Empty",V.Path);
             
             std::ifstream files(V.Path.data());
-            err(!files.is_open(), sformat("{} Unable to open file {}",addColors("Error:",strColors::Bold_Red), V.Path));
+            if (!files.is_open()) log::msg<log::Error>("Unable to open file",V.Path);
 
             std::string line;
             bool inBlockComment = false;
@@ -1175,23 +1297,33 @@ class Project
                     if (start || end) { continue; }
                         
                     for (const auto&  [HP,HF] : ProjectFile.headerContainer()) {
-                        auto findInclude = std::ranges::find_if(HF,[&](auto& s){
-                            return s.Name == headerName;
-                        });
-                        auto splitFlags = findInclude->flags 
-                        | std::views::split(' ') 
-                        | std::views::filter([](const auto& sv) -> bool {
-                            return !sv.empty(); 
-                        })
-                        | std::views::transform([&](const auto& s){
-                            std::string_view temp(s.data(),s.size());
-                            struct ret {
-                                const std::string_view sv {}; 
-                                const bool hasToken;
-                            };
-                            return ret{temp,containsToken(V.Flags,temp)};
-                        });
-                        if (findInclude != HF.end()) {
+                        auto findInclude = [&headerName,&HF]{
+                            for (auto& s : HF) if(s.Name == headerName) return &s;
+                            return &*HF.end();
+                        }(); 
+                        auto splitFlags = [](std::string_view flags){
+                            
+                            for (auto& c : flags) {
+
+                            }
+                        }; 
+                        // std::ranges::find_if(HF,[&](auto& s){
+                        //     return s.Name == headerName;
+                        // });
+                        // auto splitFlags = findInclude->flags 
+                        // | std::views::split(' ') 
+                        // | std::views::filter([](const auto& sv) -> bool {
+                        //     return !sv.empty(); 
+                        // })
+                        // | std::views::transform([&](const auto& s){
+                        //     std::string_view temp(s.data(),s.size());
+                        //     struct ret {
+                        //         const std::string_view sv {}; 
+                        //         const bool hasToken;
+                        //     };
+                        //     return ret{temp,containsToken(V.Flags,temp)};
+                        // });
+                        if (findInclude != &*HF.end()) {
                             std::string i {sformat("-I{}",HP)};
                             if (!containsToken(V.Flags, i)) {
                                 V.Flags.append(" ") += i; 
@@ -1217,8 +1349,7 @@ class Project
         for (const auto& [K,V] : ProjectFile) {
             if (V.fileType == File::SystemHeader) { continue;}
             std::printf("%s",sformat("Scan module {}\n" , V.Path ).c_str());
-
-            err(V.Path.empty() ,sformat("{} Empty project path {}",addColors("Error:",strColors::Bold_Red),V.Path)); 
+            if (V.Path.empty()) log::msg<log::Error>("Project path is Empty",V.Path);
             
             const std::string temp = (fs::path(V.Path) / V.Name).generic_string();
             std::ifstream files;
@@ -1227,7 +1358,7 @@ class Project
             } else {
                 files.open(V.Path);
             }
-            err(!files.is_open(),sformat("{} Unable to open file {}",addColors("Error:",strColors::Bold_Red),temp));
+            if (!files.is_open()) log::msg<log::Error>("Unable to open file",temp);
 
             std::string line;
             bool inBlockComment = false;
@@ -1312,24 +1443,15 @@ class Project
                     }
                 }
                 if (!moduleName.empty()) {
-                    auto filter = ProjectFile 
-                    | std::views::filter([&](const auto& Pair) -> bool {
-                        const auto& [Module, MV] = Pair;
-
+                    for (auto& [Module,MV] : ProjectFile) {
                         const bool sameName = ((MV.fileType != File::Module) ? Module 
                         : MV.isPartition ? MV.Name.substr(MV.Name.find(':')) 
                         : MV.Name) == moduleName;
-                        
-                        const bool notAdded = std::ranges::find(ModuleFile.dependencies, MV.FileName) == ModuleFile.dependencies.end();
-                        
-                        return notAdded && sameName;
-                    })
-                    | std::views::transform([](const auto& Pair) -> std::string_view {
-                        const auto& MV = Pair.second; return std::string_view{MV.FileName.data(),MV.FileName.size()};
-                    });
-             
-                    for (auto FileName : filter) {
-                        ModuleFile.dependencies.emplace_back(FileName);
+                        auto Added = [&ModuleFile,&MV]{
+                            for(auto& dep : ModuleFile.dependencies) if (MV.FileName == dep) return true;
+                            return false;
+                        };
+                        if (sameName && !Added()) ModuleFile.dependencies.emplace_back(MV.FileName);
                     }
                 }
             }
@@ -1411,11 +1533,11 @@ class Project
         const std::string fObjOutput { sformat("{}{}",(oPath / inFile.getName()).string(), fileUtil::objFile) };
         
         const std::string f_srcInput {
-                isHeaderUnit ? sformat("-Wno-pragma-system-header-outside-header -fmodule-header=user --precompile {} -o {}",
-                (fs::path(inFile.Path)/inFile.Name).string(),fModule) :
-                isSystemHeader ? sformat("-Wno-pragma-system-header-outside-header -Wno-gnu-anonymous-struct -Wno-nullability-extension -Wno-gcc-compat -Wno-user-defined-literals -x c++-system-header --precompile {} -o {}",inFile.Name,fModule) :
-                sformat("-c {} -fmodules-reduced-bmi -fmodule-output={} -fprebuilt-module-path={}",inFile.Path,fModule,(mPath).string())
-            };
+            isHeaderUnit ? sformat("-Wno-pragma-system-header-outside-header -fmodule-header=user --precompile {} -o {}",
+            (fs::path(inFile.Path)/inFile.Name).string(),fModule) :
+            isSystemHeader ? sformat("-Wno-pragma-system-header-outside-header -Wno-gnu-anonymous-struct -Wno-nullability-extension -Wno-gcc-compat -Wno-user-defined-literals -x c++-system-header --precompile {} -o {}",inFile.Name,fModule) :
+            sformat("-c {} -fmodules-reduced-bmi -fmodule-output={} -fprebuilt-module-path={}",inFile.Path,fModule,(mPath).string())
+        };
         if (inFile.objectPath.empty()) {inFile.objectPath = fObjOutput;}
         const std::string_view compileFormat = (HasHeaderUnit ? "{} {} -Wno-experimental-header-units {} {} -o {}": "{} {} {} {} -o {}");
         const std::string f_cmd {
@@ -1625,7 +1747,7 @@ class Project
         }
         std::printf("%s",sformat("\n{}\n",addColors("Dump File Flags",strColors::Yellow)).c_str());
         for (const auto& [K,V] : ProjectFile) {
-            if (V.Flags.empty() && V.ldFlags.empty()){continue;}
+            if (V.Flags.empty() && V.ldFlags.empty()) continue;
 
             std::printf("File: %s\n", K.c_str() );
             if (!V.Flags.empty())   std::printf("cFlags : %s\n" , V.Flags.c_str());
