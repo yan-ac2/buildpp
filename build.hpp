@@ -28,7 +28,6 @@ using namespace std::string_view_literals;
 using size_t = decltype(sizeof(0));
 using ptrdiff_t = decltype((char*)(nullptr) - (char*)(nullptr));
 
-
 template<size_t N>
 struct formatString {
     using size_type = size_t;
@@ -140,16 +139,16 @@ struct strColors {
 };
 
 
-struct addColors {
+struct addColors_impl {
     using string_type = std::string;
     using view_type = std::string_view;
     using size_type = size_t;
     strColors coloredstr;
     
     template<size_type N>
-    consteval addColors(const char (&in)[N],const strColors::colors c) noexcept
+    consteval addColors_impl(const char (&in)[N],const strColors::colors c) noexcept
     :coloredstr{{in,N - 1},c} {}
-    constexpr addColors(const view_type in,const strColors::colors c) noexcept
+    constexpr addColors_impl(const view_type in,const strColors::colors c) noexcept
     :coloredstr{in,c} {}
     constexpr operator string_type() const noexcept {
         return string();
@@ -170,92 +169,96 @@ struct addColors {
     }
 }; 
 
-template<typename T> 
-struct converter {
-    converter(T&&) {}
+constexpr auto addColors(std::string_view sv,strColors::colors c) noexcept -> std::string {
+    return addColors_impl(sv,c).string();
+};
 
+template<typename T>
+struct formatter {
+    // Custom types specialize this struct and implement format(val, ctx)
+    static_assert(!sizeof(T*), "Type does not have a custom_formatter specialization!");
 };
-template<> 
-struct converter<const char*> {
-    std::string_view sv;
-    converter(const char* str) : sv(str) {}
-    converter(const char* str,size_t count) : sv(str,count) {}
-    template<size_t N>
-    converter(const char (&str)[N]) : sv(str,N) {}
-    constexpr auto appendArg(std::string& str,std::size_t offset,const std::size_t& Pos) -> std::size_t {
-        const size_t start = Pos;
-        const size_t len = *(&Pos + 1);
-        const size_t actualStart = static_cast<size_t>(static_cast<std::ptrdiff_t>(start) + offset);
-        str.replace(actualStart, len, sv);
-        return static_cast<std::ptrdiff_t>(sv.size()) - static_cast<std::ptrdiff_t>(len);
-    } 
+
+// Specialization: String Views / C-Strings
+template<>
+struct formatter<std::string_view> {
+    static constexpr auto format(std::string_view val) -> std::string {
+        return std::string{val};
+    }
 };
-template<> 
-struct converter<std::size_t> {
-    char digit[64];
-    size_t len;
-    converter(std::size_t arg) : len(std::to_chars(digit, digit + sizeof(digit), arg).ptr - digit) {}
-    constexpr auto appendArg(std::string& str,std::size_t offset,const std::size_t& Pos) -> std::size_t {
-        const size_t start = Pos;
-        const size_t len = *(&Pos + 1);
-        const size_t actualStart = static_cast<size_t>(static_cast<std::ptrdiff_t>(start) + offset);
-        std::string_view sv {digit, len};
-        str.replace(actualStart, len, sv);
-        return static_cast<std::ptrdiff_t>(sv.size()) - static_cast<std::ptrdiff_t>(len);
-    } 
+template<>
+struct formatter<addColors_impl> {
+    static constexpr auto format(addColors_impl& val) -> std::string {
+        return val.string();
+    }
 };
+
+template<size_t N>
+struct formatter<char[N]> {
+    static constexpr auto format(const char* val) -> std::string {
+        return std::string(val,N - 1);
+    }
+};
+
+template<>
+struct formatter<const char*> {
+    static constexpr auto format(const char* val) -> std::string {
+        return std::string{val};
+    }
+};
+
+// Specialization: Integral Types
+template<typename T> requires (std::is_integral_v<T> || std::is_floating_point_v<T>)
+struct formatter<T> {
+    static constexpr auto format(T val) -> std::string {
+        char buffer[64];
+        auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), val);
+        return std::string{buffer, static_cast<size_t>(ptr - buffer)};
+    }
+};
+
 template <typename T>
-constexpr auto appendArg(T&& arg,std::string& str, std::size_t* offset, const size_t* pos) noexcept -> void {
-    using Raw = std::remove_cvref_t<T>;
-    const size_t start = *pos;
-    const size_t len = *(pos + 1);
-    // 1. Calculate shifted start position
-    const size_t actualStart = start + *offset;
-
-    if constexpr (std::is_same_v<Raw, addColors>) {
-        const size_t current = str.size() - 2;
-        str.replace(actualStart, len, arg);
-        const size_t diff = str.size() - current;
-        *offset += diff - len;
+constexpr auto format_arg (T& arg) noexcept -> std::string {
+    using Decayed = std::decay_t<T>;
+    if constexpr (std::is_convertible_v<Decayed, std::string_view>) {
+        return formatter<std::string_view>::format(std::string_view(arg));
     } else {
-        std::string_view argStr;
-        if constexpr (std::is_convertible_v<Raw, std::string_view>) {
-            argStr = std::string_view(arg);
-            // 2. Replace only the placeholder length (Pos.len)
-            str.replace(actualStart, len, argStr);
-        } else if constexpr (std::integral<Raw> || std::floating_point<Raw>) {
-            char digit[64];
-            auto [ptr, ec] = std::to_chars(digit, digit + sizeof(digit),arg);
-            argStr = std::string_view(digit, static_cast<size_t>(ptr - digit));
-            str.replace(actualStart, len, argStr);
-        } else if constexpr (std::is_pointer_v<Raw>) {
-            // Option 1: Formatting the pointee value (dereferencing)
-            using Pointee = std::remove_pointer_t<Raw>;
-            if constexpr (std::integral<Pointee> || std::floating_point<Pointee>) {
-                char digit[64];
-                auto [ptr, ec] = std::to_chars(digit, digit + sizeof(digit), *arg);
-                if (ec == std::errc{}) {
-                    argStr = std::string_view(digit, static_cast<size_t>(ptr - digit));
-                    str.replace(actualStart, len, argStr);
-                }
+        return formatter<Decayed>::format(arg);
+    }
+};
+
+constexpr auto merge_args(std::string& str,const std::string fargs[],std::string_view sv,size_t posArray[],size_t count) noexcept -> void {
+    const char* data  = sv.data();
+    const size_t size = sv.size();
+    size_t begin {0};
+    const char* start = data + *posArray;
+    for (const char& c : sv) {
+        if (&c == start) {
+            const size_t idx   {static_cast<size_t>(&c - data)};
+            const size_t len   {*posArray + *(posArray + 1)};
+            str.reserve((str.size() + (idx - begin)) + fargs->size());
+            (str += {data + begin, idx - begin}) += *fargs;
+            begin = len;
+            if (--count > 0) {
+                posArray += 2; start = data + *posArray;
+                ++fargs;
             }
         }
-        // 3. Accumulate delta into offset for the next replacement
-        *offset += argStr.size() - len;
-
     }
-
-};
+    str += std::string_view{data + begin,size - begin};
+}
 
 template<typename... Args>
 constexpr auto sformat(formatString<sizeof...(Args)> fmtStr,Args&&... args) noexcept -> std::string {
-    std::string str {fmtStr.sv};
+    std::string str {};
     if constexpr (sizeof...(Args) > 0) {
-        auto posArray = fmtStr.begin();
-        size_t offset = 0;
-        ((appendArg(std::forward<Args>(args),str,&offset,(posArray)),(posArray) += 2), ...);
+        auto* posArray = fmtStr.begin();
+        const std::string fargs[sizeof...(Args)] {format_arg(args)...};
+        merge_args(str,fargs,fmtStr.sv,posArray,sizeof...(Args));
+    } else {
+        str = fmtStr.sv;
     }
-    return str;
+    return str; 
 }
 
 template <typename T,size_t level = 0>
@@ -320,28 +323,26 @@ namespace log {
     enum log_type {
         None ,Log , Warning, Error
     };
-    static constexpr std::string_view error_header   = "\033[1;31mError:\033[1;0m";
-    static constexpr std::string_view warning_header = "\033[0;33mWarning:\033[1;0m";
-    static constexpr std::string_view log_header     = "Log:";
-    namespace {
-        [[maybe_unused]] 
-        void errmsg(const char header[],int hs,const char msg[],int msgs) noexcept {
+    inline constexpr std::string_view error_header   = "\033[1;31mError:\033[1;0m";
+    inline constexpr std::string_view warning_header = "\033[0;33mWarning:\033[1;0m";
+    inline constexpr std::string_view log_header     = "Log:";
+    namespace detail {
+        inline void msg_impl(const char header[],int hs,const char msg[],int msgs) noexcept {
             std::fprintf(stderr,"\n%*s %*s\n", 
                 hs,header,
                 msgs,msg
             );
         }
-        [[maybe_unused]] 
-        void errmsg(const char header[],int hs,const char msg[],int msgs,const char input[],int ins) noexcept {
+         
+        inline void msg_impl(const char header[],int hs,const char msg[],int msgs,const char input[],int ins) noexcept {
             std::fprintf(stderr,"\n%*s %*s \nWhat: with value [%*s]", 
                 hs,header,
                 msgs,msg,
                 ins,input
             );
         }
-        [[maybe_unused]]
-        void errmsg(const char header[],int hs,const char msg[],int msgs,const char input[],int ins,const std::source_location& loc) noexcept {
-    
+        
+        inline void msg_impl(const char header[],int hs,const char msg[],int msgs,const char input[],int ins,const std::source_location& loc) noexcept {
             const unsigned int ll[] {loc.line(),loc.column()};
             std::fprintf(stderr,"\n%*s %s:%u:%u \nWhat: %*s [%*s]",
                 hs,header,
@@ -351,28 +352,29 @@ namespace log {
                 ins,input
             );
         }
-    }
-    template <size_t L>
-    consteval std::string_view get_level() noexcept {
-        return 
-        L < 3 && L > 0 ? warning_header :
-        L == 3 ? error_header:
-        log_header;
+
+        template <size_t L>
+        inline consteval std::string_view get_level() noexcept {
+            return 
+            L < 3 && L > 0 ? warning_header :
+            L == 3 ? error_header:
+            log_header;
+        }
     }
     
     template<typename T,size_t L> requires (std::is_integral_v<T> || std::is_convertible_v<T, std::string_view>)
     void msg(std::string_view msg,const input_t<T,L>& input) {
         if constexpr (L > 0) {
-            const std::string_view t {get_level<L>()};
+            const std::string_view t {detail::get_level<L>()};
             if constexpr (std::is_integral_v<T>) {
                 char value[64];
                 char* ptr = &(*std::to_chars(value,value + sizeof(value),input.data).ptr = '\0');
-                if constexpr (L == 1) errmsg(t.data(),t.size(),msg.data(),msg.size(),value,ptr - value);
-                else errmsg(t.data(),t.size(),msg.data(),msg.size(),value,ptr - value,input.loc);
+                if constexpr (L == 1) detail::msg_impl(t.data(),t.size(),msg.data(),msg.size(),value,ptr - value);
+                else detail::msg_impl(t.data(),t.size(),msg.data(),msg.size(),value,ptr - value,input.loc);
             } else {
                 const std::string_view in {input.data};
-                if constexpr (L == 1) errmsg(t.data(),t.size(),msg.data(),msg.size(),in.data(),in.size());
-                else errmsg(t.data(),t.size(),msg.data(),msg.size(),in.data(),in.size(),input.loc);
+                if constexpr (L == 1) detail::msg_impl(t.data(),t.size(),msg.data(),msg.size(),in.data(),in.size());
+                else detail::msg_impl(t.data(),t.size(),msg.data(),msg.size(),in.data(),in.size(),input.loc);
             }
         }
         if constexpr(L > 2) std::exit(1);
@@ -381,14 +383,14 @@ namespace log {
     template<log_type L,typename T> requires (std::is_integral_v<T> || std::is_convertible_v<T, std::string_view>)
     void msg(std::string_view msg,const T& input) {
         if constexpr (L > 0) {
-            const std::string_view t {get_level<L>()};
+            const std::string_view t {detail::get_level<L>()};
             if constexpr (std::is_integral_v<T>) {
                 char value[64];
                 char* ptr = &(*std::to_chars(value,value + sizeof(value),input).ptr = '\0');
-                errmsg(t.data(),t.size(),msg.data(),msg.size(),value,ptr - value);
+                detail::msg_impl(t.data(),t.size(),msg.data(),msg.size(),value,ptr - value);
             } else {
                 const std::string_view in {input};
-                errmsg(t.data(),t.size(),msg.data(),msg.size(),in.data(),in.size());
+                detail::msg_impl(t.data(),t.size(),msg.data(),msg.size(),in.data(),in.size());
             }
         }
         if constexpr(L > 2) std::exit(1);
@@ -396,8 +398,8 @@ namespace log {
     template<log_type L>
     void msg(std::string_view msg) {
         if constexpr (L > 0) {
-            const std::string_view t {get_level<L>()};
-            errmsg(t.data(),t.size(),msg.data(),msg.size());
+            const std::string_view t {detail::get_level<L>()};
+            detail::msg_impl(t.data(),t.size(),msg.data(),msg.size());
         }
         if constexpr(L > 2) std::exit(1);
     }
@@ -586,7 +588,15 @@ struct fileUtil
         return false;
     }
 };
-
+// template <typename T>
+// constexpr T iabs(T num) {
+//     if constexpr (std::is_signed_v<T>) {
+        // return num = num | 
+        // int t = ~(-22 << sizeof(int) * 8);
+//     }
+//     return num;
+// };
+// constexpr char test {iabs<char>(-22)} ;
 class compileCommand {
     utl::json::node jsonNode;
     mutable std::mutex mtx;
@@ -1026,13 +1036,14 @@ class Project
         std::size_t startPos {std::string_view::npos};
         std::size_t endPos   {std::string_view::npos};
         char closeChar       {'\0'};
-
-        for (; data != in.end(); ++data) {
-            const bool quote = *data == '\"';
-            const bool bracket = *data == '<';
+        // ; data != in.end(); ++data
+        for (const char& c : in) {
+            const bool quote = c == '\"';
+            const bool bracket = c == '<';
             if (quote || bracket) {
-                closeChar = (bracket) ? '>' : '\"'; 
-                startPos = data - in.begin();
+                closeChar = (bracket) ? '>' : '\"';
+                data = &c;
+                startPos = &c - in.begin();
                 break;
             }
         }
@@ -1297,39 +1308,22 @@ class Project
                     if (start || end) { continue; }
                         
                     for (const auto&  [HP,HF] : ProjectFile.headerContainer()) {
-                        auto findInclude = [&headerName,&HF]{
-                            for (auto& s : HF) if(s.Name == headerName) return &s;
-                            return &*HF.end();
-                        }(); 
-                        auto splitFlags = [](std::string_view flags){
-                            
-                            for (auto& c : flags) {
-
-                            }
-                        }; 
-                        // std::ranges::find_if(HF,[&](auto& s){
-                        //     return s.Name == headerName;
-                        // });
-                        // auto splitFlags = findInclude->flags 
-                        // | std::views::split(' ') 
-                        // | std::views::filter([](const auto& sv) -> bool {
-                        //     return !sv.empty(); 
-                        // })
-                        // | std::views::transform([&](const auto& s){
-                        //     std::string_view temp(s.data(),s.size());
-                        //     struct ret {
-                        //         const std::string_view sv {}; 
-                        //         const bool hasToken;
-                        //     };
-                        //     return ret{temp,containsToken(V.Flags,temp)};
-                        // });
+                        auto findInclude = &*HF.end();
+                        for (auto& s : HF) if(s.Name == headerName) {findInclude = &s; break;}
+                        
                         if (findInclude != &*HF.end()) {
-                            std::string i {sformat("-I{}",HP)};
+                            const std::string i {sformat("-I{}",HP)};
                             if (!containsToken(V.Flags, i)) {
                                 V.Flags.append(" ") += i; 
-                                if(!findInclude->flags.empty()) 
-                                for (const auto [sv,hasTokenModule] : splitFlags) {
-                                    if (!hasTokenModule) { V.Flags.append(" ") += sv;}
+                                if(!findInclude->flags.empty()) {
+                                    const char* beg = &*findInclude->flags.begin();
+                                    for (auto& c : findInclude->flags) {
+                                        if (c == ' ') {
+                                            std::string_view temp {beg,&c};
+                                            if(!containsToken(V.Flags,temp)) V.Flags.append(" ") += temp;
+                                            beg = &c;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1353,11 +1347,8 @@ class Project
             
             const std::string temp = (fs::path(V.Path) / V.Name).generic_string();
             std::ifstream files;
-            if (V.fileType == File::HeaderUnit) {
-                files.open(temp);
-            } else {
-                files.open(V.Path);
-            }
+            if (V.fileType == File::HeaderUnit) {files.open(temp);}
+            else {files.open(V.Path);}
             if (!files.is_open()) log::msg<log::Error>("Unable to open file",temp);
 
             std::string line;
@@ -1400,38 +1391,29 @@ class Project
                             auto& headerUnitFlags = headerUnitFile.Flags; 
                             headerUnitFile.Path = ProjectFile.getHeaderPath(rawHeader);
                             moduleName = rawHeader;
-                            auto it = ProjectFile.headerContainer() | std::views::values | std::views::join;
-                            auto findHeader = std::ranges::find( it,moduleName,&HeaderFile::Name);
-                            if (findHeader != it.end()) {
+                            const auto& it = ProjectFile.headerContainer();
+                            // auto findHeader = std::ranges::find( it,moduleName,&HeaderFile::Name);
+                            auto findHeader = &*it.end()->second.end();
+                            for(const auto& [key,value] : it) {
+                                for (const auto& file : value) if (file.Name == moduleName) {findHeader = &file; break;}
+                            }
+                            if (findHeader != &*it.end()->second.end()) {
                                 auto& h = findHeader;
                                 std::printf("%s",sformat("{} From: {} to: {} and {}\n",addColors("add Header into Unit module",strColors::Bold_Green) , h->Path , moduleName , V.Name).c_str());
                                 std::string i {sformat("-I{}",h->Path)};
                                 if (!containsToken(headerUnitFlags,i)) headerUnitFlags.append(" ") += i;
-                                
                                 if (!containsToken(ModuleFile.Flags,i)) ModuleFile.Flags.append(" ") += i;
+
                                 if (!h->flags.empty()) {
-                                    auto splitFlags = h->flags 
-                                    | std::views::split(' ') 
-                                    | std::views::filter([](const auto& sv) {
-                                        return !sv.empty(); 
-                                    })
-                                    | std::views::transform([&](const auto& sv){
-                                        std::string_view temp(sv.data(),sv.size());
-                                        struct ret {
-                                            const std::string_view sv {}; 
-                                            const bool modulehasToken;
-                                            const bool headerUnithasToken;
-                                        };
-                                        return ret{temp,containsToken(ModuleFile.Flags,temp),containsToken(headerUnitFlags,temp)};
-                                    });
-                                    for (const auto [sv,hasTokenModule,hasTokenHeaderUnit] : splitFlags){
-                                        if (!hasTokenModule) {
-                                            ModuleFile.Flags.append(" ") += sv;
+                                    const char* beg = &*h->flags.begin();
+                                    for (auto& c : h->flags) {
+                                        if (c == ' ') {
+                                            std::string_view temp {beg,&c};
+                                            if(!containsToken(ModuleFile.Flags,temp)) ModuleFile.Flags.append(" ") += temp;
+                                            if(!containsToken(headerUnitFlags,temp)) headerUnitFlags.append(" ") += temp;
+                                            beg = &c;
                                         }
-                                        if (!hasTokenHeaderUnit) {
-                                            headerUnitFlags.append(" ") += sv;
-                                        }
-                                    } 
+                                    }
                                 }
                             }
                         } 

@@ -153,7 +153,7 @@ int compileProject(bool recompile)
     Project compile("Main",outPath,Project::exe,recompile);
     current = &compile;
     compile.setCompiler("clang++")
-    .addOptions("-O2 -Wall -Wextra -Wpedantic -Werror -flto=thin -fno-rtti -fno-exceptions -std=c++26")
+    .addOptions("-O2 -Wall -Wextra -Wpedantic -Werror -flto=thin -fno-rtti -fno-exceptions -std=c++23")
     .addLdOptions("-fuse-ld=lld")
     .addCompileCommand(&cmdJson)
     .setProjectPath(rootPath)

@@ -175,9 +175,9 @@ class Window {
                     event->onFocus = isFocused;
 
                     if (isFocused) {
-                        std::cout << "Window gained focus (active)." << std::endl;
+                        std::printf("Window gained focus (active).\n");
                     } else {
-                        std::cout << "Window lost focus (inactive)." << std::endl;
+                        std::printf("Window lost focus (inactive).\n");
                     }
                 }
                 return 0;

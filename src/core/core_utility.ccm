@@ -1,5 +1,6 @@
 module;
 
+
 export module core:util;
 import :std;
 import :types;
@@ -203,7 +204,7 @@ namespace Math {
         }
 
         // Fast unrolled binary search over the 19-element LUT
-        std::size_t digits = 1;
+        size_t digits = 1;
         if (absVal >= Math::CompactPow10[10]) {
             if (absVal >= Math::CompactPow10[14]) {
                 digits = (absVal >= Math::CompactPow10[16]) 
@@ -409,8 +410,8 @@ public:
 
 private:
     std::mt19937 m_gen{std::random_device{}()};
-    uint64_t m_rand;
-    int m_counter;
+    uint64 m_rand;
+    int32 m_counter;
 };
 
 

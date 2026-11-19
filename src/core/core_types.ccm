@@ -1,11 +1,7 @@
 module;
 
-#include <cstddef>
-#include <cstdint>
-
 export module core:types;
 import :std;
-
 export
 {
     using f32       = float;
@@ -205,25 +201,25 @@ export
             RGBA& parent;
             uint32 Shift;
 
-            [[nodiscard]] constexpr operator uint8_t() const noexcept {
-                return static_cast<uint8_t>((parent.data >> Shift) & 0xFFU);
+            [[nodiscard]] constexpr operator uint8() const noexcept {
+                return static_cast<uint8>((parent.data >> Shift) & 0xFFU);
             }
             [[nodiscard]] constexpr bool operator ==(const auto& rhs) const noexcept {
-                return static_cast<uint8_t>((parent.data >> Shift) & 0xFFU) == rhs;
+                return static_cast<uint8>((parent.data >> Shift) & 0xFFU) == rhs;
             }
 
-            constexpr bitRef& operator=(uint8_t value) noexcept {
+            constexpr bitRef& operator=(uint8 value) noexcept {
                 parent.data = (parent.data & ~(0xFFU << Shift)) | 
-                (static_cast<uint32_t>(value) << Shift);
+                (static_cast<uint32>(value) << Shift);
                 return *this;
             }
 
-            constexpr bitRef& operator+=(uint8_t value) noexcept {
-                return *this = static_cast<uint8_t>(*this + value);
+            constexpr bitRef& operator+=(uint8 value) noexcept {
+                return *this = static_cast<uint8>(*this + value);
             }
             
-            constexpr bitRef& operator-=(uint8_t value) noexcept {
-                return *this = static_cast<uint8_t>(*this - value);
+            constexpr bitRef& operator-=(uint8 value) noexcept {
+                return *this = static_cast<uint8>(*this - value);
             }
         };
 

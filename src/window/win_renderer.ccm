@@ -167,7 +167,7 @@ class GlHints : public IRenderer {
         // 1. Ensure our extensions are ready (via the dummy pass method)
         if (!wglChoosePixelFormatARB || !wglCreateContextAttribsARB) {
             if (!InitOpenGLExtensions()) {
-                std::cout << "Error: Could not load modern WGL extensions from the GPU driver.\n";
+                std::printf("Error: Could not load modern WGL extensions from the GPU driver.\n");
                 return false;
             } 
         }
@@ -187,7 +187,7 @@ class GlHints : public IRenderer {
         int format;
         UINT numFormats;
         if (!wglChoosePixelFormatARB(mHDC, pixelAttribs, nullptr, 1, &format, &numFormats) || numFormats == 0) {
-            std::cout << "Failed to find a matching pixel format.\n";
+            std::printf ("Failed to find a matching pixel format.\n");
             return false;
         }
 
@@ -210,7 +210,7 @@ class GlHints : public IRenderer {
         // 4. Create the high-performance context
         mHGLRC = wglCreateContextAttribsARB(mHDC, nullptr, contextAttribs);
         if (!mHGLRC) {
-            std::cout << "Failed to create modern WGL context.\n";
+            std::printf ("Failed to create modern WGL context.\n");
             return false;
         }
 
@@ -365,7 +365,7 @@ public:
 
         // 4. Validate Framebuffer Status
         if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-            std::cerr << "ERROR: Framebuffer is incomplete!\n";
+            std::printf("ERROR: Framebuffer is incomplete!\n");
         }
 
         // Restore default framebuffer target
@@ -432,7 +432,7 @@ class Renderer {
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, maxIndices * sizeof(unsigned int),nullptr,GL_DYNAMIC_DRAW);
 
         GLsizei stride = std::reduce(component.begin(),component.end(),0) * sizeof(float);
-        std::size_t offset = 0; 
+        size_t offset = 0; 
         for (int i = 0; i < Attrib; ++i) {
             glVertexAttribPointer(
                 i, component[i],GL_FLOAT,
@@ -522,7 +522,7 @@ class Shader
         for(const auto& f : std::filesystem::directory_iterator(shaderPath)) {
             const auto& file = f.path();
             if (file.extension() == ".tga") continue;
-            std::cout << file.lexically_relative(base) << " test\n";
+            std::printf ("%s test\n",file.lexically_relative(base).string().c_str());
             fileMap[file.lexically_relative(base).string()] = {file.extension() == ".fs" ?
             fragment : vertex,0};
 
@@ -546,14 +546,14 @@ class Shader
                 str sourceCode = contents.str();
                 
                 file.close();
-                std::cout << "file " << key << "\n" << sourceCode << "\n";
+                std::printf ("file %s\n%s\n", key.c_str() , sourceCode.c_str());
                 
                 cmpShader(sourceCode.c_str(), &value);
                 
                 if (std::filesystem::last_write_time(key) > lastWrite) {
                 lastWrite = std::filesystem::last_write_time(key);}
 
-            } else std::cout << key << " ERROR: cant open file \n";
+            } else std::printf(" ERROR: cant open file %s \n", key.c_str());
 
         }
     }
@@ -591,13 +591,13 @@ class Shader
             glGetProgramiv(objectID, GL_LINK_STATUS, &success);
             if (!success) {
                 glGetProgramInfoLog(objectID, 512, nullptr, infoLog);
-                std::cout << message << "\n" << infoLog << "\n";
+                std::printf("%*s\n%s" ,static_cast<int>(message.size()),message.data() ,infoLog);
             }
         } else {
             glGetShaderiv(objectID, GL_COMPILE_STATUS, &success);
             if (!success) {
                 glGetShaderInfoLog(objectID, 512, nullptr, infoLog);
-                std::cout << message << "\n" << infoLog << "\n";
+                std::printf("%*s\n%s" ,static_cast<int>(message.size()),message.data() ,infoLog);
             }
         }
     }

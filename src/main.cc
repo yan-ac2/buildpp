@@ -63,13 +63,13 @@ int main() {
     keyboard::Keyboard KeyMap;
     event.addKeyboard(KeyMap.KeysState);
 
-    float x = 0 ,y = 0;
+    f32 x = 0 ,y = 0;
 
-    unsigned int texture = loadTGATexture(fs::path("res/test.tga").string());
+    uint32 texture = loadTGATexture(fs::path("res/test.tga").string());
     
     Shader shader("res");
     
-    float vertices[] = {
+    f32 vertices[] = {
     // positions // colors // texture coords
     0.5f, 0.5f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, // top right
     0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, // bottom right
@@ -78,14 +78,14 @@ int main() {
     };
 
 
-    [[maybe_unused]]float box[] {
+    [[maybe_unused]]f32 box[] {
         0.5f, 0.5f,0.0f,0.0f,1.0f,0.0f,0.0f,1.0f,
         0.5f, -0.5f,0.0f,0.0f,0.0f,1.0f,-0.5f,1.0f,
         -0.5f,-0.5f,0.0f,0.0f,1.0f,0.0f,0.5f,1.0f,
         -0.5f,0.5f,0.0f,0.0f,0.0f,1.0f,1.0f,0.5f,
     };
 
-    unsigned int boxIndices[] = {
+    uint32 boxIndices[] = {
         0,1,3,
         1,2,3
     };
@@ -112,22 +112,23 @@ int main() {
         app.ProcessEvents();
         if(app.GetEvent().scrollDirection > 0) {
             auto monitor = disp.GetPrimaryMonitor();
-            std::cout << fmt( "Monitor\n X: {} Y: {} {}x{} isPrimary: {}\n",monitor->x,monitor->y,monitor->width,monitor->height,monitor->isPrimary ? "true" : "false"); 
+            std::printf ("%s",sformat( "Monitor\n X: {} Y: {} {}x{} isPrimary: {}\n",
+                monitor->x,monitor->y,monitor->width,monitor->height,monitor->isPrimary ? "true" : "false").c_str()); 
         }
         if (KeyMap.poll(16,times.delta_time())) {
             if (KeyMap[key::escape]) { 
-                std::cout << "Closing app\n";
+                std::printf ("Closing app\n");
                 app.CloseApp();
             }
-            if (KeyMap[key::w]) {++(y); std::cout << fmt(x," " ,y,"\n"); };
-            if (KeyMap[key::a]) {--(x); std::cout << fmt(x," " ,y,"\n"); };
-            if (KeyMap[key::s]) {--(y); std::cout << fmt(x," " ,y,"\n"); };
+            if (KeyMap[key::w]) {++(y); std::printf("%f %f \n",x,y); };
+            if (KeyMap[key::a]) {--(x); std::printf("%f %f \n",x,y); };
+            if (KeyMap[key::s]) {--(y); std::printf("%f %f \n",x,y); };
             if (KeyMap[key::d]) {
                 KeyMap[key::controlL].IsToggled() ? x += 10 : ++(x); 
-                std::cout << fmt(x," " ,y,"\n");
+                std::printf("%f %f \n",x,y);
             };
             if (KeyMap[key::controlL]) {
-                std::cout << "ctrlL pressed \n";
+                std::printf("ctrlL pressed \n");
             }
         }
         fmain.Bind();

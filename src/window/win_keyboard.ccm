@@ -6,7 +6,8 @@ export module win:keyboard;
 
 import core;
 
-export namespace keyboard {
+export 
+namespace keyboard {
 
     enum Key : uint8 {
         keyNULL = 0,

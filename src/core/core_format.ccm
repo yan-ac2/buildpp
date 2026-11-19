@@ -1,194 +1,245 @@
 
 module;
-
-#include <string>
 export module core:format;
 
 import :types;
 import :util;
 
+export {
 
-template <typename T>
-concept Formattable = 
-    requires(T t) { { std::string_view(t) } -> std::same_as<std::string_view>; } || 
-    std::integral<std::decay_t<T>> ||
-    std::floating_point<std::decay_t<T>>;
-
-template <typename... Args>
-concept onlyStr = (Formattable<Args> && ...);
-
-export
-struct fmt {
-    std::string str;
-
-    enum colors {
-        Not_color,
-        Black,     Bold_Black,     High_Black,
-        Red,       Bold_Red,       High_Red,
-        Green,     Bold_Green,     High_Green,
-        Yellow,    Bold_Yellow,    High_Yellow,
-        Blue,      Bold_Blue,      High_Blue,
-        Purple,    Bold_Purple,    High_Purple,
-        Cyan,      Bold_Cyan,      High_Cyan,
-        White,     Bold_White,     High_White,
-    };
-
-    // 1. Variadic Concatenation Constructor: fmt("hello ", 123, " world")
-    template<onlyStr... Args>
-    constexpr fmt(Args&&... args) {
-        varConcat(static_cast<Args&&>(args)...);
-    }
-    template<onlyStr... Args>
-    constexpr fmt& varConcat(Args&&... args) { 
-        size_t preAlloc = (getArgSize(args) + ... + 0);
-        str.reserve(preAlloc);
-        (appendArg(static_cast<Args&&>(args)), ...);
-        return *this;
-    }
-    // 2. Format String Constructor: fmt("Value: {}, Status: {}", 42, "OK")
-    template<onlyStr... Args>
-    constexpr fmt(const char* in, Args&&... args) {
-        if (std::string_view(in).find('{') == std::string_view::npos) {
-            varConcat(in, static_cast<Args&&>(args)...);
-            return;
-        }
-        std::string_view fmtStr(in);
-        size_t preAlloc = fmtStr.size() + (getArgSize(args) + ... + 0);
-        size_t lastPos = 0;
-
-        // Lambda executed once per parameter in fold expression
-        auto processArg = [this, &fmtStr, &lastPos](auto&& arg) {
-            size_t pBegin = fmtStr.find('{',lastPos);
-            if (pBegin != std::string_view::npos) {
-                size_t pEnd = fmtStr.find('}', pBegin + 1);
-                if (pEnd != std::string_view::npos) {
-                    str.append(fmtStr.substr(lastPos, pBegin - lastPos));
-                    appendArg(std::forward<decltype(arg)>(arg));
-                    lastPos = pEnd + 1;
-                }
-            }
+    template<size_t N>
+    struct formatString {
+        using size_type = size_t;
+        static constexpr size_type NPlaceholder {N * 2};
+        using char_array_type = const char*;
+        using PosArray_type = size_type[NPlaceholder];
+    
+        struct posArray {
+            PosArray_type data;
         };
-
-        str.reserve(preAlloc);
-        (processArg(std::forward<Args>(args)), ...);
-        if (lastPos < fmtStr.size()) {
-            str.append(fmtStr.substr(lastPos));
-        }
-    }
-
-    // Apply ANSI Color
-    constexpr fmt& color(colors c) { 
-        str.reserve(str.size() + 14);
-        str.insert(0, this->getColor(c));
-        str.append(this->getColor(Not_color));
-        return *this;
-    }
-
-    // Collapse multiple contiguous spaces into a single space
-    constexpr fmt& clean() { 
-        if (str.empty()) return *this;
-
-        size_t writeIdx = 0;
-        bool inSpace = false;
-
-        for (size_t readIdx = 0; readIdx < str.size(); ++readIdx) {
-            char c = str[readIdx];
-            if (c == ' ') {
-                if (!inSpace) {
-                    str[writeIdx++] = c;
-                    inSpace = true;
+        const std::string_view sv;
+        // const posArray Array;
+        posArray Array;
+        constexpr formatString(char_array_type str) noexcept
+            : sv{str,strlen(str)} , Array(getPosSize(sv)) {}
+        constexpr formatString(std::string_view inSv) noexcept : 
+        sv{inSv}, Array(getPosSize(sv)) {}
+        constexpr formatString(const std::string& inSv) noexcept: 
+        sv{inSv} , Array(getPosSize(sv)) {}
+    
+        constexpr formatString(formatString&& str) noexcept : 
+        sv{str.sv} , Array(str.Array) {}
+        constexpr formatString(const formatString& str) noexcept : 
+        sv{str.sv}, Array(str.Array) {}
+        
+        constexpr auto getArray() noexcept -> PosArray_type& { return Array.data;}
+        constexpr auto begin() noexcept -> size_type* { return Array.data;}
+        constexpr auto end() noexcept -> size_type* { return Array.data + NPlaceholder;}
+        constexpr auto getPosSize(std::string_view str) noexcept -> posArray {
+            posArray temp;
+            const char* data = str.data();
+            const size_type strlen = str.size();
+            bool open = false;
+            size_type slot = 0,idx = 0, openidx = 0;
+            for (;(idx < strlen) && (slot < NPlaceholder);++idx) {
+                if (*(data + idx) == '{') {
+                    openidx = idx;
+                    open = true;
+                } else if (*(data + idx) == '}' && open) {
+                    temp.data[slot] = openidx;
+                    temp.data[slot + 1] = (idx + 1) - openidx;
+                    slot += 2;
+                    open = false;
                 }
-            } else {
-                str[writeIdx++] = c;
-                inSpace = false;
+            }
+            return temp;
+        }
+        constexpr auto strlen(char_array_type str) noexcept -> size_type {
+            size_type temp{};
+            for(;*str++ != '\0';temp++);
+            return temp;
+        }
+    };
+    
+    struct strColors {
+        using view_type = std::string_view;
+        using size_type = size_t;
+        enum colors {
+            Not_color = 0,
+            Black     = 1,     Bold_Black = 9,      High_Black = 17,
+            Red       = 2,       Bold_Red = 10,       High_Red = 18,
+            Green     = 3,     Bold_Green = 11,     High_Green = 19,
+            Yellow    = 4,    Bold_Yellow = 12,    High_Yellow = 20,
+            Blue      = 5,      Bold_Blue = 13,      High_Blue = 21,
+            Purple    = 6,    Bold_Purple = 14,    High_Purple = 22,
+            Cyan      = 7,      Bold_Cyan = 15,      High_Cyan = 23,
+            White     = 8,     Bold_White = 16,     High_White = 24,
+        };
+        const view_type current[3];
+        const size_type len;
+        constexpr strColors(const view_type str,colors c) : 
+        current(colorTable[static_cast<size_type>(c)],str,colorTable[0]),
+        len(getLen()) {}
+    
+        static constexpr view_type colorTable[26] {
+            "\033[0m",    //Not_color 
+            "\033[0;30m", //Black
+            "\033[0;31m", //Red
+            "\033[0;32m", //Green
+            "\033[0;33m", //Yellow
+            "\033[0;34m", //Blue
+            "\033[0;35m", //Purple
+            "\033[0;36m", //Cyan
+            "\033[0;37m", //White
+            "\033[1;30m", //Bold_Black
+            "\033[1;31m", //Bold_Red
+            "\033[1;32m", //Bold_Green
+            "\033[1;33m", //Bold_Yellow
+            "\033[1;34m", //Bold_Blue
+            "\033[1;35m", //Bold_Purple
+            "\033[1;36m", //Bold_Cyan
+            "\033[1;37m", //Bold_White
+            "\033[0;90m", //High_Black
+            "\033[0;91m", //High_Red
+            "\033[0;92m", //High_Green
+            "\033[0;93m", //High_Yellow
+            "\033[0;94m", //High_Blue
+            "\033[0;95m", //High_Purple
+            "\033[0;96m", //High_Cyan
+            "\033[0;97m", //High_White
+        };
+        
+        static constexpr auto getColor(colors color) noexcept -> std::string_view {
+            return colorTable[static_cast<size_t>(color)];
+        }
+        constexpr auto getLen() noexcept -> size_type {
+            return size_type{current[0].size() + current[1].size() + current[2].size()};
+        }
+    };
+    
+    
+    struct addColors_impl {
+        using string_type = std::string;
+        using view_type = std::string_view;
+        using size_type = size_t;
+        strColors coloredstr;
+        
+        template<size_type N>
+        consteval addColors_impl(const char (&in)[N],const strColors::colors c) noexcept
+        :coloredstr{{in,N - 1},c} {}
+        constexpr addColors_impl(const view_type in,const strColors::colors c) noexcept
+        :coloredstr{in,c} {}
+        constexpr operator string_type() const noexcept {
+            return string();
+        }
+        constexpr auto string() const noexcept -> string_type {
+            auto& [sv,len] = coloredstr;
+            std::string temp(len,'\0');
+            const std::string_view* idx = sv;
+            char* data = temp.data();
+            char* dend = temp.data() + len;
+            const char* start = idx->begin();
+            const char* end = idx->end();
+            for (;data < dend;) {
+                if(start == end) {idx++;start = idx->begin();end = idx->end();}
+                *data++ = *start++;
+            }
+            return temp;
+        }
+    }; 
+    
+    constexpr auto addColors(std::string_view sv,strColors::colors c) noexcept -> std::string {
+        return addColors_impl(sv,c).string();
+    };
+    
+    template<typename T>
+    struct formatter {
+        // Custom types specialize this struct and implement format(val, ctx)
+        static_assert(!sizeof(T*), "Type does not have a custom_formatter specialization!");
+    };
+    
+    // Specialization: String Views / C-Strings
+    template<>
+    struct formatter<std::string_view> {
+        static constexpr auto format(std::string_view val) -> std::string {
+            return std::string{val};
+        }
+    };
+    template<>
+    struct formatter<addColors_impl> {
+        static constexpr auto format(addColors_impl& val) -> std::string {
+            return val.string();
+        }
+    };
+    
+    template<size_t N>
+    struct formatter<char[N]> {
+        static constexpr auto format(const char* val) -> std::string {
+            return std::string(val,N - 1);
+        }
+    };
+    
+    template<>
+    struct formatter<const char*> {
+        static constexpr auto format(const char* val) -> std::string {
+            return std::string{val};
+        }
+    };
+    
+    // Specialization: Integral Types
+    template<typename T> requires (std::integral<T> || std::floating_point<T>)
+    struct formatter<T> {
+        static constexpr auto format(T val) -> std::string {
+            char buffer[64];
+            auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), val);
+            return std::string{buffer, static_cast<size_t>(ptr - buffer)};
+        }
+    };
+    
+    template <typename T>
+    constexpr auto format_arg (T& arg) noexcept -> std::string {
+        using Decayed = std::decay_t<T>;
+        if constexpr (std::is_convertible_v<Decayed, std::string_view>) {
+            return formatter<std::string_view>::format(std::string_view(arg));
+        } else {
+            return formatter<Decayed>::format(arg);
+        }
+    };
+    
+    constexpr auto merge_args(std::string& str,const std::string fargs[],std::string_view sv,size_t posArray[],size_t count) noexcept -> void {
+        const char* data  = sv.data();
+        const size_t size = sv.size();
+        size_t begin {0};
+        const char* start = data + *posArray;
+        for (const char& c : sv) {
+            if (&c == start) {
+                const size_t idx   {static_cast<size_t>(&c - data)};
+                const size_t len   {*posArray + *(posArray + 1)};
+                str.reserve((str.size() + (idx - begin)) + fargs->size());
+                (str += {data + begin, idx - begin}) += *fargs;
+                begin = len;
+                if (--count > 0) {
+                    posArray += 2; start = data + *posArray;
+                    ++fargs;
+                }
             }
         }
-        str.resize(writeIdx);
-        return *this;
+        str += std::string_view{data + begin,size - begin};
     }
-
-    constexpr fmt& endl() { str.append("\n"); return *this; }
-
-    constexpr std::string_view sv() const { return str; }
-    constexpr const char* cstr() const { return str.c_str(); }
-    constexpr operator std::string_view() const { return sv(); }
-    constexpr operator const char*() const { return cstr(); }
     
-    friend std::ostream& operator<<(std::ostream& os, const fmt& f) {
-        return os << f.str;
-    }
-
-private:
-    struct formatHelper {
-        int attr = 0;
-        int attr2 = 0;
-        constexpr formatHelper() {}
-    };
-
-    template<onlyStr T>
-    constexpr size_t getArgSize(const T& arg) const {
-        using Raw = std::remove_cvref_t<T>;
-        if constexpr (std::is_convertible_v<Raw, std::string_view>) {
-            return std::string_view (arg).size();
-        } else if constexpr (std::integral<Raw>) {
-            return Math::digitLength(arg);
-        } else if constexpr (std::floating_point<Raw>) {
-            return Math::digitLength(arg);
-        }
-        return 0;
-    }
-
-    template<onlyStr T>
-    constexpr void appendArg(T&& arg) {
-        using Raw = std::remove_cvref_t<T>;
-        if constexpr (std::is_convertible_v<Raw, std::string_view>) {
-            str += std::string_view(arg);
-        } else if constexpr (std::integral<Raw>) {
-            char digit[Math::maxDigits<Raw>()];
-            auto [eDigit, ec] = std::to_chars(digit, digit + Math::maxDigits<Raw>(), std::forward<T>(arg));
-            str.append(digit, static_cast<std::size_t>(eDigit - digit));
-        } else if constexpr (std::floating_point<Raw>) {
-            char digit[Math::maxDigits<Raw>()];
-            auto [eDigit, ec] = std::to_chars(digit, digit + Math::maxDigits<Raw>(), std::forward<T>(arg));
-            str.append(digit, static_cast<std::size_t>(eDigit - digit));
+    template<typename... Args>
+    constexpr auto sformat(formatString<sizeof...(Args)> fmtStr,Args&&... args) noexcept -> std::string {
+        std::string str {};
+        if constexpr (sizeof...(Args) > 0) {
+            auto* posArray = fmtStr.begin();
+            const std::string fargs[sizeof...(Args)] {format_arg(args)...};
+            merge_args(str,fargs,fmtStr.sv,posArray,sizeof...(Args));
         } else {
-            __builtin_unreachable();
+            str = fmtStr.sv;
         }
+        return str; 
     }
-
-    
-
-    constexpr std::string_view getColor(colors color) const {
-        switch (color) {
-            case Not_color:    return "\033[0m";
-            case Black:        return "\033[0;30m";
-            case Red:          return "\033[0;31m";
-            case Green:        return "\033[0;32m";
-            case Yellow:       return "\033[0;33m";
-            case Blue:         return "\033[0;34m";
-            case Purple:       return "\033[0;35m";
-            case Cyan:         return "\033[0;36m";
-            case White:        return "\033[0;37m";
-            case Bold_Black:   return "\033[1;30m";
-            case Bold_Red:     return "\033[1;31m";
-            case Bold_Green:   return "\033[1;32m";
-            case Bold_Yellow:  return "\033[1;33m";
-            case Bold_Blue:    return "\033[1;34m";
-            case Bold_Purple:  return "\033[1;35m";
-            case Bold_Cyan:    return "\033[1;36m";
-            case Bold_White:   return "\033[1;37m";
-            case High_Black:   return "\033[0;90m";
-            case High_Red:     return "\033[0;91m";
-            case High_Green:   return "\033[0;92m";
-            case High_Yellow:  return "\033[0;93m";
-            case High_Blue:    return "\033[0;94m";
-            case High_Purple:  return "\033[0;95m";
-            case High_Cyan:    return "\033[0;96m";
-            case High_White:   return "\033[0;97m";
-            default:           return "";
-        }
-    }
-};
+}
 
 export
 struct Print {

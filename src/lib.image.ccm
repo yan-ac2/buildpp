@@ -38,20 +38,20 @@ export struct TGAImage {
     bool read_tga_file(const std::string filename) {
         std::ifstream in(filename, std::ios::binary);
         if (!in.is_open()) {
-            std::cerr << "can't open file " << filename << "\n";
+            std::printf("can't open file %s\n" ,filename.c_str() );
             return false;
         }
         TGAHeader header;
         in.read(reinterpret_cast<char*>(&header), sizeof(header));
         if (!in.good()) {
-            std::cerr << "an error occurred while reading the header\n";
+            std::printf("an error occurred while reading the header\n");
             return false;
         }
         w   = header.width;
         h   = header.height;
         bpp = header.bitsperpixel >> 3;
         if (w <= 0 || h <= 0 || (bpp != GRAYSCALE && bpp != RGB && bpp != RGBA)) {
-            std::cerr << "bad bpp (or width/height) value\n";
+            std::printf("bad bpp (or width/height) value\n");
             return false;
         }
         size_t nbytes = static_cast<size_t>(bpp) * w * h;
@@ -60,16 +60,16 @@ export struct TGAImage {
         if (3 == header.datatypecode || 2 == header.datatypecode) {
             in.read(reinterpret_cast<int8*>(data.data()), nbytes);
             if (!in.good()) {
-                std::cerr << "an error occurred while reading the data\n";
+                std::printf("an error occurred while reading the data\n");
                 return false;
             }
         } else if (10 == header.datatypecode || 11 == header.datatypecode) {
             if (!load_rle_data(in)) {
-                std::cerr << "an error occurred while reading the data\n";
+                std::printf("an error occurred while reading the data\n");
                 return false;
             }
         } else {
-            std::cerr << "unknown file format " << static_cast<int32>(header.datatypecode) << "\n";
+            std::printf ("unknown file format %d",static_cast<int32>(header.datatypecode));
             return false;
         }
 
@@ -89,7 +89,7 @@ export struct TGAImage {
         constexpr uint8 footer[18] = {'T','R','U','E','V','I','S','I','O','N','-','X','F','I','L','E','.','\0'};
         std::ofstream out(filename, std::ios::binary);
         if (!out.is_open()) {
-            std::cerr << "can't open file " << filename << "\n";
+            std::printf ("can't open file %s\n",filename.c_str());
             return false;
         }
         TGAHeader header = {};
@@ -112,7 +112,7 @@ export struct TGAImage {
         if (!out.good()) goto err;
         return true;
     err:
-        std::cerr << "can't dump the tga file\n";
+        std::printf("can't dump the tga file\n");
         return false;
     }
 
@@ -138,7 +138,7 @@ export struct TGAImage {
         return ret;
     }
 
-    void set(int x, int y, const TGAColor &c) {
+    void set(int32 x, int32 y, const TGAColor &c) {
         if (data.empty() || x < 0 || y < 0 || x >= w || y >= h) return;
         std::memcpy(data.data() + (x + y * w) * bpp, c.bgra, bpp);
     }
@@ -185,10 +185,10 @@ private:
 
             if (chunkheader < 128) {
                 chunkheader++;
-                for (int i = 0; i < chunkheader; i++) {
+                for (int32 i = 0; i < chunkheader; i++) {
                     in.read(reinterpret_cast<int8 *>(colorbuffer.bgra), bpp);
                     if (!in.good()) return false;
-                    for (int t = 0; t < bpp; t++)
+                    for (int32 t = 0; t < bpp; t++)
                         data[currentbyte++] = colorbuffer.bgra[t];
                     currentpixel++;
                 }
@@ -196,8 +196,8 @@ private:
                 chunkheader -= 127;
                 in.read(reinterpret_cast<int8 *>(colorbuffer.bgra), bpp);
                 if (!in.good()) return false;
-                for (int i = 0; i < chunkheader; i++) {
-                    for (int t = 0; t < bpp; t++)
+                for (int32 i = 0; i < chunkheader; i++) {
+                    for (int32 t = 0; t < bpp; t++)
                         data[currentbyte++] = colorbuffer.bgra[t];
                     currentpixel++;
                 }
