@@ -44,7 +44,6 @@ GLuint loadTGATexture(const std::string& filename) {
 }
 
 int main() {
-    using key = keyboard::Key;
     namespace fs = std::filesystem;
     Window child;
     Window app("MainWindow",800,600,WindowFlags::WinOGL | WindowFlags::WinCenter ,{100,100});
@@ -60,7 +59,7 @@ int main() {
     glHints.Initialize(app.mHWND, 4, 3);
     glHints.Resize(app.Desc.width, app.Desc.height);
     
-    keyboard::Keyboard KeyMap;
+    input::Keyboard KeyMap;
     event.addKeyboard(KeyMap.KeysState);
 
     f32 x = 0 ,y = 0;
@@ -104,7 +103,6 @@ int main() {
     uirenderer.init();
 
     Framebuffer fmain(app.Desc);
-    
     // auto start = std::chrono::high_resolution_clock::now();
     auto times = Clock::get();
     while (app.IsRunning()) {
@@ -116,18 +114,19 @@ int main() {
                 monitor->x,monitor->y,monitor->width,monitor->height,monitor->isPrimary ? "true" : "false").c_str()); 
         }
         if (KeyMap.poll(16,times.delta_time())) {
-            if (KeyMap[key::escape]) { 
+            if (KeyMap[input::escape]) { 
                 std::printf ("Closing app\n");
                 app.CloseApp();
             }
-            if (KeyMap[key::w]) {++(y); std::printf("%f %f \n",x,y); };
-            if (KeyMap[key::a]) {--(x); std::printf("%f %f \n",x,y); };
-            if (KeyMap[key::s]) {--(y); std::printf("%f %f \n",x,y); };
-            if (KeyMap[key::d]) {
-                KeyMap[key::controlL].IsToggled() ? x += 10 : ++(x); 
+            if (KeyMap[input::w]) {++(y); std::printf("%f %f \n",x,y); };
+            if (KeyMap[input::a]) {--(x); std::printf("%f %f \n",x,y); };
+            if (KeyMap[input::s]) {--(y); std::printf("%f %f \n",x,y); };
+            if (KeyMap[input::semicolon]) {std::printf("semicolon \n"); };
+            if (KeyMap[input::d]) {
+                KeyMap[input::controlL].IsToggled() ? x += 10 : ++(x); 
                 std::printf("%f %f \n",x,y);
             };
-            if (KeyMap[key::controlL]) {
+            if (KeyMap[input::controlL]) {
                 std::printf("ctrlL pressed \n");
             }
         }

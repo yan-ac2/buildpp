@@ -1,9 +1,10 @@
 #include "build.hpp"
 
-#include <functional>
+#include \
+<functional>
 // #include <mutex>
 // #include <thread>
-#include <queue>
+#include /**/ <queue>
 
 
 [[maybe_unused]] inline Project* current {nullptr};
@@ -55,7 +56,8 @@
 //     std::condition_variable cv_;
 //     bool stop_ = false;
 // };
-
+[[maybe_unused]]
+constexpr const char* test = "//////  /////cmd";
 int selfCompile(bool recompile)
 {
     std::printf("%s",sformat("{}\n",addColors("compile self",strColors::Bold_Green)).c_str());
@@ -76,6 +78,7 @@ int selfCompile(bool recompile)
     .addSourcePath("")
     .addSource("","build.cc")
     .setMain("build.cc")
+    .scanHeaders()
     // .dumpProject()
     ;
     rebuild.compileCpp(rebuild.ProjectFile.getMain());
@@ -102,42 +105,31 @@ int CompileFile(const std::string_view Name,const std::string_view From,const st
     .addLdOptions(ldoptions)
     .setProjectPath(rootPath)
     .addSourcePath(From)
-    .addSource(From,src)
+    .addSource/*
+        add source
+    */ (From,src)
     .addIncludePathList(IncludePath)
-    .setMain(src[0]).scanHeader().scanModule()
+    .setMain(src[0]).scanHeaders().scanModules()
     .LinkLibrary(src[0], libraryList)
     .configureModuleFlags()
     .dumpProject()
     ;
-    auto getProjectFile = compile.ProjectFile | std::views::values;
-    auto getModule = getProjectFile 
-    | std::views::filter([](const auto& File){
-        const bool isSource = File.fileType == File::Source;
-        const bool isModuleImpl = File.fileType == File::ModuleImpl;
-        return !isSource || isModuleImpl;
-    }); 
-    auto getSource = getProjectFile 
-    | std::views::filter([](const auto& File){
-        const bool isSource = File.fileType == File::Source;
-        const bool isModuleImpl = File.fileType == File::ModuleImpl;
-        return isSource || isModuleImpl;
-    });
-    if(!getModule.empty()) {
-        std::queue<std::reference_wrapper<File>> queue;
-        for (auto& i : getModule) {
-            queue.push(i);
-        }
-        while(!queue.empty()) {
-            auto& modulef = queue.front().get();
-            queue.pop();
-            if (compile.compileModule(modulef) == false) {
-                // std::cout << "Compiled Module: "_fmt.color(fmt::Red) << modulef.Name <<"\n";
-                queue.emplace(modulef);
-            }
+    
+    std::queue<std::reference_wrapper<File>> queue;
+    for (auto& [K,F] : compile.ProjectFile) {
+        if(F.fileType != File::Source || F.fileType == File::ModuleImpl) queue.push(F);
+    }
+    while(!queue.empty()) {
+        auto& modulef = queue.front().get();
+        queue.pop();
+        if (compile.compileModule(modulef) == false) {
+            // std::cout << "Compiled Module: "_fmt.color(fmt::Red) << modulef.Name <<"\n";
+            queue.emplace(modulef);
         }
     }
-    for (auto& S : getSource) {
-        compile.compileCpp(S);
+    
+    for (auto& [K,F] : compile.ProjectFile) {
+        if(F.fileType == File::Source) compile.compileCpp(F);
     }
     compile.link(compile.ProjectFile.getMain());
     return 0;
@@ -153,7 +145,7 @@ int compileProject(bool recompile)
     Project compile("Main",outPath,Project::exe,recompile);
     current = &compile;
     compile.setCompiler("clang++")
-    .addOptions("-O2 -Wall -Wextra -Wpedantic -Werror -flto=thin -fno-rtti -fno-exceptions -std=c++23")
+    .addOptions("-O2 -Wall -Wextra -Wpedantic -Werror -fno-rtti -fno-exceptions -std=c++23")
     .addLdOptions("-fuse-ld=lld")
     .addCompileCommand(&cmdJson)
     .setProjectPath(rootPath)
@@ -173,7 +165,7 @@ int compileProject(bool recompile)
         "win_forward.ccm",
         "win_renderer.ccm",
         "win_platform.ccm",
-        "win_keyboard.ccm"
+        "win_input.ccm"
     })
     .addIncludePathList({
         "src",
@@ -181,29 +173,15 @@ int compileProject(bool recompile)
     })
     .getHeaderFile()
     .setResourcePath("res")
-    .setMain("main.cc").scanHeader().scanModule()
+    .setMain("main.cc").scanHeaders().scanModules()
     .LinkLibrary("win.ccm",{"gdi32","user32"})
     .LinkLibrary("win_renderer.ccm",{"opengl32"})
     .configureModuleFlags().dumpProject()
     ;
-
-    auto getProjectFile = compile.ProjectFile | std::views::values; 
-    auto getModule = getProjectFile 
-    | std::views::filter([](const auto& File){
-        const bool isSource = File.fileType == File::Source;
-        const bool isModuleImpl = File.fileType == File::ModuleImpl;
-        return !isSource || isModuleImpl;
-    }); 
-    auto getSource = getProjectFile 
-    | std::views::filter([](const auto& File){
-        const bool isSource = File.fileType == File::Source;
-        const bool isModuleImpl = File.fileType == File::ModuleImpl;
-        return isSource || isModuleImpl;
-    });
     
     std::queue<std::reference_wrapper<File>> queue;
-    for (auto& i : getModule) {
-        queue.push(i);
+    for (auto& [P,F] : compile.ProjectFile) {
+        if(F.fileType != File::Source || F.fileType == File::ModuleImpl) queue.push(F);
     }
     while(!queue.empty()) {
         auto& modulef = queue.front().get();
@@ -214,8 +192,8 @@ int compileProject(bool recompile)
         }
     }
     
-    for (auto& i : getSource) {
-        compile.compileCpp(i);
+    for (auto& [P,F] : compile.ProjectFile) {
+        if(F.fileType == File::Source) compile.compileCpp(F);
     }
 
     if(compile.getCompileCommand() != nullptr) compile.getCompileCommand()->write(outPath.rootPath/"compile_commands.json");
@@ -380,11 +358,12 @@ auto main(int argc, const char* argv[]) -> int
         if (inputLine == "-P") {
             const auto parsed = parseCommandLine(cmd.args);
             CompileFile(parsed.projectName,parsed.sourcePath,parsed.outputPath,
+                /**/
                 parsed.outType,parsed.options,parsed.ldoptions,parsed.IncludePath,
                 parsed.sources,parsed.libraries,true);
             return 0;
         };    
     }
 
-    return 0;
+    return   0;
 };

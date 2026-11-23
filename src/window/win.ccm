@@ -7,6 +7,6 @@ export module win;
 #endif
 export import :renderer;
 export import :fwd;
-export import :keyboard;
+export import :input;
 
 // export using namespace keyboard;

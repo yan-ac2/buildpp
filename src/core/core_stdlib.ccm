@@ -38,9 +38,11 @@ module;
 export module core:std;
 
 export namespace std {
-    // Fixed-width integers & size types
+    // Fixed-width integers, bytes & size types
     using std::size_t;
     using std::ptrdiff_t;
+    using std::nullptr_t;
+    using std::byte;
     using std::int8_t;
     using std::uint8_t;
     using std::int16_t;
@@ -71,6 +73,12 @@ export namespace std {
     using std::numeric_limits;
     using std::memcpy;
     using std::swap;
+    using std::move;
+    using std::forward;
+    using ::operator new;
+    using ::operator new[];
+    using ::operator delete;
+    using ::operator delete[];
 
     // Type traits & concepts
     using std::integral_constant;
@@ -121,6 +129,7 @@ export namespace std {
     using std::ostringstream;
     using std::istringstream;
     using std::getline;
+    using std::endl;
     using std::printf;
 
     // Randomness
@@ -133,6 +142,8 @@ export namespace std {
         using std::filesystem::current_path;
         using std::filesystem::directory_iterator;
         using std::filesystem::last_write_time;
+        using std::filesystem::exists;
+        using std::filesystem::create_directories;
         using std::filesystem::begin;
         using std::filesystem::end;
     }
@@ -140,8 +151,13 @@ export namespace std {
     namespace chrono {
         using std::chrono::time_point;
         using std::chrono::file_clock;
+        using std::chrono::steady_clock;
+        using std::chrono::system_clock;
         using std::chrono::high_resolution_clock;
+        using std::chrono::nanoseconds;
+        using std::chrono::microseconds;
         using std::chrono::milliseconds;
+        using std::chrono::seconds;
         using std::chrono::duration_cast;
         using std::chrono::operator<=>;
         using std::chrono::operator==;
@@ -153,6 +169,7 @@ export namespace std {
         using std::this_thread::sleep_for;
     }
 
+    // Namespace-scope operators
     using std::operator<;
     using std::operator<=;
     using std::operator>;
@@ -160,12 +177,9 @@ export namespace std {
     using std::operator<=>;
     using std::operator!=;
     using std::operator==;
-    
+
     using std::operator<<;
     using std::operator>>;
     using std::operator+;
     using std::operator-;
 }
-
-        
-    

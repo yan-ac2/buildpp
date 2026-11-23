@@ -4,7 +4,7 @@ module;
 
 export module win:fwd;
 import core;
-import :keyboard;
+import :input;
 
 export class Window;
 
@@ -89,7 +89,7 @@ struct WindowFlags {
 export
 struct Event {
     using et =  EventType;
-    keyboard::KeyState* Keys = nullptr;
+    input::KeyState* Keys = nullptr;
     bool Mouse [et::mLast] {};
     bool onFocus = true;
     
@@ -98,7 +98,7 @@ struct Event {
     int32 mouseX = 0;
     int32 mouseY = 0;
     
-    void addKeyboard(keyboard::KeyState* key) {Keys = key;}
+    void addKeyboard(input::KeyState* key) {Keys = key;}
 
     void mouseScrollevent(void(*scrFN)(int32*,int32*,void*),void* t = nullptr ){
         scrFN(&zDelta,&scrollDirection,t);
