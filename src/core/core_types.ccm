@@ -65,7 +65,6 @@ export
             uint8& byteRef;
             uint8 mask;
 
-            // Automatically implicitly converts to bool when reading: bool value = myBits[10];
             operator bool() const {
                 return (byteRef & mask) != 0;
             }
