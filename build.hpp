@@ -688,64 +688,12 @@ namespace util {
         (to += p) += s;
     }
     
-    
-    // inline auto stripComments(std::string str) -> std::string {
-    //     std::span<char> it {str.data(),str.size()};
-    //     bool inBlockComment = false;
-    //     bool inLineComment  = false;
-    //     bool inQuote        = false;
-    //     bool inExtendScope  = false;
-    //     bool inPreprocess   = false;
-    //     bool atEndStatement = false;
-    //     unsigned int scopeDepth = 0;
-    //     char* cursor    = str.data();
-    //     for(char& c : it) {
-    //         const char* cprev = (cursor - (cursor != str.data()));
-    //         const char* prev  = (&c - (&c != str.data()));
-    //         const char* next  = (&c + (&c != str.data() + str.size()));
-    //         const bool endl   = c == '\n';
-    //         const bool space  = c == ' ';
-    //         if (c == '#') inPreprocess = true;
-    //         if (atEndStatement && *cprev != ';') {atEndStatement = false;}
-    //         if (!atEndStatement && c == ';') {atEndStatement = true;}
-    //         if (space && *cprev == ' ') continue;
-    //         if (c == '/' && !inQuote) {
-    //             if(*next == '/') {inLineComment  = true;  continue;}
-    //             if(*next == '*') {inBlockComment = true;  continue;}
-    //             if(*prev == '*') {inBlockComment = false; continue;}
-    //         }
-    //         if (endl) {
-    //             // isNewline = true;
-    //             if(!inExtendScope) inPreprocess = false;
-    //             inLineComment = false;
-    //             if(*cursor == '\n') continue;
-    //             if(!inPreprocess && !atEndStatement) continue;
-    //         }
-    //         if (inLineComment || inBlockComment) continue;
-
-    //         if (!scopeDepth && *cprev == '{') scopeDepth = 1;
-    //         if (scopeDepth) {
-    //             if(c == '{') ++scopeDepth;
-    //             if(c == '}') --scopeDepth;
-    //             if(scopeDepth > 0) continue;
-    //         }
-            
-    //         if (c == '\\') {inExtendScope = true; continue;}
-    //         if (inExtendScope) {
-    //             if(endl) inExtendScope = false; 
-    //             continue;
-    //         }
-            
-    //         const bool qmark {c == '"'};
-    //         if(!inQuote && qmark) {*cursor++ = c; inQuote = true; continue;}
-    //         if(inQuote && qmark)  {*cursor++ = c; inQuote = false; continue;}
-            
-    //         *cursor++ = c;
-
-    //     }
-    //     str.erase(cursor - str.data());
-    //     return str;
-    // }
+    inline auto anyOfchar (const char c,std::string_view sv) -> bool {
+        for(const char ch : sv) {
+            if (c == ch) return true;
+        }
+        return false;
+    }
     struct BitFlags {
         int data;
         constexpr BitFlags(int mask) : data(mask) {}
@@ -791,7 +739,7 @@ namespace util {
             if (endl) {
                 cnd.set(LineComment, false);
                 if(cnd != ExtendScope) cnd.set(Preprocess, false);
-                if(*cursor == '\n') continue;
+                if(*cprev == '\n') continue;
             }
             if (cnd == LineComment || cnd == BlockComment) continue;
             
@@ -811,11 +759,11 @@ namespace util {
             const bool qmark {c == '"'};
             if(cnd != Quote && qmark) {*cursor++ = c; cnd.set(Quote, true); continue;}
             if(cnd == Quote && qmark) {*cursor++ = c; cnd.set(Quote, false); continue;}
-            if (c == ';') cnd.set(EndStatement, true);
-            if (*cursor == '\n' && cnd != Preprocess && cnd != EndStatement) {
-                cnd.set(EndStatement , false);
-                continue;
-            }
+            // if (c == ';') cnd.set(EndStatement, true);
+            // if (*cursor == '\n' && cnd != Preprocess && cnd != EndStatement) {
+            //     cnd.set(EndStatement , false);
+            //     continue;
+            // }
             
             *cursor++ = c;
 
