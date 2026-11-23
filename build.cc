@@ -1,6 +1,7 @@
 #include "build.hpp"
 
 #include \
+\
 <functional>
 // #include <mutex>
 // #include <thread>
@@ -87,7 +88,7 @@ int selfCompile(bool recompile)
 }
 
 int CompileFile(const std::string_view Name,const std::string_view From,const std::string_view oPath,Project::projectType type,std::span<const std::string_view> options,std::span<const std::string_view> ldoptions,
-    std::span<const std::string_view> IncludePath,std::span<const std::string_view> src,const std::span<const std::string_view> libraryList,bool recompile)
+    std::span<const std::string_view> IncludePath,std::span<const std::string_view> src,const std::span<const std::string_view> libraryList,bool recompile) 
 {
     std::printf("%s",sformat("Compiling {}\nFrom: {}\n" ,Name,From).c_str());
     const std::string rootPath = fs::current_path().string();
@@ -135,8 +136,7 @@ int CompileFile(const std::string_view Name,const std::string_view From,const st
     return 0;
 }
 
-int compileProject(bool recompile)
-{
+int compileProject(bool recompile) {
     const std::string rootPath = fs::current_path().string();
     compileCommand cmdJson;
     outputPath outPath;
@@ -320,8 +320,7 @@ struct argsParse {
 
 
 
-auto main(int argc, const char* argv[]) -> int 
-{
+auto main(int argc, const char* argv[]) -> int {
     std::printf("%s",sformat("{}\n",addColors("CPP BUILD",strColors::Bold_Purple)).c_str());
     std::atexit(exitImpl);
     auto makeOptions = Options()

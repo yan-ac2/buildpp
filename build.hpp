@@ -272,8 +272,15 @@ struct input_t : comp_t<T,L> {
     : data(other.data) , loc(other.loc) {}
     constexpr input_t(input_t&& other) noexcept 
     : data(other.data) , loc(other.loc) {}
+    constexpr input_t(input_t&& val, std::source_location s = std::source_location::current()) noexcept 
+    : data(val), loc(s) {}
+    constexpr input_t(const input_t& val, std::source_location s = std::source_location::current()) noexcept 
+    : data(val), loc(s) {}
     template<typename U>
     constexpr input_t(U&& val, std::source_location s = std::source_location::current()) noexcept 
+    : data(val), loc(s) {}
+    template<typename U>
+    constexpr input_t(const U& val, std::source_location s = std::source_location::current()) noexcept 
     : data(val), loc(s) {}
 };
 
@@ -599,15 +606,174 @@ struct fileUtil
         return false;
     }
 };
-// template <typename T>
-// constexpr T iabs(T num) {
-//     if constexpr (std::is_signed_v<T>) {
-        // return num = num | 
-        // int t = ~(-22 << sizeof(int) * 8);
-//     }
-//     return num;
-// };
-// constexpr char test {iabs<char>(-22)} ;
+
+namespace util {
+
+    inline auto getRawHeaderName(const std::string_view in) {
+        struct out {
+            const std::string_view sv;
+            const bool startNpos;
+            const bool endNpos;
+        };
+        const char* data = in.data();
+        std::size_t startPos {std::string_view::npos};
+        std::size_t endPos   {std::string_view::npos};
+        char closeChar       {'\0'};
+        for (const char& c : in) {
+            const bool quote = c == '\"';
+            const bool bracket = c == '<';
+            if (quote || bracket) {
+                closeChar = (bracket) ? '>' : '\"';
+                data = &c;
+                startPos = &c - in.begin();
+                break;
+            }
+        }
+
+        for (++data; data != in.end(); ++data) {
+            if (*data == closeChar) {
+                endPos = data - in.begin();
+                break;
+            }
+        }
+
+        const bool startFound = (startPos != std::string_view::npos);
+        const bool endFound   = (endPos != std::string_view::npos);
+
+        return out{
+            (startFound && endFound && endPos > startPos) 
+                ? in.substr(startPos + 1, endPos - startPos - 1) 
+                : std::string_view{},
+            !startFound,
+            !endFound,
+        };
+    }
+
+    inline auto trim(std::string_view str) -> std::string_view 
+    {
+        const size_t first = str.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) return "";
+        const size_t last = str.find_last_not_of(" \t\r\n");
+        return std::string_view(str.data() + first, (last - first + 1));
+    }
+    inline auto isSame(char c,const char* ca,size_t count) noexcept -> bool {
+        for(const char ch : std::span<const char>{ca,count}) if (c == ch) return true;
+        return false;
+    };
+    
+    inline auto containsToken(std::string_view str,const std::string_view target) noexcept -> bool 
+    {
+        const char* start {nullptr};
+        for (const char& c : str) {
+            if (c == ' ' || c == str.back()) {
+                if (&c != start) {
+                    if (std::string_view(start, &c) == target) {
+                        return true;
+                    }
+                }
+                start = &c + 1;
+            }
+        }
+        return false;
+    }
+    inline auto addSep(std::string& to,char sep) {
+        if(!to.empty() && to.back() != sep) to += sep;
+    }
+    inline auto appendWithSep(std::string& to,std::string_view add,char sep) {
+        addSep(to,sep);
+        to += add;
+    }
+    inline auto appendWithSep(std::string& to,std::string_view p,std::string_view s,char sep) {
+        addSep(to,sep);
+        (to += p) += s;
+    }
+    
+    inline auto stripComments(std::string str) -> std::string {
+        std::span<char> it {str.data(),str.size()};
+        bool inBlockComment = false;
+        bool inLineComment  = false;
+        bool inQuote        = false;
+        bool inExtendScope  = false;
+        bool inPreprocess   = false;
+        bool atEndStatement = false;
+        unsigned int scopeDepth = 0;
+        char* cursor    = str.data();
+        for(char& c : it) {
+            const char* cprev = (cursor - (cursor != str.data()));
+            const char* prev  = (&c - (&c != str.data()));
+            const char* next  = (&c + (&c != str.data() + str.size()));
+            const bool endl   = c == '\n';
+            const bool space  = c == ' ';
+            if (c == '#') inPreprocess = true;
+            if (atEndStatement && *cprev != ';') {atEndStatement = false;}
+            if (!atEndStatement && c == ';') {atEndStatement = true;}
+            if (space && *cprev == ' ') continue;
+            if (c == '/' && !inQuote) {
+                if(*next == '/') {inLineComment  = true;  continue;}
+                if(*next == '*') {inBlockComment = true;  continue;}
+                if(*prev == '*') {inBlockComment = false; continue;}
+            }
+            if (endl) {
+                // isNewline = true;
+                if(!inExtendScope) inPreprocess = false;
+                inLineComment = false;
+                if(*cursor == '\n') continue;
+                if(!inPreprocess && !atEndStatement) continue;
+            }
+            if (inLineComment || inBlockComment) continue;
+
+            if (!scopeDepth && *cprev == '{') scopeDepth = 1;
+            if (scopeDepth) {
+                if(c == '{') ++scopeDepth;
+                if(c == '}') --scopeDepth;
+                if(scopeDepth > 0) continue;
+            }
+            
+            if (c == '\\') {inExtendScope = true; continue;}
+            if (inExtendScope) {
+                if(endl) inExtendScope = false; 
+                continue;
+            }
+            
+            const bool qmark {c == '"'};
+            if(!inQuote && qmark) {*cursor++ = c; inQuote = true; continue;}
+            if(inQuote && qmark)  {*cursor++ = c; inQuote = false; continue;}
+            
+            *cursor++ = c;
+
+        }
+        str.erase(cursor - str.data());
+        return str;
+    }
+
+    [[nodiscard]] inline std::string fileTostring(input_t<std::string,3> path) {
+        std::ifstream file({path.data.data(),path.data.size()}, std::ios::ate | std::ios::binary); // open file and immediately seek to the end
+        // opening file as binary allows us to skip pointless newline re-encoding
+        if (!file.good()) log::msg("Could not open file ",path);
+        const auto file_size = file.tellg(); // returns cursor pos, which is the end of file
+        file.seekg(std::ios::beg);           // seek to the beginning
+        path.data.resize(file_size);
+        
+        file.read(path.data.data(), file_size);  // read into the string
+        file.close();
+        return path.data;
+    }
+    // [[nodiscard]] inline std::string fileTostring(input_t<const std::string&,3> path) {
+    //     return fileTostring(path);
+    // }
+    inline constexpr auto viewLine(const char* ptr,std::string_view& it,char sep) noexcept -> std::string_view {
+        const bool atSep = *ptr == sep; 
+        const bool atBack = ptr == &it.back(); 
+        if(atSep || atBack) {
+            // const bool atFront = ptr == it.data(); 
+            std::string_view line {it.data(),ptr - (atSep && ptr != it.data())};
+            it = {ptr + !atBack , it.end()};
+            return line;
+        }
+        return "";
+    };
+}
+
 class compileCommand {
     utl::json::node jsonNode;
     mutable std::mutex mtx;
@@ -661,6 +827,7 @@ struct File {
     string_type Flags       {};
     string_type ldFlags     {};
     string_type objectPath  {};
+    string_type rawData     {};
     std::vector<string_type> dependencies {};
 
     [[nodiscard]] auto getModuleOutput(const fs::path* mPath) const -> string_type {
@@ -685,17 +852,18 @@ struct File {
 
 struct HeaderFile {
     using string_type = std::string;
-    string_type Name  {};
-    string_type Path  {};
-    string_type flags {};
+    string_type Name    {};
+    string_type Path    {};
+    string_type flags   {};
+    string_type rawData {};
 };
 
 class FileManager {
-    using File_type = File;
-    using MapPair = std::pair<const std::string, File_type>;
+    using File_type       = File;
+    using MapPair         = std::pair<const std::string, File_type>;
     using HeaderContainer = std::vector<HeaderFile>;
-    using index_t = input_t<size_t,3>;
-    using key_t = input_t<std::string_view,3>;
+    using index_t         = input_t<size_t,3>;
+    using key_t           = input_t<std::string_view,3>;
     struct StringHash {
         using is_transparent = void;
 
@@ -712,7 +880,7 @@ class FileManager {
             return std::hash<std::string_view>{}(str);
         }
     };
-    using HeaderMap = std::unordered_map<std::string, HeaderContainer,StringHash,std::equal_to<>>;
+    using HeaderMap     = std::unordered_map<std::string, HeaderContainer,StringHash,std::equal_to<>>;
     using SourceFileMap = std::unordered_map<std::string, File_type ,StringHash,std::equal_to<>>;
     
     HeaderMap Header {};
@@ -720,27 +888,40 @@ class FileManager {
 
     public:
     File_type* Main = nullptr;
-    auto addFile(std::string_view name) -> MapPair& {
-        auto [it,s] = Files.try_emplace({name.data(),name.size()}, File{.FileName={name.data(),name.size()}});
-        
+    auto addFile(std::string_view name,File&& file) -> MapPair& {
+        auto [it,s] = Files.try_emplace({name.data(),name.size()}, std::move(file));
         return *it;
+    }
+    auto addFile(std::string_view name,const File& file) -> MapPair& {
+        auto [it,s] = Files.try_emplace({name.data(),name.size()}, std::move(file));
+        return *it;
+    }
+    auto addFile(std::string_view name) -> MapPair& {
+        return addFile(name,File{.FileName={name.data(),name.size()}});
     }
     
     auto setHeaderPath(std::string_view path) -> HeaderContainer& {
         return Header.try_emplace({path.data(),path.size()},HeaderContainer{}).first->second;
     }
 
-    auto addHeader(key_t path,std::string_view name) -> void {
+    auto addHeader(key_t path,std::string_view name) -> HeaderFile* {
         auto it = Header.find(path.data);
         if (it != Header.end()) {
             bool found = false;
             for (const auto& F : it->second) {
                 if (name == F.Name) found = true;
             }
-            if (!found) it->second.push_back(HeaderFile{.Name = {name.data(),name.size()},.Path={path.data.data(),path.data.size()}});
+            if (!found) {
+                std::string temp {path.data.data(),path.data.size()};
+                return &it->second.emplace_back(HeaderFile{
+                    .Name = {name.data(),name.size()},
+                    .Path = temp,
+                });
+            }
         } else {
             log::msg("Path is not registered",path);
         }
+        return nullptr;
     }
     auto moveHeaderFrom(const std::string& Path,HeaderFile& H) -> void {
         auto it = Header[Path];
@@ -829,155 +1010,6 @@ class FileManager {
     auto end()   const { return Files.end(); }
 };
 
-namespace util {
-
-    inline auto getRawHeaderName(const std::string_view in) {
-        struct out {
-            const std::string_view sv;
-            const bool startNpos;
-            const bool endNpos;
-        };
-        const char* data = in.data();
-        std::size_t startPos {std::string_view::npos};
-        std::size_t endPos   {std::string_view::npos};
-        char closeChar       {'\0'};
-        // ; data != in.end(); ++data
-        for (const char& c : in) {
-            const bool quote = c == '\"';
-            const bool bracket = c == '<';
-            if (quote || bracket) {
-                closeChar = (bracket) ? '>' : '\"';
-                data = &c;
-                startPos = &c - in.begin();
-                break;
-            }
-        }
-
-        for (++data; data != in.end(); ++data) {
-            if (*data == closeChar) {
-                endPos = data - in.begin();
-                break;
-            }
-        }
-
-        const bool startFound = (startPos != std::string_view::npos);
-        const bool endFound   = (endPos != std::string_view::npos);
-
-        return out{
-            (startFound && endFound && endPos > startPos) 
-                ? in.substr(startPos + 1, endPos - startPos - 1) 
-                : std::string_view{},
-            !startFound,
-            !endFound,
-        };
-    }
-
-    inline auto trim(std::string_view str) -> std::string_view 
-    {
-        const size_t first = str.find_first_not_of(" \t\r\n");
-        if (first == std::string::npos) return "";
-        const size_t last = str.find_last_not_of(" \t\r\n");
-        return std::string_view(str.data() + first, (last - first + 1));
-    }
-    
-    inline auto containsToken(std::string_view str,const std::string_view target) noexcept -> bool 
-    {
-        size_t startidx{0};
-        // size_t endidx = 0; endidx <= str.size(); ++endidx
-        for (const char& c : str) {
-            if (c == ' ' || c == str.back()) {
-                const size_t idx = &c - str.data();
-                const size_t token_len = idx - startidx;
-                if (token_len > 0) {
-                    if (std::string_view(str.data() + startidx, token_len) == target) {
-                        return true;
-                    }
-                }
-                startidx = idx + 1;
-            }
-        }
-        return false;
-    }
-    inline auto addSep(std::string& to,char sep) {
-        if(!to.empty() && to.back() != sep) to += sep;
-    }
-    inline auto appendWithSep(std::string& to,std::string_view add,char sep) {
-        addSep(to,sep);
-        to += add;
-    }
-    inline auto appendWithSep(std::string& to,std::string_view p,std::string_view s,char sep) {
-        addSep(to,sep);
-        (to += p) += s;
-    }
-    inline auto stripComments(std::string str) -> std::string {
-        std::span<char> it {str.data(),str.size()};
-        bool inBlockComment = false;
-        bool inLineComment = false;
-        bool inQuote = false;
-        bool inExtendScope = false;
-        unsigned short scopeDepth = 0;
-        char* cursor = str.data();
-        for(char& c : it) {
-            const char* cprev = (cursor - (cursor != str.data()));
-            const char* prev = (&c - (&c != str.data()));
-            const char* next = (&c + (&c != str.data() + str.size()));
-            const bool endl = c == '\n';
-            const bool space = c == ' ';
-            if (space && *cprev == ' ') continue;
-            if (c == '/' && !inQuote) {
-                if(*next == '/') {inLineComment  = true;  continue;}
-                if(*next == '*') {inBlockComment = true;  continue;}
-                if(*prev == '*') {inBlockComment = false; continue;}
-            }
-
-            if (endl) {
-                inLineComment = false;
-                if(*cursor == '\n') continue;
-            }
-            if (inLineComment || inBlockComment) continue;
-            if (!scopeDepth && *cprev == '{') scopeDepth = 1;
-            if (scopeDepth) {
-                if(c == '{') ++scopeDepth;
-                if(c == '}') --scopeDepth;
-                if(scopeDepth > 0) continue;
-            }
-            
-            if (c == '\\') {inExtendScope = true; continue;}
-            if (inExtendScope) {
-                if(endl) inExtendScope = false; 
-                continue;
-            }
-            const bool qmark {c == '"'};
-            if(!inQuote && qmark) {*cursor++ = c; inQuote = true; continue;}
-            if(inQuote && qmark)  {*cursor++ = c; inQuote = false; continue;}
-            *cursor++ = c;
-
-        }
-        str.erase(cursor - str.data());
-        return str;
-    }
-
-    [[nodiscard]] inline std::string fileTostring(input_t<const std::string&,3> path) {
-        std::ifstream file(path.data, std::ios::ate | std::ios::binary); // open file and immediately seek to the end
-        // opening file as binary allows us to skip pointless newline re-encoding
-        if (!file.good()) log::msg("Could not open file ",path);
-        const auto file_size = file.tellg(); // returns cursor pos, which is the end of file
-        file.seekg(std::ios::beg);           // seek to the beginning
-        std::string ret; ret.resize(file_size);
-        
-        file.read(ret.data(), file_size);  // read into the string
-        file.close();
-        return ret;
-    }
-    inline constexpr auto viewLine(const char* ptr,const char* it,const char* end,char sep) -> std::string_view {
-        if(*ptr == sep || ptr == end) {
-            std::string_view line {it,ptr};
-            if(!line.empty() && *(line.data() + line.size()) == '\r') line.remove_suffix(1);
-            return line;
-        }
-        return "";
-    };
-}
 
 class Project
 {
@@ -1083,16 +1115,18 @@ class Project
         return *this;
     }
 
-    auto addSource_impl(const fs::path& from) -> void {
-        const bool isModule = fileUtil::isModule(from.extension().string());
-        const bool isSource = fileUtil::isCpp(from.extension().string());
-        if (fs::is_regular_file(from) && ( isModule || isSource)) {
-            auto& f = ProjectFile.addFile(from.filename().string());
-            f.second.FileName = from.filename().string();
-            f.second.Name = from.stem().string();
-            f.second.Path = from.string();
-            f.second.fileType = isModule ? File::Module : File::Source;
-            f.second.onArchive = (outFile == Project::staticLib ? true : false);
+    auto addSource(const fs::path& file) -> void {
+        const bool isModule = fileUtil::isModule(file.extension().string());
+        const bool isSource = fileUtil::isCpp(file.extension().string());
+        if (fs::is_regular_file(file) && ( isModule || isSource)) {
+            ProjectFile.addFile(file.filename().string(),File{
+                .onArchive = (outFile == Project::staticLib ? true : false),
+                .fileType = isModule ? File::Module : File::Source,
+                .FileName = file.filename().string(),
+                .Name = file.stem().string(),
+                .Path = file.string(),
+                .rawData = util::stripComments(util::fileTostring(file.string())),
+            });
         }
     };
     
@@ -1103,12 +1137,12 @@ class Project
         if (file == "*") {
             const fs::directory_iterator iterator(fromPath);
             for (const auto& entry : iterator) {
-                addSource_impl(entry.path());
+                addSource(entry.path());
             }
         } else {
             const fs::path sourcePath {fromPath / file};
             if (!fs::exists(sourcePath)) log::msg<log::Error>("Source path does not exist",sourcePath.string());
-            addSource_impl(sourcePath);
+            addSource(sourcePath);
         }
     
         return *this;
@@ -1164,7 +1198,6 @@ class Project
         for (auto&& dep : ListFlags) {
             if(dep.empty()) continue;
             util::appendWithSep(File.Flags,dep,' ');
-            // File.Flags.empty() ? File.Flags += dep : (File.Flags += " ") += dep;
         }
         return *this;
     }
@@ -1187,12 +1220,10 @@ class Project
     {
         if (Header.Path.empty()) log::msg<log::Error>("Project path is Empty",Header.Path); 
         const std::string HeaderPath = (fs::path{Header.Path} / Header.Name).generic_string(); 
-        const std::string files(util::stripComments(util::fileTostring(HeaderPath)));
-        const char* it = files.data();
+        std::string_view files(Header.rawData);
         for (const char& c : files) {
-            std::string_view line {util::viewLine(&c, it, &files.back(), '\n')};
+            std::string_view line {util::viewLine(&c, files, '\n')};
             if(line.empty()) continue;
-            else it = &c + 1;
             const size_t ipos = line.find(fileUtil::includeToken);
             if (ipos != std::string::npos) { 
                 const size_t searchStart = ipos + fileUtil::includeToken.length();
@@ -1216,7 +1247,7 @@ class Project
             const fs::directory_iterator it(K.first);
             for (const auto& entry : it) {
                 if (entry.is_regular_file() && fileUtil::isCppHeader(entry.path().extension().string()) ) {
-                    ProjectFile.addHeader(K.first, entry.path().filename().string());
+                    ProjectFile.addHeader(K.first, entry.path().filename().string())->rawData = util::stripComments(util::fileTostring(entry.path().string()));
                 }
             }
         }
@@ -1236,7 +1267,7 @@ class Project
             fs::directory_iterator iterator(p);
             
             for (const auto& entry : iterator) {
-                addSource_impl(entry.path());
+                addSource(entry.path());
             }
         }
     }
@@ -1261,24 +1292,18 @@ class Project
     {
         if (file.Path.empty()) log::msg<log::Error>("Project path is Empty",file.Path);
 
-        const std::string files = util::stripComments(util::fileTostring(file.Path));
+        // const std::string files = util::stripComments(util::fileTostring(file.Path));
+        std::string_view files {file.rawData};
         bool exportModuleFound = false;
         bool moduleFound = false;
-        const char* it = files.data();
-        // std::printf("file: %.*s\n",static_cast<int>(files.size()),files.data());
-        for (const char& c : files) {
-            std::string_view line {util::viewLine(&c, it, &files.back(), '\n')};
+        std::printf("%.*s\n",static_cast<int>(files.size()),files.data());
+        for (const char& c : file.rawData) {
+            std::string_view line {util::viewLine(&c, files, '\n')};
             if(line.empty()) continue;
-            else it = &c + 1;
-            
-            std::printf("%.*s\n",static_cast<int>(line.size()),line.data());
             // -------------------------------------------------------------------
             // 1. Detect Module Interface: "export module <name>;"
             // -------------------------------------------------------------------
             const size_t epos = line.find(fileUtil::exportToken); // e.g., "export module"
-
-            // if(V.FileName == "win_renderer.ccm") 
-            
 
             if (!exportModuleFound && epos != std::string::npos) {
                 std::string_view moduleName = std::string_view{line}.substr(epos + fileUtil::exportToken.length() + 1);
@@ -1308,8 +1333,7 @@ class Project
             // -------------------------------------------------------------------
             if (!moduleFound && line.rfind("module ", 0) == 0) {
                 const size_t mpos = line.find("module");
-                std::string_view moduleName = std::string_view{line}.substr(mpos + 6); // 6 == length of "module"
-                moduleName = moduleName.substr(0, moduleName.find(';'));
+                std::string_view moduleName = std::string_view{line.data() + mpos + 6,line.data() + line.find(';') }; // 6 == length of "module"
                 moduleName = util::trim(moduleName);
 
                 if (!moduleName.empty()) {
@@ -1356,19 +1380,15 @@ class Project
     {
         if (ModuleFile.Path.empty()) log::msg<log::Error>("Project path is Empty",ModuleFile.Path);
         
-        const std::string files {
-            ModuleFile.fileType == File::HeaderUnit ?
-            util::stripComments(util::fileTostring((fs::path(ModuleFile.Path) / ModuleFile.Name).generic_string())) :
-            util::stripComments(util::fileTostring(ModuleFile.Path))
-        };
-        // if (!files.is_open()) log::msg<log::Error>("Unable to open file",temp);
-        // auto& ModuleFile = file;
-        const char* it = files.data();
+        // const std::string files {
+        //     ModuleFile.fileType == File::HeaderUnit ?
+        //     util::stripComments(util::fileTostring((fs::path(ModuleFile.Path) / ModuleFile.Name).generic_string())) :
+        //     util::stripComments(util::fileTostring(ModuleFile.Path))
+        // };
+        std::string_view files {ModuleFile.rawData};
         for (const char& c : files) {
-            std::string_view line {util::viewLine(&c, it, &files.back(), '\n')};
+            std::string_view line {util::viewLine(&c, files, '\n')};
             if(line.empty()) continue;
-            else it = &c + 1;
-            // std::printf("%s\n%*s\n",V.FileName.c_str(),static_cast<int>(line.size()),line.data());
 
             const size_t ipos = line.find(fileUtil::importToken);
             const size_t epos = line.find(';');
@@ -1385,7 +1405,6 @@ class Project
                 if (endPos == std::string::npos || endPos < startPos) {continue;}
 
                 moduleName = std::string_view{line}.substr(startPos, (endPos - startPos) + 1);
-                // std::printf("%s",sformat("{} {} found in {}\n",addColors("import module",strColors::Bold_Blue), moduleName , V.Path).c_str());
                 
                 // -------------------------------------------------------------------
                 // Detect System Module Unit
