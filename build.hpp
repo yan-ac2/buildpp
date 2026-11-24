@@ -844,26 +844,28 @@ namespace util {
             AfterParenthesis = 1 << 5,
             NewStatement = 1 << 6
         };
-        BitFlags<State> cnd {None};
+        BitFlags<State> cnd {NewStatement};
         unsigned int scopeDepth = 0;
         unsigned int parenthesisDepth = 0;
         char* cursor    = str.data();
         char* start     = str.data();
         for(char& ch : str) {
-            if(ch == ';') cnd.unset(NewStatement);
-            else cnd.set(NewStatement);
+            const bool notprocessing = cnd != Preprocess && cnd != Preprocess && cnd != Quote && cnd != LineComment && cnd != BlockComment;
+            // if(notprocessing && ch == '\r') ch = '\n';
+            if(notprocessing && (ch == ';' || ch == '}')) cnd.unset(NewStatement);
             if(ch == '\n' || &ch == begin + size) {
-                const bool includeNewline = cnd == NewStatement && cnd != Preprocess && cnd != Quote && cnd != LineComment && cnd != BlockComment;
-                std::string_view line {start ,includeNewline ? &ch - 1 : &ch};
+                const bool includeNewline = cnd == NewStatement && notprocessing;
+                std::span<char> line {start ,includeNewline ? &ch - 1 : &ch};
                 // size_t len {0};
-                for(const char& c : line) {
+                for(char& c : line) {
                     const char* cprev = cursor == begin ? begin : cursor - 1;
                     const char* prev  = &c == begin ? begin : &c - 1;
                     const char* next  = &c == begin + size ? &c : &c + 1;
                     const bool endl   = c == '\n';
                     const bool anyofspace = endl || c == '\r';
-                    
+                    if(cnd != Preprocess && cnd != Quote && c == '\r') c = ' ';
                     if(cnd != Preprocess) {
+                        
                         if (!parenthesisDepth && *cprev == '(') parenthesisDepth = 1;
                         if (parenthesisDepth) {
                             if(c == '(') ++parenthesisDepth;
@@ -874,25 +876,19 @@ namespace util {
                         if (scopeDepth) {
                             const int skipDepth = 0;
                             if(c == '{') {
-                                ++scopeDepth ? c : *cursor++ = c;
+                                scopeDepth++ > skipDepth ? c : *cursor++ = c;
                                 continue;
                             }
                             if(c == '}') {
-                                --scopeDepth ? c : *cursor++ = c;
+                                --scopeDepth > skipDepth ? c : *cursor++ = c;
                                 continue;
                             }
                             if(scopeDepth > skipDepth) continue;
                         }
-                        const bool semicolon = c == ';';
                         
-                        // if (cnd == NewStatement && (*cprev == ';' || *cprev == '{' || *cprev == '(')) cnd.unset(NewStatement);
-                        // if (endl) {
-                        //     if (cnd != NewStatement) {cnd.set(NewStatement);}
-                        //     if (cnd != Quote && cnd == NewStatement) continue;
-                        // }
                         if(cnd == AfterParenthesis) {
                             if(anyofspace) continue;
-                            if(c == '{' || semicolon) cnd.unset(AfterParenthesis);
+                            if(c == '{' || c == ';') cnd.unset(AfterParenthesis);
                         }
                     }
                     
@@ -917,6 +913,7 @@ namespace util {
                         }
                         if (endl) {
                             if(cnd != ExtendScope) {cnd.unset(Preprocess);}
+                            
                         }
                         if (c == '\\') { cnd.set(ExtendScope); continue;}
                         if (cnd == ExtendScope) {
@@ -927,11 +924,15 @@ namespace util {
                     } else {
                         if(c == '"') {*cursor++ = c; cnd.unset(Quote);continue;}
                     }
-
+                    
+                    
+                    // if(endl && cnd.data == NewStatement) (&ch)[&c - &ch] = ' ';
                     
                     // ++len;
+                    // if(endl && includeNewline) c = ' ';
                     *cursor++ = c;
                 }
+                cnd.set(NewStatement);
                 start = includeNewline ? &ch + 1 : &ch;
             }
 
