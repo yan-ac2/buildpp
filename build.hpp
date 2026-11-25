@@ -694,6 +694,102 @@ namespace util {
         }
         return false;
     }
+    
+
+    // inline auto stripCommentsprev(std::string str) -> std::string {
+    //     const char* const begin {str.data()};
+    //     const size_t size    {str.size() > 0 ? str.size() - 1 : str.size()};
+    //     enum State : unsigned int {
+    //         None         = 0,
+    //         BlockComment = 1 << 0,
+    //         LineComment  = 1 << 1,
+    //         Quote        = 1 << 2,
+    //         ExtendScope  = 1 << 3,
+    //         Preprocess   = 1 << 4,
+    //         AfterParenthesis = 1 << 5,
+    //         NewStatement = 1 << 6
+    //     };
+    //     BitFlags<State> cnd {None};
+    //     unsigned int scopeDepth = 0;
+    //     unsigned int parenthesisDepth = 0;
+    //     char* cursor    = str.data();
+    //     for(const char& c : str) {
+    //         const char* cprev = cursor == begin ? begin : cursor - 1;
+    //         const char* prev  = &c == begin ? begin : &c - 1;
+    //         const char* next  = &c == begin + size ? &c : &c + 1;
+    //         const bool endl   = c == '\n';
+    //         const bool anyofspace = endl || c == '\r';
+            
+    //         if(cnd != Preprocess) {
+    //             if (!parenthesisDepth && *cprev == '(') parenthesisDepth = 1;
+    //             if (parenthesisDepth) {
+    //                 if(c == '(') ++parenthesisDepth;
+    //                 if(c == ')') {cnd.set(AfterParenthesis) ;--parenthesisDepth;}
+    //                 if(parenthesisDepth > 0 && anyofspace) {continue;}
+    //             }
+    //             if (!scopeDepth && *cprev == '{') scopeDepth = 1;
+    //             if (scopeDepth) {
+    //                 const int skipDepth = 0;
+    //                 if(c == '{') {
+    //                     scopeDepth++ ? c : *cursor++ = c;
+    //                     continue;
+    //                 }
+    //                 if(c == '}') {
+    //                     --scopeDepth ? c : *cursor++ = c;
+    //                     continue;
+    //                 }
+    //                 if(scopeDepth > skipDepth) continue;
+    //             }
+    //             const bool semicolon = c == ';';
+    //             // if (cnd != NewStatement && *cprev == ';') {cnd.set(NewStatement);}
+    //             // if (cnd == NewStatement && semicolon) cnd.unset(NewStatement);
+    //             if(cnd == AfterParenthesis) {
+    //                 if(anyofspace) continue;
+    //                 if(c == '{' || semicolon) cnd.unset(AfterParenthesis);
+    //             }
+    //         }
+            
+    //         if (cnd != Quote) {
+    //             if(c == '#') cnd.set(Preprocess, true);
+    //             if(c == '/') {
+    //                 if(*next == '/') { cnd.set(LineComment);  continue;}
+    //                 if(*next == '*') { cnd.set(BlockComment);  continue;}
+    //                 if(*prev == '*') { cnd.unset(BlockComment); continue;}
+    //             }
+    //             if (*cprev == ' ' && *cprev == c) continue;
+    //             if (cnd == LineComment || cnd == BlockComment) {
+    //                 if (endl) {
+    //                     if (cnd == LineComment) {
+    //                         cnd.unset(LineComment);
+    //                         continue;
+    //                     }
+    //                     if(cnd != ExtendScope) cnd.unset(Preprocess);
+    //                     if (*cprev == c) continue;
+    //                 } else continue;
+                    
+    //             }
+    //             if (endl) {
+    //                 if(cnd != ExtendScope) cnd.unset(Preprocess);
+    //                 // if(cnd != NewStatement) continue;
+    //             }
+    //             if (c == '\\') { cnd.set(ExtendScope); continue;}
+    //             if (cnd == ExtendScope) {
+    //                 if(endl) cnd.unset(ExtendScope); 
+    //                 continue;
+    //             }
+    //             if(c == '"') {*cursor++ = c; cnd.set(Quote); continue;}
+    //         } else {
+    //             if(c == '"') {*cursor++ = c; cnd.unset(Quote);continue;}
+    //         }
+
+            
+            
+    //         *cursor++ = c;
+
+    //     }
+    //     str.erase(cursor - str.data());
+    //     return str;
+    // }
     template <typename T> requires std::is_enum_v<T>
     struct BitFlags {
         using value_t = std::underlying_type_t<T>;
@@ -736,209 +832,372 @@ namespace util {
             return none(mask);
         }
     };
-
-    inline auto stripCommentsprev(std::string str) -> std::string {
-        const char* const begin {str.data()};
-        const size_t size    {str.size() > 0 ? str.size() - 1 : str.size()};
-        enum State : unsigned int {
-            None         = 0,
-            BlockComment = 1 << 0,
-            LineComment  = 1 << 1,
-            Quote        = 1 << 2,
-            ExtendScope  = 1 << 3,
-            Preprocess   = 1 << 4,
-            AfterParenthesis = 1 << 5,
-            NewStatement = 1 << 6
-        };
-        BitFlags<State> cnd {None};
-        unsigned int scopeDepth = 0;
-        unsigned int parenthesisDepth = 0;
-        char* cursor    = str.data();
-        for(const char& c : str) {
-            const char* cprev = cursor == begin ? begin : cursor - 1;
-            const char* prev  = &c == begin ? begin : &c - 1;
-            const char* next  = &c == begin + size ? &c : &c + 1;
-            const bool endl   = c == '\n';
-            const bool anyofspace = endl || c == '\r';
-            
-            if(cnd != Preprocess) {
-                if (!parenthesisDepth && *cprev == '(') parenthesisDepth = 1;
-                if (parenthesisDepth) {
-                    if(c == '(') ++parenthesisDepth;
-                    if(c == ')') {cnd.set(AfterParenthesis) ;--parenthesisDepth;}
-                    if(parenthesisDepth > 0 && anyofspace) {continue;}
-                }
-                if (!scopeDepth && *cprev == '{') scopeDepth = 1;
-                if (scopeDepth) {
-                    const int skipDepth = 0;
-                    if(c == '{') {
-                        scopeDepth++ ? c : *cursor++ = c;
-                        continue;
-                    }
-                    if(c == '}') {
-                        --scopeDepth ? c : *cursor++ = c;
-                        continue;
-                    }
-                    if(scopeDepth > skipDepth) continue;
-                }
-                const bool semicolon = c == ';';
-                // if (cnd != NewStatement && *cprev == ';') {cnd.set(NewStatement);}
-                // if (cnd == NewStatement && semicolon) cnd.unset(NewStatement);
-                if(cnd == AfterParenthesis) {
-                    if(anyofspace) continue;
-                    if(c == '{' || semicolon) cnd.unset(AfterParenthesis);
-                }
-            }
-            
-            if (cnd != Quote) {
-                if(c == '#') cnd.set(Preprocess, true);
-                if(c == '/') {
-                    if(*next == '/') { cnd.set(LineComment);  continue;}
-                    if(*next == '*') { cnd.set(BlockComment);  continue;}
-                    if(*prev == '*') { cnd.unset(BlockComment); continue;}
-                }
-                if (*cprev == ' ' && *cprev == c) continue;
-                if (cnd == LineComment || cnd == BlockComment) {
-                    if (endl) {
-                        if (cnd == LineComment) {
-                            cnd.unset(LineComment);
-                            continue;
-                        }
-                        if(cnd != ExtendScope) cnd.unset(Preprocess);
-                        if (*cprev == c) continue;
-                    } else continue;
-                    
-                }
-                if (endl) {
-                    if(cnd != ExtendScope) cnd.unset(Preprocess);
-                    // if(cnd != NewStatement) continue;
-                }
-                if (c == '\\') { cnd.set(ExtendScope); continue;}
-                if (cnd == ExtendScope) {
-                    if(endl) cnd.unset(ExtendScope); 
-                    continue;
-                }
-                if(c == '"') {*cursor++ = c; cnd.set(Quote); continue;}
-            } else {
-                if(c == '"') {*cursor++ = c; cnd.unset(Quote);continue;}
-            }
-
-            
-            
-            *cursor++ = c;
-
+    template<size_t N>
+    struct Keyword {
+        const char (&data)[N];
+        size_t nMatch {0};
+        constexpr Keyword() = default;
+        constexpr Keyword(const char (&word)[N]) : data(word) {}
+        constexpr bool operator==(char c) noexcept {
+            c == data[nMatch] ? ++nMatch : nMatch = 0;
+            const bool ret {N - 1 == nMatch};
+            ret ? nMatch = 0 : 0;
+            return ret;
         }
-        str.erase(cursor - str.data());
-        return str;
-    }
+    };
+    // inline auto stripComments(std::string str) -> std::string {
+    //     const char* const begin {str.data()};
+    //     const size_t size    {str.size() > 0 ? str.size() - 1 : str.size()};
+    //     enum State : unsigned int {
+    //         None         = 0,
+    //         BlockComment = 1 << 0,
+    //         LineComment  = 1 << 1,
+    //         Quote        = 1 << 2,
+    //         ExtendScope  = 1 << 3,
+    //         Preprocess   = 1 << 4,
+    //         AfterParenthesis = 1 << 5,
+    //         templateKeyword = 1 << 6,
+    //         HasEndStatement = 1 << 7,
+    //         AfterCBraces = 1 << 8,
+    //         inParenthesis = 1 << 9,
+    //         endPreprocess = 1 << 10
+    //     };
+    //     BitFlags<State> cnd {None};
+    //     Keyword wTemplate ("template");
+    //     unsigned int scopeDepth = 0;
+    //     unsigned int parenthesisDepth = 0;
+    //     const int skipScopeDepth = 0;
+    //     char* cursor    = str.data();
+    //     char* start     = str.data();
+    //     for(char& ch : str) {
+    //         const bool notprocessing = cnd != Preprocess && cnd != Quote && cnd != LineComment && cnd != BlockComment;
+    //         // if(cnd != Quote && ch == '#') cnd.set(Preprocess, true);
+    //         if(notprocessing && ch == ';') cnd.set(HasEndStatement);
+            
+    //         if(ch == '\n' || &ch == begin + size) {
+    //             // const bool includeNewline = cnd == HasEndStatement && notprocessing;
+    //             // includeNewline ? ch = ' ' : ch;
+    //             std::string_view line {start ,&ch};
+    //             // size_t len {0};
+    //             for(const char& c : line) {
+    //                 const char* cprev = cursor == begin ? begin : cursor - 1;
+    //                 const char* prev  = &c == begin ? begin : &c - 1;
+    //                 const char* next  = &c == begin + size ? &c : &c + 1;
+    //                 const bool endl   = c == '\n';
+    //                 const bool Cr = c == '\r';
+                    
+    //                 if (cnd != Quote && ch == '#') {
+    //                     cnd.set(Preprocess);
+    //                     cnd.unset(endPreprocess);
+    //                 }
+    //                 if(cnd != Preprocess) {
+                        
+    //                     if (!parenthesisDepth && *cprev == '(') {
+    //                         parenthesisDepth = 1;
+    //                         cnd.set(inParenthesis);
+    //                     }
+    //                     if (parenthesisDepth) {
+    //                         if(c == '(') {
+    //                             ++parenthesisDepth;
+    //                         }
+    //                         if(c == ')') {
+    //                             --parenthesisDepth; 
+    //                             cnd.set(AfterParenthesis);
+    //                         }
+    //                         if(parenthesisDepth > 0 && Cr) {continue;}
+    //                     } else cnd.unset(inParenthesis);
+    //                     if (!scopeDepth && *cprev == '{') scopeDepth = 1;
+    //                     if (scopeDepth) {
+    //                         if(c == '{') {
+    //                             scopeDepth++ > skipScopeDepth ? c : *cursor++ = c;
+    //                             continue;
+    //                         }
+    //                         if(c == '}') {
+    //                             --scopeDepth > skipScopeDepth ? c : *cursor++ = c;
+    //                             cnd.set(AfterCBraces);
+    //                             continue;
+    //                         }
+    //                         if(scopeDepth > skipScopeDepth) continue;
+    //                     }
+                        
+    //                     if(cnd == AfterParenthesis) {
+    //                         if(endl || Cr) continue;
+    //                         if(c == '{' || c == ';') cnd.unset(AfterParenthesis);
+    //                     }
+    //                 }
+                    
+    //                 if (cnd != Quote) {
+    //                     const bool cprevNewline = *cprev == '\n'; 
+    //                     if (c == '\r') continue;
+    //                     if (c == '/') {
+    //                         if(*next == '/') { cnd.set(LineComment);  continue;}
+    //                         if(*next == '*') { cnd.set(BlockComment);  continue;}
+    //                         if(*prev == '*') { cnd.unset(BlockComment); continue;}
+    //                     }
+    //                     if (&c != line.data() && *cprev == ' ' && *cprev == c) continue;
+    //                     if (cnd == LineComment || cnd == BlockComment) {
+    //                         if (endl) {
+    //                             if (cnd == LineComment) {
+    //                                 cnd.unset(LineComment);
+    //                                 continue;
+    //                             }
+    //                             if(cnd != ExtendScope) cnd.unset(Preprocess);
+    //                         } else continue;
+                            
+    //                     }
+    //                     if (cnd != ExtendScope && c == '\\') { cnd.set(ExtendScope); continue;}
+    //                     if (cnd == ExtendScope) {
+    //                         if(endl) cnd.unset(ExtendScope); 
+    //                         continue;
+    //                     }
+    //                     if (endl) {
+    //                         if (cnd == Preprocess && cnd != ExtendScope) {
+    //                             *cursor++ = c;
+    //                             cnd.unset(Preprocess);
+    //                             cnd.set(endPreprocess);
+    //                             continue;
+    //                         }
+    //                         if (cnd != Preprocess) {
+    //                             if (!scopeDepth && cnd == HasEndStatement) {
+    //                                 !cprevNewline ? *cursor++ = ' ' : *cursor; continue;
+    //                             }
+    //                             if(cnd == templateKeyword) {
+    //                                 cnd.unset(templateKeyword);
+    //                                 *cprev != ' ' ? *cursor++ = ' ' : c;
+    //                                 continue;
+    //                             }
+    //                         }
+    //                         // if (cprevNewline) continue;
+    //                     }
+    //                     if (cnd != LineComment || cnd != BlockComment) {
+    //                         if (cnd != Preprocess) {
+    //                             if(wTemplate == c) {
+    //                                 cnd.set(templateKeyword);
+    //                             }
+    //                             if(cnd == AfterCBraces) {
+    //                                 !cprevNewline && cnd != inParenthesis && cnd == AfterParenthesis ? *cursor++ = '\n' : c;
+    //                                 cnd.unset(AfterCBraces);
+    //                             }
+    //                         }
+    //                         // if (!cprevNewline && cnd == endPreprocess && cnd != inParenthesis) {
+    //                         //     *cursor++ = '\n';
+    //                         //     cnd.unset(endPreprocess);
+    //                         // }
+
+    //                     }
+    //                     if(c == '"') {*cursor++ = c; cnd.set(Quote); continue;}
+    //                 } else {
+    //                     if(c == '"') {
+    //                         *cursor++ = c;
+    //                         if(cnd == Preprocess) *cursor++ = '\n';
+    //                         cnd.unset(Quote);
+    //                         continue;
+    //                     }
+    //                 }
+                    
+    //                 *cursor++ = c;
+    //             }
+    //             cnd.unset(HasEndStatement);
+    //             start = &ch;
+    //         }
+
+    //     }
+    //     str.erase(cursor - str.data());
+    //     return str;
+    // }
     inline auto stripComments(std::string str) -> std::string {
-        const char* const begin {str.data()};
-        const size_t size    {str.size() > 0 ? str.size() - 1 : str.size()};
+        if (str.empty()) return str;
+
         enum State : unsigned int {
-            None         = 0,
-            BlockComment = 1 << 0,
-            LineComment  = 1 << 1,
-            Quote        = 1 << 2,
-            ExtendScope  = 1 << 3,
-            Preprocess   = 1 << 4,
-            AfterParenthesis = 1 << 5,
-            NewStatement = 1 << 6
+            None             = 0,
+            BlockComment     = 1 << 0,
+            LineComment      = 1 << 1,
+            Quote            = 1 << 2,
+            EscapeInQuote    = 1 << 3,
+            CharLiteral      = 1 << 4,
+            EscapeInChar     = 1 << 5,
+            Preprocess       = 1 << 6,
+            LineContinuation = 1 << 7,
+            templateKeyword  = 1 << 8
         };
-        BitFlags<State> cnd {NewStatement};
-        unsigned int scopeDepth = 0;
-        unsigned int parenthesisDepth = 0;
-        char* cursor    = str.data();
-        char* start     = str.data();
-        for(char& ch : str) {
-            const bool notprocessing = cnd != Preprocess && cnd != Preprocess && cnd != Quote && cnd != LineComment && cnd != BlockComment;
-            // if(notprocessing && ch == '\r') ch = '\n';
-            if(notprocessing && (ch == ';' || ch == '}')) cnd.unset(NewStatement);
-            if(ch == '\n' || &ch == begin + size) {
-                const bool includeNewline = cnd == NewStatement && notprocessing;
-                std::span<char> line {start ,includeNewline ? &ch - 1 : &ch};
-                // size_t len {0};
-                for(char& c : line) {
-                    const char* cprev = cursor == begin ? begin : cursor - 1;
-                    const char* prev  = &c == begin ? begin : &c - 1;
-                    const char* next  = &c == begin + size ? &c : &c + 1;
-                    const bool endl   = c == '\n';
-                    const bool anyofspace = endl || c == '\r';
-                    if(cnd != Preprocess && cnd != Quote && c == '\r') c = ' ';
-                    if(cnd != Preprocess) {
-                        
-                        if (!parenthesisDepth && *cprev == '(') parenthesisDepth = 1;
-                        if (parenthesisDepth) {
-                            if(c == '(') ++parenthesisDepth;
-                            if(c == ')') {cnd.set(AfterParenthesis) ;--parenthesisDepth;}
-                            if(parenthesisDepth > 0 && anyofspace) {continue;}
-                        }
-                        if (!scopeDepth && *cprev == '{') scopeDepth = 1;
-                        if (scopeDepth) {
-                            const int skipDepth = 0;
-                            if(c == '{') {
-                                scopeDepth++ > skipDepth ? c : *cursor++ = c;
-                                continue;
-                            }
-                            if(c == '}') {
-                                --scopeDepth > skipDepth ? c : *cursor++ = c;
-                                continue;
-                            }
-                            if(scopeDepth > skipDepth) continue;
-                        }
-                        
-                        if(cnd == AfterParenthesis) {
-                            if(anyofspace) continue;
-                            if(c == '{' || c == ';') cnd.unset(AfterParenthesis);
-                        }
-                    }
-                    
-                    if (cnd != Quote) {
-                        if(c == '#') cnd.set(Preprocess, true);
-                        if(c == '/') {
-                            if(*next == '/') { cnd.set(LineComment);  continue;}
-                            if(*next == '*') { cnd.set(BlockComment);  continue;}
-                            if(*prev == '*') { cnd.unset(BlockComment); continue;}
-                        }
-                        if (*cprev == ' ' && *cprev == c) continue;
-                        if (cnd == LineComment || cnd == BlockComment) {
-                            if (endl) {
-                                if (cnd == LineComment) {
-                                    cnd.unset(LineComment);
-                                    continue;
-                                }
-                                if(cnd != ExtendScope) cnd.unset(Preprocess);
-                                if (*cprev == c) continue;
-                            } else continue;
-                            
-                        }
-                        if (endl) {
-                            if(cnd != ExtendScope) {cnd.unset(Preprocess);}
-                            
-                        }
-                        if (c == '\\') { cnd.set(ExtendScope); continue;}
-                        if (cnd == ExtendScope) {
-                            if(endl) cnd.unset(ExtendScope); 
-                            continue;
-                        }
-                        if(c == '"') {*cursor++ = c; cnd.set(Quote); continue;}
-                    } else {
-                        if(c == '"') {*cursor++ = c; cnd.unset(Quote);continue;}
-                    }
-                    
-                    
-                    // if(endl && cnd.data == NewStatement) (&ch)[&c - &ch] = ' ';
-                    
-                    // ++len;
-                    // if(endl && includeNewline) c = ' ';
-                    *cursor++ = c;
+
+        BitFlags<State> cnd{None};
+        Keyword wTemplate("template");
+
+        std::string out;
+        out.reserve(str.size());
+
+        const size_t n = str.size();
+        for (size_t i = 0; i < n; ++i) {
+            const char c = str[i];
+            const char next = (i + 1 < n) ? str[i + 1] : '\0';
+            const bool endl = (c == '\n');
+
+            if (c == '\r') continue;
+
+            // 1. Inside a standard double-quoted string literal
+            if (cnd == Quote) {
+                out.push_back(c);
+                if (cnd == EscapeInQuote) {
+                    cnd.unset(EscapeInQuote);
+                } else if (c == '\\') {
+                    cnd.set(EscapeInQuote);
+                } else if (c == '"') {
+                    cnd.unset(Quote);
                 }
-                cnd.set(NewStatement);
-                start = includeNewline ? &ch + 1 : &ch;
+                continue;
             }
 
+            // 2. Inside a character literal ('a', '\'', '\\', '"')
+            if (cnd == CharLiteral) {
+                out.push_back(c);
+                if (cnd == EscapeInChar) {
+                    cnd.unset(EscapeInChar);
+                } else if (c == '\\') {
+                    cnd.set(EscapeInChar);
+                } else if (c == '\'') {
+                    cnd.unset(CharLiteral);
+                }
+                continue;
+            }
+
+            // 3. Inside a line comment
+            if (cnd == LineComment) {
+                if (endl) {
+                    cnd.unset(LineComment);
+                    out.push_back(c);
+                    if (cnd == LineContinuation) {
+                        cnd.unset(LineContinuation);
+                    } else {
+                        cnd.unset(Preprocess);
+                    }
+                }
+                continue;
+            }
+
+            // 4. Inside a block comment
+            if (cnd == BlockComment) {
+                if (c == '*' && next == '/') {
+                    out.push_back('*');
+                    out.push_back('/');
+                    ++i;
+                    cnd.unset(BlockComment);
+                } else if (endl) {
+                    out.push_back(c);
+                }
+                continue;
+            }
+
+            // Detect C++ raw string literal: R"delim(...)delim"
+            // Also handles u8R"...", uR"...", UR"...", LR"..."
+            auto tryConsumeRawString = [&](size_t rPos) -> bool {
+                if (rPos >= n || str[rPos] != 'R' || rPos + 1 >= n || str[rPos + 1] != '"') {
+                    return false;
+                }
+                size_t delimStart = rPos + 2;
+                size_t parenPos = delimStart;
+                while (parenPos < n && str[parenPos] != '(' && (parenPos - delimStart) <= 16) {
+                    char dc = str[parenPos];
+                    if (dc == ' ' || dc == '\t' || dc == '\v' || dc == '\f' || dc == '\n' || dc == '\r' || dc == '\\') {
+                        return false;
+                    }
+                    ++parenPos;
+                }
+                if (parenPos >= n || str[parenPos] != '(') return false;
+
+                std::string_view delim = std::string_view(str).substr(delimStart, parenPos - delimStart);
+                std::string closing = ")";
+                closing.append(delim);
+                closing.push_back('"');
+
+                size_t closePos = str.find(closing, parenPos + 1);
+                if (closePos == std::string::npos) return false;
+
+                size_t endIdx = closePos + closing.size() - 1;
+                out.append(str, i, endIdx - i + 1);
+                i = endIdx;
+                return true;
+            };
+
+            if (c == 'R' && next == '"' && tryConsumeRawString(i)) {
+                continue;
+            }
+            if ((c == 'u' || c == 'U' || c == 'L') && next == 'R' && (i + 2 < n) && str[i + 2] == '"') {
+                if (tryConsumeRawString(i + 1)) continue;
+            }
+            if (c == 'u' && next == '8' && (i + 3 < n) && str[i + 2] == 'R' && str[i + 3] == '"') {
+                if (tryConsumeRawString(i + 2)) continue;
+            }
+
+            // Line continuation (\ followed by optional \r then \n)
+            if (c == '\\' && (next == '\n' || (next == '\r' && i + 2 < n && str[i + 2] == '\n'))) {
+                cnd.set(LineContinuation);
+                out.push_back('\\');
+                if (next == '\r') ++i;
+                out.push_back('\n');
+                ++i;
+                continue;
+            }
+
+            // Start of comments
+            if (c == '/' && next == '/') {
+                cnd.set(LineComment);
+                ++i;
+                continue;
+            }
+            if (c == '/' && next == '*') {
+                cnd.set(BlockComment);
+                out.push_back('/');
+                out.push_back('*');
+                ++i;
+                continue;
+            }
+
+            // Start of string or character literal
+            if (c == '"') {
+                cnd.set(Quote);
+                out.push_back(c);
+                continue;
+            }
+            if (c == '\'') {
+                cnd.set(CharLiteral);
+                out.push_back(c);
+                continue;
+            }
+
+            // Preprocessor directive start (# preceded only by line start, newline, or horizontal whitespace)
+            if (c == '#') {
+                bool lineStart = true;
+                for (size_t k = out.size(); k > 0; --k) {
+                    char prevOut = out[k - 1];
+                    if (prevOut == '\n') break;
+                    if (prevOut != ' ' && prevOut != '\t' && prevOut != '\v' && prevOut != '\f') {
+                        lineStart = false;
+                        break;
+                    }
+                }
+                if (lineStart) {
+                    cnd.set(Preprocess);
+                }
+            }
+
+            if (wTemplate == c) {
+                cnd.set(templateKeyword);
+            }
+
+            out.push_back(c);
+
+            if (endl) {
+                if (cnd == LineContinuation) {
+                    cnd.unset(LineContinuation);
+                } else {
+                    cnd.unset(Preprocess);
+                }
+                cnd.unset(templateKeyword);
+            }
         }
-        str.erase(cursor - str.data());
-        return str;
+
+        return out;
     }
 
     [[nodiscard]] inline std::string fileTostring(input_t<std::string,3> path) {
@@ -959,11 +1218,14 @@ namespace util {
     inline constexpr auto viewLine(const char* ptr,std::string_view& it,char sep) noexcept -> std::string_view {
         const bool atSep = *ptr == sep; 
         const bool atBack = ptr == &it.back(); 
-        if(atSep || atBack) {
+        if(atSep) {
             // const bool atFront = ptr == it.data(); 
-            std::string_view line {it.data(),ptr - (atSep && ptr != it.data())};
-            it = {ptr + !atBack , it.end()};
+            std::string_view line {it.data(),ptr};
+            it = {ptr , it.end()};
             return line;
+        }
+        if (atBack) {
+            return it;
         }
         return "";
     };
@@ -1488,10 +1750,11 @@ class Project
         if (file.Path.empty()) log::msg<log::Error>("Project path is Empty",file.Path);
 
         // const std::string files = util::stripComments(util::fileTostring(file.Path));
+        std::printf("\nFilename : %.*s\n",static_cast<int>(file.FileName.size()),file.FileName.data());
         std::string_view files {file.rawData};
+        std::printf("%.*s",static_cast<int>(files.size()),files.data());
         bool exportModuleFound = false;
         bool moduleFound = false;
-        std::printf("%.*s\n",static_cast<int>(files.size()),files.data());
         for (const char& c : file.rawData) {
             std::string_view line {util::viewLine(&c, files, '\n')};
             if(line.empty()) continue;
@@ -1549,7 +1812,7 @@ class Project
             // -------------------------------------------------------------------
             // 3. Detect #include or import dependencies
             // -------------------------------------------------------------------
-            const size_t ipos = line.find(fileUtil::includeToken);
+            const size_t ipos = line.find(fileUtil::includeToken,0);
             if (ipos != std::string::npos) {
                 const size_t searchStart = ipos + fileUtil::includeToken.size();
                 auto [headerName,start,end] = util::getRawHeaderName(std::string_view{line}.substr(searchStart));
