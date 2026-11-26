@@ -840,7 +840,7 @@ namespace util {
         constexpr Keyword(const char (&word)[N]) : data(word) {}
         constexpr bool contains(const char* s,const char* end) const noexcept {
             if (*s != data[0] && (s + size) > end) return false;
-            return data == std::string_view{s,size};
+            return std::string_view{data,size} == std::string_view{s,size};
         }
     };
     inline auto stripComments(std::string str) -> std::string {
@@ -870,6 +870,7 @@ namespace util {
         char* cursor    = str.data();
         char* start     = str.data();
         for(char& ch : str) {
+            if(*start == ' ' || *start == '\t') ++start;
             const char* prev  = &ch == begin ? begin : &ch - 1;
             const char* next  = &ch == end   ? &ch : &ch + 1;
             if (ch == '/') {
@@ -890,15 +891,16 @@ namespace util {
                     start = &ch;
                     cnd.set(ModuleLine);
                 }
-                if(*prev == '\r' && ch == '\n') {*(&ch - 1) = ' ';}
-                if((ch == '\n') || &ch == end) {
+                if(ch == '\r') {ch = ' ';}
+                if(ch == '\n' || &ch == end) {
                     std::string_view line {start,&ch};
                     for(const char& c : line) {
-
                         const char* cprev = cursor == begin ? begin : cursor - 1;
                         const char* prev  = &c == begin ? begin : &c - 1;
                         const char* next  = &c == end   ? &c : &c + 1;
                         if (cnd != Quote) {
+                            if (*cprev == '\n' && c == ' ') continue;
+                            if (c == ' ' && *cprev == c) continue;
                             if (c == '/') {
                                 if(*next == '/') { cnd.set(LineComment);  continue;}
                                 if(*next == '*') { cnd.set(BlockComment);  continue;}
@@ -908,47 +910,52 @@ namespace util {
                         if (cnd == LineComment || cnd == BlockComment) {
                             if(c == '\n') cnd.unset(LineComment);
                             continue;
-                        }
+                        } 
                         
                         if (!(cnd == LineComment || cnd == BlockComment)) {
+                            if (cnd != Quote) {
+                                if (c == '"') cnd.set(Quote);
+                            } else {
+                                if (c == '"') cnd.unset(Quote);
+                            }
                             
-                            if (c == '\n' && *cprev == c) continue;
-                            if (cnd != Quote && c == ' ' && *cprev == c) continue;
+                            if (c == '\n' && *cprev == '\n') continue;
                             
                             if (c == '#') {
-                                if(cnd != IncludeLine && wInclude.contains(&c,end)) {
+                                if(wInclude.contains(&c,end)) {
                                     cnd.set(IncludeLine);
                                 }
                                 cnd.set(Preprocess);
                             }
-                            if (cnd != ExtendScope && c == '\\') { cnd.set(ExtendScope); continue;}
                             if (cnd == ExtendScope) {
                                 if(c == '\n') {
                                     cnd.unset(ExtendScope);
                                     continue;
                                 }
                             }
+                            if (cnd != ExtendScope && c == '\\') { cnd.set(ExtendScope); continue;}
                             if (cnd == ImportLine || cnd == ModuleLine) {
-                                *cursor++ = c;
                                 if(c == ';') {
+                                    *cursor++ = c;
                                     *cursor++ = '\n';
-                                    cnd.unset(ImportLine);
+                                    cnd == ImportLine ? 
+                                    cnd.unset(ImportLine) :
                                     cnd.unset(ModuleLine);
                                     break;
                                 }
-                                continue;
+                                *cursor++ = c; continue;
                             } 
-                            if (cnd != Quote) {
-                                if (c == '"') cnd.set(Quote);
-                            } else {
-                                if (c == '"') cnd.unset(Quote);
-                            }
+                            
                             // if (cnd != LineComment || cnd != BlockComment) {
                             //     if (wImport.contains(&c,end)) cnd.set(ImportLine);
                             //     if (wModule.contains(&c,end)) cnd.set(ModuleLine);
                                 // }
                             if(cnd == Preprocess && cnd == IncludeLine) {
-                                if (cnd != Quote && *cprev == '"')  *cursor++ = '\n';
+                                if (cnd != Quote && c == '"')  {
+                                    *cursor++ = c;
+                                    *cursor++ = '\n'; 
+                                    continue;
+                                }
                                 if (c == '\n' && cnd != ExtendScope) {
                                     cnd.unset(Preprocess);
                                     cnd.unset(IncludeLine);
@@ -956,6 +963,7 @@ namespace util {
                                 *cursor++ = c;
                             }
                         }
+                        
                         // if (cnd != Preprocess && cnd != IncludeLine) {
                         //     
                         // }
