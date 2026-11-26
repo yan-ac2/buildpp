@@ -832,19 +832,129 @@ namespace util {
             return none(mask);
         }
     };
-    template<size_t N>
+    template<size_t N> requires (N > 0)
     struct Keyword {
+        static constexpr size_t size = N - 1;
         const char (&data)[N];
-        size_t nMatch {0};
         constexpr Keyword() = default;
         constexpr Keyword(const char (&word)[N]) : data(word) {}
-        constexpr bool operator==(char c) noexcept {
-            c == data[nMatch] ? ++nMatch : nMatch = 0;
-            const bool ret {N - 1 == nMatch};
-            ret ? nMatch = 0 : 0;
-            return ret;
+        constexpr bool contains(const char* s,const char* end) const noexcept {
+            if (*s != data[0] && (s + size) > end) return false;
+            return data == std::string_view{s,size};
         }
     };
+    inline auto stripComments(std::string str) -> std::string {
+        const char* const begin { str.data() };
+        const char* const end   { begin + (str.size() > 0 ? str.size() - 1 : str.size()) };
+        enum State : unsigned int {
+            None         = 0,
+            BlockComment = 1 << 0,
+            LineComment  = 1 << 1,
+            Quote        = 1 << 2,
+            ExtendScope  = 1 << 3,
+            Preprocess   = 1 << 4,
+            ImportLine   = 1 << 5,
+            ModuleLine   = 1 << 6,
+            IncludeLine  = 1 << 7,
+        };
+        BitFlags<State> cnd {None};
+        Keyword wInclude("#include");
+        Keyword wImport("import");
+        Keyword wModule("export module");
+        // unsigned int scopeDepth = 0;
+        // unsigned int parenthesisDepth = 0;
+        // const int skipScopeDepth = 0;
+        char* cursor    = str.data();
+        char* start     = str.data();
+        for(char& ch : str) {
+            while(anyofchar(*start, " \r\t")) {++start;}
+            if (cnd != IncludeLine && wInclude.contains(start, end) ) {
+                cnd.set(IncludeLine);
+            }
+            if (cnd != ImportLine && wImport.contains(start, end)) { 
+                cnd.set(ImportLine);
+            }
+            if (cnd != ModuleLine && wModule.contains(start,end)) { 
+                cnd.set(ModuleLine);
+            }
+            if(cnd == ModuleLine || cnd == ModuleLine ? ch == ';' : ch == '\n' || &ch == end) {
+                std::string_view line {start,&ch};
+                for(const char& c : line) {
+
+                    const char* cprev = cursor == begin ? begin : cursor - 1;
+                    const char* prev  = &c == begin ? begin : &c - 1;
+                    const char* next  = &c == end   ? &c : &c + 1;
+                    if (cnd != Quote) {
+                        if (c == ' ' && *cprev == c) continue;
+                        if (c == '/') {
+                            if(*next == '/') { cnd.set(LineComment);  continue;}
+                            if(*next == '*') { cnd.set(BlockComment);  continue;}
+                            if(*prev == '*') { cnd.unset(BlockComment); continue;}
+                        }
+                    }
+                    if (cnd == LineComment || cnd == BlockComment) {
+                        if(c == '\n') cnd.unset(LineComment);
+                        continue;
+                    }
+                    if (cnd != Quote) {
+                        if (!(cnd == LineComment || cnd == BlockComment)) {
+
+                            if (c == '\r') continue;
+                            if (c == '\n' && *cprev == c) continue;
+                            if (c == '#') {
+                                if(cnd != IncludeLine && wInclude.contains(&c,end)) {
+                                    cnd.set(IncludeLine);
+                                }
+                                cnd.set(Preprocess);
+                            }
+                        }
+                        if (cnd != ExtendScope && c == '\\') { cnd.set(ExtendScope); continue;}
+                        if (cnd == ExtendScope) {
+                            if(c == '\n') {
+                                cnd.unset(ExtendScope);
+                                continue;
+                            }
+                        }
+                        if (cnd == ImportLine || cnd == ModuleLine) {
+                            *cursor++ = c;
+                            if(c == ';') {
+                                *cursor++ = '\n';
+                                cnd.unset(ImportLine);
+                                cnd.unset(ModuleLine);
+                                break;
+                            }
+                            continue;
+                        } 
+                        // if (cnd != LineComment || cnd != BlockComment) {
+                        //     if (wImport.contains(&c,end)) cnd.set(ImportLine);
+                        //     if (wModule.contains(&c,end)) cnd.set(ModuleLine);
+                        // }
+                    }
+                    if (cnd != Preprocess) {
+                        if (cnd != Quote) {
+                            if (c == '"') cnd.set(Quote);
+                        } else {
+                            if (c == '"') cnd.unset(Quote);
+                        }
+                    }
+                    if(cnd == Preprocess && cnd == IncludeLine) {
+                        if (c == '\n' && cnd != ExtendScope) {
+                            cnd.unset(Preprocess);
+                            cnd.unset(IncludeLine);
+                        }
+                        *cursor++ = c;
+                    }
+                }
+                
+                if(ch == '\n') start = &ch;
+            }
+            if(ch == '\n') {
+                start = &ch;
+            }
+        }
+        str.erase(cursor - begin);
+        return str;
+    }
     // inline auto stripComments(std::string str) -> std::string {
     //     const char* const begin {str.data()};
     //     const size_t size    {str.size() > 0 ? str.size() - 1 : str.size()};
@@ -1005,200 +1115,7 @@ namespace util {
     //     str.erase(cursor - str.data());
     //     return str;
     // }
-    inline auto stripComments(std::string str) -> std::string {
-        if (str.empty()) return str;
-
-        enum State : unsigned int {
-            None             = 0,
-            BlockComment     = 1 << 0,
-            LineComment      = 1 << 1,
-            Quote            = 1 << 2,
-            EscapeInQuote    = 1 << 3,
-            CharLiteral      = 1 << 4,
-            EscapeInChar     = 1 << 5,
-            Preprocess       = 1 << 6,
-            LineContinuation = 1 << 7,
-            templateKeyword  = 1 << 8
-        };
-
-        BitFlags<State> cnd{None};
-        Keyword wTemplate("template");
-
-        std::string out;
-        out.reserve(str.size());
-
-        const size_t n = str.size();
-        for (size_t i = 0; i < n; ++i) {
-            const char c = str[i];
-            const char next = (i + 1 < n) ? str[i + 1] : '\0';
-            const bool endl = (c == '\n');
-
-            if (c == '\r') continue;
-
-            // 1. Inside a standard double-quoted string literal
-            if (cnd == Quote) {
-                out.push_back(c);
-                if (cnd == EscapeInQuote) {
-                    cnd.unset(EscapeInQuote);
-                } else if (c == '\\') {
-                    cnd.set(EscapeInQuote);
-                } else if (c == '"') {
-                    cnd.unset(Quote);
-                }
-                continue;
-            }
-
-            // 2. Inside a character literal ('a', '\'', '\\', '"')
-            if (cnd == CharLiteral) {
-                out.push_back(c);
-                if (cnd == EscapeInChar) {
-                    cnd.unset(EscapeInChar);
-                } else if (c == '\\') {
-                    cnd.set(EscapeInChar);
-                } else if (c == '\'') {
-                    cnd.unset(CharLiteral);
-                }
-                continue;
-            }
-
-            // 3. Inside a line comment
-            if (cnd == LineComment) {
-                if (endl) {
-                    cnd.unset(LineComment);
-                    out.push_back(c);
-                    if (cnd == LineContinuation) {
-                        cnd.unset(LineContinuation);
-                    } else {
-                        cnd.unset(Preprocess);
-                    }
-                }
-                continue;
-            }
-
-            // 4. Inside a block comment
-            if (cnd == BlockComment) {
-                if (c == '*' && next == '/') {
-                    out.push_back('*');
-                    out.push_back('/');
-                    ++i;
-                    cnd.unset(BlockComment);
-                } else if (endl) {
-                    out.push_back(c);
-                }
-                continue;
-            }
-
-            // Detect C++ raw string literal: R"delim(...)delim"
-            // Also handles u8R"...", uR"...", UR"...", LR"..."
-            auto tryConsumeRawString = [&](size_t rPos) -> bool {
-                if (rPos >= n || str[rPos] != 'R' || rPos + 1 >= n || str[rPos + 1] != '"') {
-                    return false;
-                }
-                size_t delimStart = rPos + 2;
-                size_t parenPos = delimStart;
-                while (parenPos < n && str[parenPos] != '(' && (parenPos - delimStart) <= 16) {
-                    char dc = str[parenPos];
-                    if (dc == ' ' || dc == '\t' || dc == '\v' || dc == '\f' || dc == '\n' || dc == '\r' || dc == '\\') {
-                        return false;
-                    }
-                    ++parenPos;
-                }
-                if (parenPos >= n || str[parenPos] != '(') return false;
-
-                std::string_view delim = std::string_view(str).substr(delimStart, parenPos - delimStart);
-                std::string closing = ")";
-                closing.append(delim);
-                closing.push_back('"');
-
-                size_t closePos = str.find(closing, parenPos + 1);
-                if (closePos == std::string::npos) return false;
-
-                size_t endIdx = closePos + closing.size() - 1;
-                out.append(str, i, endIdx - i + 1);
-                i = endIdx;
-                return true;
-            };
-
-            if (c == 'R' && next == '"' && tryConsumeRawString(i)) {
-                continue;
-            }
-            if ((c == 'u' || c == 'U' || c == 'L') && next == 'R' && (i + 2 < n) && str[i + 2] == '"') {
-                if (tryConsumeRawString(i + 1)) continue;
-            }
-            if (c == 'u' && next == '8' && (i + 3 < n) && str[i + 2] == 'R' && str[i + 3] == '"') {
-                if (tryConsumeRawString(i + 2)) continue;
-            }
-
-            // Line continuation (\ followed by optional \r then \n)
-            if (c == '\\' && (next == '\n' || (next == '\r' && i + 2 < n && str[i + 2] == '\n'))) {
-                cnd.set(LineContinuation);
-                out.push_back('\\');
-                if (next == '\r') ++i;
-                out.push_back('\n');
-                ++i;
-                continue;
-            }
-
-            // Start of comments
-            if (c == '/' && next == '/') {
-                cnd.set(LineComment);
-                ++i;
-                continue;
-            }
-            if (c == '/' && next == '*') {
-                cnd.set(BlockComment);
-                out.push_back('/');
-                out.push_back('*');
-                ++i;
-                continue;
-            }
-
-            // Start of string or character literal
-            if (c == '"') {
-                cnd.set(Quote);
-                out.push_back(c);
-                continue;
-            }
-            if (c == '\'') {
-                cnd.set(CharLiteral);
-                out.push_back(c);
-                continue;
-            }
-
-            // Preprocessor directive start (# preceded only by line start, newline, or horizontal whitespace)
-            if (c == '#') {
-                bool lineStart = true;
-                for (size_t k = out.size(); k > 0; --k) {
-                    char prevOut = out[k - 1];
-                    if (prevOut == '\n') break;
-                    if (prevOut != ' ' && prevOut != '\t' && prevOut != '\v' && prevOut != '\f') {
-                        lineStart = false;
-                        break;
-                    }
-                }
-                if (lineStart) {
-                    cnd.set(Preprocess);
-                }
-            }
-
-            if (wTemplate == c) {
-                cnd.set(templateKeyword);
-            }
-
-            out.push_back(c);
-
-            if (endl) {
-                if (cnd == LineContinuation) {
-                    cnd.unset(LineContinuation);
-                } else {
-                    cnd.unset(Preprocess);
-                }
-                cnd.unset(templateKeyword);
-            }
-        }
-
-        return out;
-    }
+    
 
     [[nodiscard]] inline std::string fileTostring(input_t<std::string,3> path) {
         std::ifstream file({path.data.data(),path.data.size()}, std::ios::ate | std::ios::binary); // open file and immediately seek to the end

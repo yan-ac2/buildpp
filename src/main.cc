@@ -6,7 +6,7 @@
 
 import core;
 import win;
-import lib.image;
+import  lib.image;
 import lib.ui;
 
 GLuint loadTGATexture(const std::string& filename) {
