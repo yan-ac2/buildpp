@@ -856,6 +856,9 @@ namespace util {
             ImportLine   = 1 << 5,
             ModuleLine   = 1 << 6,
             IncludeLine  = 1 << 7,
+
+            ScanLineComment  = 1 << 8,
+            ScanBlockComment  = 1 << 9,
         };
         BitFlags<State> cnd {None};
         Keyword wInclude("#include");
@@ -866,37 +869,48 @@ namespace util {
         // const int skipScopeDepth = 0;
         char* cursor    = str.data();
         char* start     = str.data();
-        for(char& ch : str) {
-            while(anyofchar(*start, " \r\t")) {++start;}
-            if (cnd != IncludeLine && wInclude.contains(start, end) ) {
-                cnd.set(IncludeLine);
+        for(char& ch : str) {\
+            const char* prev  = &ch == begin ? begin : &ch - 1;
+            const char* next  = &ch == end   ? &ch : &ch + 1;
+            if (ch == '/') {
+                if(*next == '/') { cnd.set(ScanLineComment);  continue;}
+                if(*next == '*') { cnd.set(ScanBlockComment);  continue;}
+                if(*prev == '*') { cnd.unset(ScanBlockComment); continue;}
             }
-            if (cnd != ImportLine && wImport.contains(start, end)) { 
-                cnd.set(ImportLine);
-            }
-            if (cnd != ModuleLine && wModule.contains(start,end)) { 
-                cnd.set(ModuleLine);
-            }
-            if(cnd == ModuleLine || cnd == ModuleLine ? ch == ';' : ch == '\n' || &ch == end) {
-                std::string_view line {start,&ch};
-                for(const char& c : line) {
+            if(cnd != ScanLineComment || cnd != ScanLineComment) {
+                if (cnd != IncludeLine && wInclude.contains(&ch, end) ) {
+                    start = &ch;
+                    cnd.set(IncludeLine);
+                }
+                if (cnd != ImportLine && wImport.contains(&ch, end)) { 
+                    start = &ch;
+                    cnd.set(ImportLine);
+                }
+                if (cnd != ModuleLine && wModule.contains(&ch,end)) { 
+                    start = &ch;
+                    cnd.set(ModuleLine);
+                }
+            
+                if(ch == '\n' || &ch == end) {
+                    std::string_view line {start,&ch};
+                    for(const char& c : line) {
 
-                    const char* cprev = cursor == begin ? begin : cursor - 1;
-                    const char* prev  = &c == begin ? begin : &c - 1;
-                    const char* next  = &c == end   ? &c : &c + 1;
-                    if (cnd != Quote) {
-                        if (c == ' ' && *cprev == c) continue;
-                        if (c == '/') {
-                            if(*next == '/') { cnd.set(LineComment);  continue;}
-                            if(*next == '*') { cnd.set(BlockComment);  continue;}
-                            if(*prev == '*') { cnd.unset(BlockComment); continue;}
+                        const char* cprev = cursor == begin ? begin : cursor - 1;
+                        const char* prev  = &c == begin ? begin : &c - 1;
+                        const char* next  = &c == end   ? &c : &c + 1;
+                        if (cnd != Quote) {
+                            if (c == ' ' && *cprev == c) continue;
+                            if (c == '/') {
+                                if(*next == '/') { cnd.set(LineComment);  continue;}
+                                if(*next == '*') { cnd.set(BlockComment);  continue;}
+                                if(*prev == '*') { cnd.unset(BlockComment); continue;}
+                            }
                         }
-                    }
-                    if (cnd == LineComment || cnd == BlockComment) {
-                        if(c == '\n') cnd.unset(LineComment);
-                        continue;
-                    }
-                    if (cnd != Quote) {
+                        if (cnd == LineComment || cnd == BlockComment) {
+                            if(c == '\n') cnd.unset(LineComment);
+                            continue;
+                        }
+                        
                         if (!(cnd == LineComment || cnd == BlockComment)) {
 
                             if (c == '\r') continue;
@@ -928,27 +942,36 @@ namespace util {
                         // if (cnd != LineComment || cnd != BlockComment) {
                         //     if (wImport.contains(&c,end)) cnd.set(ImportLine);
                         //     if (wModule.contains(&c,end)) cnd.set(ModuleLine);
+                            // }
+                        
+                        // if (cnd != Preprocess && cnd != IncludeLine) {
+                        //     if (cnd != Quote) {
+                        //         if (c == '"') cnd.set(Quote);
+                        //     } else {
+                        //         if (c == '"') cnd.unset(Quote);
+                        //     }
                         // }
-                    }
-                    if (cnd != Preprocess) {
-                        if (cnd != Quote) {
-                            if (c == '"') cnd.set(Quote);
-                        } else {
-                            if (c == '"') cnd.unset(Quote);
+                        if(cnd == Preprocess && cnd == IncludeLine) {
+                            if (cnd == Quote && c == '"') {
+                                *cursor++ = c;
+                                *cursor++ = '\n';
+                                cnd.unset(Quote);
+                                continue;
+                            }
+                            if (cnd != Quote && c == '"') cnd.set(Quote);
+                            if (c == '\n' && cnd != ExtendScope) {
+                                cnd.unset(Preprocess);
+                                cnd.unset(IncludeLine);
+                            }
+                            *cursor++ = c;
                         }
                     }
-                    if(cnd == Preprocess && cnd == IncludeLine) {
-                        if (c == '\n' && cnd != ExtendScope) {
-                            cnd.unset(Preprocess);
-                            cnd.unset(IncludeLine);
-                        }
-                        *cursor++ = c;
-                    }
+                    
+                    start = &ch;
                 }
-                
-                if(ch == '\n') start = &ch;
             }
             if(ch == '\n') {
+                cnd.unset(ScanLineComment);
                 start = &ch;
             }
         }
